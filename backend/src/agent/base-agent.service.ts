@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
 import { WorkspaceService } from './workspace.service';
 import { buildWorkspaceTools } from './workspace-tools';
+import { buildChannelTools } from './channel-tools';
 
 /**
  * Base agent for FMCC Agentic.
@@ -57,6 +58,16 @@ export interface ToolTraceStep {
   result: string;
 }
 
+/** Live event emitted while a channel turn streams, so the UI can watch. */
+export interface ChannelTurnStreamEvent {
+  type: 'status' | 'tool_call' | 'interject' | 'answer' | 'error';
+  text?: string;
+  name?: string;
+  arguments?: string;
+  result?: string;
+  step?: number;
+}
+
 /** OpenAI-compatible tool call shape for assistant messages on the wire. */
 export interface ApiToolCall {
   id: string;
@@ -92,6 +103,7 @@ export class BaseAgentService {
   private readonly apiKey: string;
   private readonly defaultModelId: string;
   private readonly llmTimeoutMs: number;
+  private readonly workspaces: WorkspaceService;
 
   /** In-memory sessions keyed by id (sessions persist for the process only). */
   private readonly sessions = new Map<string, Session>();
@@ -104,6 +116,7 @@ export class BaseAgentService {
     this.apiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
     this.defaultModelId = config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
     this.llmTimeoutMs = Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
+    this.workspaces = workspaces;
     this.registerTools(buildWorkspaceTools(workspaces));
     this.logger.log(`Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId}`);
   }
@@ -191,6 +204,247 @@ export class BaseAgentService {
     const { answer, steps, messages } = await this.runLoop(session.messages, spec, 10);
     session.messages = messages;
     return { answer, steps };
+  }
+
+  /**
+   * Run an agent turn scoped to a team channel. The agent gets a tight set of
+   * channel tools (list/read/write the channel's project folder, post to the
+   * feed) PLUS its normal own-folder workspace tools, so it can work both on
+   * the channel project and its own folder. The channel thread is injected as
+   * context. Returns the final answer and the tool-call trace.
+   */
+  async runChannelTurn(opts: {
+    agentName: string;
+    channelSlug: string;
+    channelProjectName: string;
+    thread: string;
+    message: string;
+    model?: string;
+    channelPost: (text: string, toolCalls?: unknown[]) => Promise<unknown>;
+  }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
+    const spec = resolveModel(opts.model ?? this.defaultModelId);
+
+    const systemPrompt = [
+      DEFAULT_SYSTEM_PROMPT,
+      '',
+      `You are working in team channel #${opts.channelSlug}.`,
+      `The channel owns a project folder named "${opts.channelProjectName}".`,
+      'You can work directly on this channel project folder with the',
+      'channel_list / channel_read / channel_write tools, and you can also work',
+      'in your own agent folder with the workspace tools. Use channel_post to',
+      'publish short updates to the channel feed so your teammates can see them.',
+    ].join('\n');
+
+    const threadBlock =
+      opts.thread && opts.thread.trim().length > 0
+        ? [
+            '',
+            'Recent channel activity (messages by you and teammates):',
+            opts.thread,
+          ].join('\n')
+        : '';
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...(threadBlock
+        ? [{ role: 'user' as const, content: threadBlock }]
+        : []),
+      { role: 'user', content: opts.message },
+    ];
+
+    // Build a per-turn tool set: channel tools + workspace tools for this agent.
+    const channelTools = buildChannelTools(this.workspaces, {
+      agentName: opts.agentName,
+      channelSlug: opts.channelSlug,
+      channelProjectName: opts.channelProjectName,
+      channelPost: opts.channelPost,
+    });
+
+    const baseTools = this.listTools().filter(
+      (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
+    );
+    const turnTools = [...channelTools, ...baseTools];
+
+    // Run the loop with the restricted tool set. To avoid mutating the global
+    // tool registry per request, we run the core loop directly with an injectable
+    // tool resolver by temporarily swapping the registry.
+    const prevTools = new Map(this.tools);
+    try {
+      // Temporarily replace the registry so executeTool resolves channel tools.
+      this.tools.clear();
+      for (const t of turnTools) this.tools.set(t.name, t);
+      const { answer, steps, trace } = await this.runLoop(messages, spec, 12);
+      return { answer, steps, trace };
+    } finally {
+      this.tools.clear();
+      for (const [k, v] of prevTools) this.tools.set(k, v);
+    }
+  }
+
+  /**
+   * Streaming variant of `runChannelTurn`. Builds the same system prompt,
+   * thread context and per-turn tool set, but streams live `onEvent` updates
+   * as the loop runs and accepts an `interject()` getter so the UI can push
+   * user text into the agent's context before the next model call.
+   *
+   * `messages` is a live array owned by the caller: the initial system/user
+   * messages and any interjections are appended to it, so the job can keep it
+   * in sync with what the model actually sees.
+   */
+  async runChannelTurnStreaming(opts: {
+    agentName: string;
+    channelSlug: string;
+    channelProjectName: string;
+    thread: string;
+    message: string;
+    model?: string;
+    channelPost: (text: string, toolCalls?: unknown[]) => Promise<unknown>;
+    messages: ChatMessage[];
+    onEvent: (event: ChannelTurnStreamEvent) => void;
+    interject: () => string[];
+  }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
+    const spec = resolveModel(opts.model ?? this.defaultModelId);
+
+    const systemPrompt = [
+      DEFAULT_SYSTEM_PROMPT,
+      '',
+      `You are working in team channel #${opts.channelSlug}.`,
+      `The channel owns a project folder named "${opts.channelProjectName}".`,
+      'You can work directly on this channel project folder with the',
+      'channel_list / channel_read / channel_write tools, and you can also work',
+      'in your own agent folder with the workspace tools. Use channel_post to',
+      'publish short updates to the channel feed so your teammates can see them.',
+    ].join('\n');
+
+    const threadBlock =
+      opts.thread && opts.thread.trim().length > 0
+        ? [
+            '',
+            'Recent channel activity (messages by you and teammates):',
+            opts.thread,
+          ].join('\n')
+        : '';
+
+    const messages = opts.messages;
+    messages.push({ role: 'system', content: systemPrompt });
+    if (threadBlock) {
+      messages.push({ role: 'user', content: threadBlock });
+    }
+    messages.push({ role: 'user', content: opts.message });
+    opts.onEvent({ type: 'status', text: 'Agent started' });
+
+    // Build a per-turn tool set: channel tools + workspace tools for this agent.
+    const channelTools = buildChannelTools(this.workspaces, {
+      agentName: opts.agentName,
+      channelSlug: opts.channelSlug,
+      channelProjectName: opts.channelProjectName,
+      channelPost: opts.channelPost,
+    });
+
+    const baseTools = this.listTools().filter(
+      (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
+    );
+    const turnTools = [...channelTools, ...baseTools];
+
+    const prevTools = new Map(this.tools);
+    try {
+      // Temporarily replace the registry so executeTool resolves channel tools.
+      this.tools.clear();
+      for (const t of turnTools) this.tools.set(t.name, t);
+
+      let steps = 0;
+      let answer = '';
+      const trace: ToolTraceStep[] = [];
+
+      for (; steps < 12; steps++) {
+        // 1. Drain the mailbox: any queued interjections land in context now.
+        const interjections = opts.interject();
+        for (const text of interjections) {
+          messages.push({ role: 'user', content: text });
+          opts.onEvent({ type: 'interject', text, step: steps });
+        }
+
+        // 2. Call the model with the (possibly interjected-upon) messages.
+        let completion;
+        try {
+          completion = await this.callModel(messages, spec);
+        } catch (err) {
+          const fb = fallbackFor(spec);
+          if (!fb) throw err;
+          this.logger.warn(
+            `Primary model ${spec.id} failed (${(err as Error).message}); falling back to ${fb.id}`,
+          );
+          completion = await this.callModel(messages, fb);
+        }
+
+        if (completion.tool_calls && completion.tool_calls.length > 0) {
+          messages.push({
+            role: 'assistant',
+            content: completion.content,
+            tool_calls: completion.tool_calls.map((tc) => ({
+              id: tc.id,
+              type: 'function',
+              function: { name: tc.name, arguments: tc.arguments },
+            })),
+          });
+          // 3. Execute each tool call, stream it, and post a short feed update.
+          for (const call of completion.tool_calls) {
+            const result = await this.executeTool(call);
+            trace.push({
+              type: 'tool_call',
+              name: call.name,
+              arguments: call.arguments,
+              result,
+            });
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              name: call.name,
+              content: result,
+            });
+            opts.onEvent({
+              type: 'tool_call',
+              name: call.name,
+              arguments: call.arguments,
+              result,
+              step: steps,
+            });
+            await opts.channelPost(this.shortToolText(call.name, call.arguments), [
+              { name: call.name, arguments: call.arguments, result },
+            ]);
+          }
+          continue; // loop again so the model sees tool results
+        }
+
+        // 4. Plain-text answer.
+        answer = completion.content ?? '';
+        messages.push({ role: 'assistant', content: answer });
+        opts.onEvent({ type: 'answer', text: answer, step: steps });
+        break;
+      }
+
+      return { answer, steps, trace };
+    } finally {
+      this.tools.clear();
+      for (const [k, v] of prevTools) this.tools.set(k, v);
+    }
+  }
+
+  /** Build a short one-line feed update describing a tool call. */
+  private shortToolText(name: string, rawArgs: string): string {
+    let target: string | undefined;
+    try {
+      const args = rawArgs ? JSON.parse(rawArgs) : {};
+      target =
+        typeof args.path === 'string'
+          ? args.path
+          : typeof args.file === 'string'
+            ? args.file
+            : undefined;
+    } catch {
+      // ignore malformed args
+    }
+    return target ? `used ${name} on ${target}` : `used ${name}`;
   }
 
   /* ------------------------------------------------------------------ *

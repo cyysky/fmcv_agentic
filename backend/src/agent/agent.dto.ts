@@ -116,3 +116,75 @@ export class CreateWorkspaceAgentDto {
   })
   name: string;
 }
+
+/* ------------------------------ channels ------------------------------ */
+
+/** Create a team channel (owns one project folder). */
+export class CreateChannelDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  projectName?: string;
+
+  @IsOptional()
+  @IsString()
+  creatorAgent?: string;
+}
+
+/** Add/remove a named agent to a channel. */
+export class ChannelMemberDto {
+  @IsString()
+  @IsNotEmpty()
+  agentName: string;
+}
+
+/** Post a message to the channel feed as a human/user. */
+export class ChannelMessageDto {
+  @IsString()
+  @IsNotEmpty()
+  text: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
+}
+
+/** Ask a channel-members agent to work in the channel. */
+export class ChannelTurnDto {
+  @IsString()
+  @IsNotEmpty()
+  agentName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  message: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+}
+
+/** Start a streaming channel turn as a background job. */
+export class CreateChannelJobDto {
+  @IsString()
+  @IsNotEmpty()
+  agentName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  message: string;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+}
+
+/** Interject user text into a running channel job. */
+export class ChannelInterjectDto {
+  @IsString()
+  @IsNotEmpty()
+  text: string;
+}
