@@ -10,6 +10,9 @@ export default function Home() {
           Manage your OpenAI-compatible model connections from one place.
         </p>
         <div className={styles.ctas}>
+          <Link className={styles.primary} href="/agent">
+            Open Agent
+          </Link>
           <Link className={styles.primary} href="/settings">
             Open Settings
           </Link>
