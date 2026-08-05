@@ -127,20 +127,39 @@ describe('BaseAgentService loop', () => {
     }
   });
 
-  it('converse appends to the session and obeys maxSteps', async () => {
+  it('converse appends to the session and caps model rounds at maxSteps', async () => {
     const { agent, root } = await makeAgent();
     try {
       const s = agent.createSession('s');
-      const maxCalls = 2;
-      (agent as unknown as { callModel: jest.Mock }).callModel = jest.fn(
-        async () => ({ content: 'ok', tool_calls: undefined }),
-      );
-      await agent.converse(s.id, 'q1', undefined, maxCalls);
+      // The model never produces a plain answer, so the loop runs until the
+      // step budget is exhausted — the only way to observe the cap.
+      const calls = jest.fn(async () => ({
+        content: null,
+        tool_calls: [
+          {
+            id: 'call-1',
+            name: 'write_workspace_file',
+            arguments: JSON.stringify({ name: 'coder', path: 'cap.txt', content: 'x' }),
+          } as ToolCallRequest,
+        ],
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      await agent.converse(s.id, 'q1', undefined, 2);
+      expect(calls).toHaveBeenCalledTimes(2);
       expect(agent.getSession(s.id).messages.map((m) => m.role)).toEqual([
         'system',
         'user',
         'assistant',
+        'tool',
+        'assistant',
+        'tool',
       ]);
+
+      // A lowered budget on the next call takes effect immediately.
+      await agent.converse(s.id, 'q2', undefined, 1);
+      expect(calls).toHaveBeenCalledTimes(3);
+      expect(await fs.readFile(path.join(root, 'agents', 'coder', 'cap.txt'), 'utf8')).toBe('x');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
