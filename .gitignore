@@ -12,3 +12,9 @@ npm-debug.log*
 
 # Cloned reference repos (keep local, not part of this project)
 reference/
+
+# AI coding-agent skill caches (downloaded at setup, regenerated on clone)
+.agents/
+.claude/
+.windsurf/
+skills-lock.json

@@ -7,6 +7,7 @@ services:
       - "3333:3333"
     environment:
       - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost:5555/api
     restart: unless-stopped
 
   backend:
@@ -18,4 +19,26 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=5555
+      - DATABASE_URL=postgresql://fmcv:fmcv_dev_password@db:5432/fmcv?schema=public
+    depends_on:
+      - db
     restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: fmcv-db
+    environment:
+      - POSTGRES_USER=fmcv
+      - POSTGRES_PASSWORD=fmcv_dev_password
+      - POSTGRES_DB=fmcv
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    # Postgres is exposed on the host (5432) so local tooling (prisma migrate)
+    # can reach it; it is also reachable from other services on the compose
+    # network via the service name `db`.
+
+volumes:
+  postgres_data:
