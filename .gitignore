@@ -9,3 +9,6 @@ build/
 .DS_Store
 coverage/
 npm-debug.log*
+
+# Cloned reference repos (keep local, not part of this project)
+reference/
