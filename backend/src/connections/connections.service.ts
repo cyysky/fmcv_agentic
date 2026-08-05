@@ -18,14 +18,19 @@ export class ConnectionsService {
       modelName: dto.modelName,
       contextLength: dto.contextLength,
       concurrentConnections: dto.concurrentConnections,
+      ...(dto.apiKey !== undefined && { apiKey: dto.apiKey }),
+      ...(dto.defaultParameters !== undefined && {
+        defaultParameters: dto.defaultParameters as Prisma.InputJsonValue,
+      }),
     };
-    return this.prisma.connection.create({ data });
+    return this.mask(await this.prisma.connection.create({ data }));
   }
 
   async findAll(): Promise<Connection[]> {
-    return this.prisma.connection.findMany({
+    const rows = await this.prisma.connection.findMany({
       orderBy: { createdAt: 'asc' },
     });
+    return rows.map((r) => this.mask(r));
   }
 
   async findOne(id: string): Promise<Connection> {
@@ -33,7 +38,7 @@ export class ConnectionsService {
     if (!conn) {
       throw new NotFoundException(`Connection ${id} not found`);
     }
-    return conn;
+    return this.mask(conn);
   }
 
   async update(id: string, dto: UpdateConnectionDto): Promise<Connection> {
@@ -46,12 +51,16 @@ export class ConnectionsService {
     if (dto.contextLength !== undefined) data.contextLength = dto.contextLength;
     if (dto.concurrentConnections !== undefined)
       data.concurrentConnections = dto.concurrentConnections;
+    if (dto.apiKey !== undefined) data.apiKey = dto.apiKey;
+    if (dto.defaultParameters !== undefined)
+      data.defaultParameters = dto.defaultParameters as Prisma.InputJsonValue;
 
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('No fields provided to update');
     }
 
-    return this.prisma.connection.update({ where: { id }, data });
+    const updated = await this.prisma.connection.update({ where: { id }, data });
+    return this.mask(updated);
   }
 
   async remove(id: string): Promise<{ deleted: boolean }> {
@@ -69,5 +78,13 @@ export class ConnectionsService {
 
   private normalizeBaseUrl(url: string): string {
     return url.replace(/\/+$/, '');
+  }
+
+  /** Mask the API key so secrets are not returned to the client. */
+  private mask(conn: Connection): Connection {
+    if (conn.apiKey) {
+      conn.apiKey = conn.apiKey ? `${conn.apiKey.slice(0, 3)}***${conn.apiKey.slice(-3)}` : '';
+    }
+    return conn;
   }
 }

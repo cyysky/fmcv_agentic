@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsObject,
   IsOptional,
+  Matches,
   IsString,
   Max,
   Min,
@@ -94,4 +95,24 @@ export class RunTurnDto {
   @Min(1)
   @Max(20)
   maxSteps?: number;
+}
+
+/** Body for creating a public project folder. */
+export class CreateWorkspaceProjectDto {
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[A-Za-z0-9_-]+$/, {
+    message: 'name must be alphanumeric, dash or underscore only',
+  })
+  name: string;
+}
+
+/** Body for ensuring a named agent folder exists. */
+export class CreateWorkspaceAgentDto {
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[A-Za-z0-9_-]+$/, {
+    message: 'name must be alphanumeric, dash or underscore only',
+  })
+  name: string;
 }

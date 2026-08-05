@@ -1,5 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 // Accept http(s) URLs including localhost/private hosts
 const URL_REGEX = /^https?:\/\/[^\s/$.?#].[^\s]*$/i;
@@ -28,6 +38,14 @@ export class CreateConnectionDto {
   @Max(1000)
   @IsOptional()
   concurrentConnections?: number;
+
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @IsObject()
+  @IsOptional()
+  defaultParameters?: Record<string, unknown>;
 }
 
 export class UpdateConnectionDto {
@@ -57,5 +75,13 @@ export class UpdateConnectionDto {
   @Max(1000)
   @IsOptional()
   concurrentConnections?: number;
+
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+
+  @IsObject()
+  @IsOptional()
+  defaultParameters?: Record<string, unknown>;
 }
 

@@ -8,10 +8,13 @@ import {
   Post,
 } from '@nestjs/common';
 import { BaseAgentService } from './base-agent.service';
+import { WorkspaceService } from './workspace.service';
 import {
   AskAgentDto,
   ConverseDto,
   CreateSessionDto,
+  CreateWorkspaceAgentDto,
+  CreateWorkspaceProjectDto,
   RunTurnDto,
 } from './agent.dto';
 
@@ -31,7 +34,10 @@ import {
  */
 @Controller('agent')
 export class AgentController {
-  constructor(private readonly agent: BaseAgentService) {}
+  constructor(
+    private readonly agent: BaseAgentService,
+    private readonly workspaces: WorkspaceService,
+  ) {}
 
   /* ---------------------------- stateless turn ---------------------------- */
 
@@ -82,5 +88,32 @@ export class AgentController {
   @Get('defaults')
   defaults() {
     return this.agent.getDefaults();
+  }
+
+  /* ---------------------------- workspaces ---------------------------- */
+
+  @Get('workspaces')
+  async workspacesInfo() {
+    return this.workspaces.getWorkspaceInfo();
+  }
+
+  @Post('workspaces/projects')
+  createWorkspaceProject(@Body() dto: CreateWorkspaceProjectDto) {
+    return this.workspaces.createPublicProject(dto.name);
+  }
+
+  @Post('workspaces/agents')
+  ensureWorkspaceAgent(@Body() dto: CreateWorkspaceAgentDto) {
+    return this.workspaces.ensureAgentFolder(dto.name);
+  }
+
+  @Get('workspaces/projects/:name')
+  listWorkspaceProject(@Param('name') name: string) {
+    return this.workspaces.listProjectContent(name);
+  }
+
+  @Get('workspaces/agents/:name')
+  listWorkspaceAgent(@Param('name') name: string) {
+    return this.workspaces.listAgentContent(name);
   }
 }

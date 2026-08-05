@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
+import { WorkspaceService } from './workspace.service';
+import { buildWorkspaceTools } from './workspace-tools';
 
 /**
  * Base agent for FMCC Agentic.
@@ -47,10 +49,17 @@ export interface ToolCallRequest {
   arguments: string;
 }
 
+/** OpenAI-compatible tool call shape for assistant messages on the wire. */
+export interface ApiToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
-  tool_calls?: ToolCallRequest[];
+  tool_calls?: ApiToolCall[];
   tool_call_id?: string;
   name?: string;
 }
@@ -82,11 +91,12 @@ export class BaseAgentService {
   /** Registered tools, keyed by tool name. */
   private readonly tools = new Map<string, BaseTool>();
 
-  constructor(config: ConfigService) {
+  constructor(config: ConfigService, workspaces: WorkspaceService) {
     this.baseUrl = (config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? '').replace(/\/+$/, '');
     this.apiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
     this.defaultModelId = config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
     this.llmTimeoutMs = Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
+    this.registerTools(buildWorkspaceTools(workspaces));
     this.logger.log(`Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId}`);
   }
 
@@ -210,7 +220,14 @@ export class BaseAgentService {
         messages.push({
           role: 'assistant',
           content: completion.content,
-          tool_calls: completion.tool_calls,
+          // Echo the tool_calls back in the OpenAI-compatible wire shape
+          // ({id, type:'function', function:{name, arguments}}) so the LLM
+          // receives a valid tool-call message on the next round.
+          tool_calls: completion.tool_calls.map((tc) => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
         });
         for (const call of completion.tool_calls) {
           const result = await this.executeTool(call);

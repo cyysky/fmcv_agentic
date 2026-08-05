@@ -2,6 +2,12 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 
+# NEXT_PUBLIC_* vars are inlined at build time — server-host-reachable API URL.
+# Default to the deployment host's LAN IP so the SPA works from any client
+# browser (localhost inside the container/build points at the wrong machine).
+ARG NEXT_PUBLIC_API_URL=http://10.0.151.7:5555/api
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 COPY package.json package-lock.json* ./
 RUN npm ci
 

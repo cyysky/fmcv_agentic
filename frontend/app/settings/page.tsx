@@ -12,6 +12,8 @@ interface Connection {
   modelName: string;
   contextLength: number;
   concurrentConnections: number;
+  apiKey?: string;
+  defaultParameters?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -22,6 +24,8 @@ const EMPTY_FORM = {
   modelName: "",
   contextLength: "128000",
   concurrentConnections: "",
+  apiKey: "",
+  defaultParameters: "",
 };
 
 export default function SettingsPage() {
@@ -52,7 +56,7 @@ export default function SettingsPage() {
   }, [load]);
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement>,
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   };
@@ -76,6 +80,20 @@ export default function SettingsPage() {
       };
       if (form.concurrentConnections !== "") {
         payload.concurrentConnections = Number(form.concurrentConnections);
+      }
+      // Credential (API key): only send when provided so editing doesn't wipe it.
+      if (form.apiKey !== "") {
+        payload.apiKey = form.apiKey;
+      }
+      // Default parameters: parse JSON textarea into an object.
+      if (form.defaultParameters.trim() !== "") {
+        try {
+          payload.defaultParameters = JSON.parse(form.defaultParameters);
+        } catch {
+          throw new Error(
+            "Default Parameters must be valid JSON (e.g. {\"temperature\": 0.7})",
+          );
+        }
       }
 
       const url = editingId
@@ -120,6 +138,10 @@ export default function SettingsPage() {
       modelName: conn.modelName,
       contextLength: String(conn.contextLength),
       concurrentConnections: String(conn.concurrentConnections),
+      apiKey: conn.apiKey ?? "",
+      defaultParameters: conn.defaultParameters
+        ? JSON.stringify(conn.defaultParameters, null, 2)
+        : "",
     });
     setError(null);
     setMessage(null);
@@ -192,6 +214,30 @@ export default function SettingsPage() {
             onChange={handleChange}
             placeholder="e.g. gpt-4o"
             required
+          />
+        </label>
+
+        <label className={styles.field}>
+          <span>Credential (API Key)</span>
+          <input
+            name="apiKey"
+            value={form.apiKey}
+            onChange={handleChange}
+            placeholder="sk-... (leave blank on edit to keep existing)"
+            type="password"
+            autoComplete="off"
+          />
+        </label>
+
+        <label className={styles.field}>
+          <span>Default Parameters (JSON)</span>
+          <textarea
+            name="defaultParameters"
+            value={form.defaultParameters}
+            onChange={handleChange}
+            placeholder='{"temperature": 0.7, "max_tokens": 4096}'
+            rows={4}
+            className={styles.textarea}
           />
         </label>
 
