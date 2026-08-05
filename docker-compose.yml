@@ -20,6 +20,8 @@ services:
       - NODE_ENV=production
       - PORT=5555
       - DATABASE_URL=postgresql://fmcv:fmcv_dev_password@db:5432/fmcv?schema=public
+      - AGENT_BASE_URL=${AGENT_BASE_URL:-http://60.51.17.97:9999/v1}
+      - AGENT_API_KEY=${AGENT_API_KEY:-}
     depends_on:
       - db
     restart: unless-stopped
