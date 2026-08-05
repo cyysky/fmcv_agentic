@@ -54,7 +54,14 @@ export class ChannelService {
   ) {}
 
   private slugify(name: string): string {
-    const s = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    // Slugify is forgiving: anything outside [a-z0-9_-] becomes a dash, then
+    // stray leading/trailing dashes are trimmed. A name with nothing left
+    // (e.g. only spaces) is rejected.
+    const s = name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
     if (!s) throw new BadRequestException('Channel name cannot be empty');
     if (!SLUG_RE.test(s)) {
       throw new BadRequestException(
@@ -247,8 +254,18 @@ export class ChannelService {
     const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
 
-    await this.prisma.channelMember.deleteMany({
-      where: { channelId, agentName },
+    this.workspaces.assertAgentName(agentName);
+    const existing = await this.prisma.channelMember.findUnique({
+      where: { channelId_agentName: { channelId, agentName } },
+    });
+    if (!existing) {
+      throw new BadRequestException(
+        `Agent ${agentName} is not a member of #${channel.slug}`,
+      );
+    }
+
+    await this.prisma.channelMember.delete({
+      where: { channelId_agentName: { channelId, agentName } },
     });
     await this.postMessage(
       channelId,
