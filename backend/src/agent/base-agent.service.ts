@@ -223,12 +223,13 @@ export class BaseAgentService {
   }
 
   /** Append a user message to a session, run the loop, return the final text. */
-  async converse(sessionId: string, message: string, model?: string): Promise<{ answer: string; steps: number }> {
+  async converse(sessionId: string, message: string, model?: string, maxSteps?: number): Promise<{ answer: string; steps: number }> {
     const session = this.getSession(sessionId);
     const spec = resolveModel(model ?? session.model);
     session.model = spec.id;
     session.messages.push({ role: 'user', content: message });
-    const { answer, steps, messages } = await this.runLoop(session.messages, spec, 10);
+    const maxRunSteps = maxSteps && maxSteps > 0 ? maxSteps : 10;
+    const { answer, steps, messages } = await this.runLoop(session.messages, spec, maxRunSteps);
     session.messages = messages;
     return { answer, steps };
   }

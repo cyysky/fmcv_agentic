@@ -73,6 +73,12 @@ export class ConverseDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  maxSteps?: number;
 }
 
 /** Manually build a conversation for the stateless turn. */

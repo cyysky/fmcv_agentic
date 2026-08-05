@@ -70,7 +70,7 @@ export class AgentController {
 
   @Post('sessions/:id/converse')
   converse(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ConverseDto) {
-    return this.agent.converse(id, dto.message, dto.model);
+    return this.agent.converse(id, dto.message, dto.model, dto.maxSteps);
   }
 
   @Delete('sessions/:id')
