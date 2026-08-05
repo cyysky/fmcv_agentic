@@ -26,12 +26,18 @@ model Channel {
   slug        String   @unique
   name        String
   projectName String
+  parentId    String?
+  agentName   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  parent   Channel?  @relation("ChannelChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children Channel[] @relation("ChannelChildren")
 
   members  ChannelMember[]
   messages ChannelMessage[]
 
+  @@index([parentId])
   @@map("channels")
 }
 

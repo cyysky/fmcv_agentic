@@ -20,6 +20,112 @@ function argOptionalString(args: Record<string, unknown>, key: string): string {
 }
 
 /**
+ * Build self-scoped workspace tools for a named agent. These tools operate
+ * exclusively on the agent's OWN folder (agents/<agentName>) and take NO
+ * `agent` argument, so the model never has to guess its own name — the
+ * binding is done here at build time. This eliminates the "guess the folder
+ * name" loop (list_workspace agent=base / fmcv / fmccagent ... x46).
+ */
+export function buildSelfTools(
+  ws: WorkspaceService,
+  agentName: string,
+): BaseTool[] {
+  /** Recursive JSON tree of the agent's own folder. */
+  const listOwn: BaseTool['run'] = async (args) => {
+    const root = ws.getAgentRoot(agentName);
+    const relPath = typeof args.path === 'string' ? args.path : '.';
+    const target = await ws.safeResolve(root, relPath.replace(/^\/+/, '') || '.');
+    return ws.readTree(target);
+  };
+
+  /** Read a file from the agent's own folder (size-capped). */
+  const readOwn: BaseTool['run'] = async (args) => {
+    const relPath = argString(args, 'path');
+    const root = ws.getAgentRoot(agentName);
+    const target = await ws.safeResolve(root, relPath);
+    const stat = await fs.stat(target);
+    if (stat.isDirectory()) {
+      throw new Error('read_own_file expects a file');
+    }
+    if (stat.size > MAX_FILE_BYTES) {
+      throw new Error(`file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`);
+    }
+    const content = await fs.readFile(target, 'utf8');
+    return { path: target, size: stat.size, content };
+  };
+
+  /** Write a file into the agent's own folder. */
+  const writeOwn: BaseTool['run'] = async (args) => {
+    const relPath = argString(args, 'path');
+    const content = typeof args.content === 'string' ? args.content : '';
+    const root = ws.getAgentRoot(agentName);
+    const target = await ws.safeResolve(root, relPath);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, content, 'utf8');
+    return { written: true, path: target, bytes: Buffer.byteLength(content, 'utf8') };
+  };
+
+  return [
+    {
+      name: 'list_own_workspace',
+      description:
+        `List the recursive JSON tree of YOUR OWN agent folder ` +
+        `(agents/${agentName}). Use this instead of list_workspace when you need ` +
+        `to see your own files — no agent argument required. ` +
+        `args: { path?: string }.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative path inside your own folder (default ".").',
+          },
+        },
+        required: [],
+      },
+      run: listOwn,
+    },
+    {
+      name: 'read_own_file',
+      description:
+        `Read the contents of a file from YOUR OWN agent folder ` +
+        `(agents/${agentName}). Size-capped at 100KB. ` +
+        `args: { path: string }.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative file path inside your own folder.',
+          },
+        },
+        required: ['path'],
+      },
+      run: readOwn,
+    },
+    {
+      name: 'write_own_file',
+      description:
+        `Write content into a file in YOUR OWN agent folder ` +
+        `(agents/${agentName}). Creates parent directories as needed. ` +
+        `args: { path, content }.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative file path inside your own folder.',
+          },
+          content: { type: 'string', description: 'File contents to write.' },
+        },
+        required: ['path', 'content'],
+      },
+      run: writeOwn,
+    },
+  ];
+}
+
+/**
  * Build the scoped workspace file tools for the base agent. Every path is
  * resolved through `WorkspaceService.safeResolve` against the selected root,
  * so no tool can escape its allowed folder.

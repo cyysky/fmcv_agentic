@@ -39,15 +39,28 @@ type ChannelJobEvent =
   | { type: "interject"; ts: string; text?: string; step?: number }
   | { type: "answer";   ts: string; text?: string }
   | { type: "status";   ts: string; text?: string }
-  | { type: "error";    ts: string; text?: string };
+  | { type: "error";    ts: string; text?: string }
+  | { type: "stopped";  ts: string; text?: string };
 
 interface ChannelJobResponse {
   jobId: string;
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "stopped";
   events: ChannelJobEvent[];
   answer?: string;
   steps?: number;
   error?: string;
+}
+
+/** Per-member debugging status returned by GET /channels/:id/member-status. */
+interface MemberStatus {
+  agentName: string;
+  hasRun: boolean;
+  status: "running" | "done" | "error" | "stopped" | null;
+  answer: string | null;
+  steps: number | null;
+  error: string | null;
+  events: ChannelJobEvent[];
+  startedAt: string | null;
 }
 
 /* ------------------------- workspace viewer types ------------------------ */
@@ -85,6 +98,8 @@ interface ChannelSummary {
   slug: string;
   name: string;
   projectName: string | null;
+  parentId: string | null;
+  agentName: string | null;
   memberCount: number;
   createdAt: string;
 }
@@ -142,6 +157,10 @@ export default function AgentPage() {
   const [newName, setNewName] = useState("");
   const [newProject, setNewProject] = useState("");
   const [newCreator, setNewCreator] = useState("");
+  // discoverable-add + DM state
+  const [availableAgents, setAvailableAgents] = useState<AgentEntry[]>([]);
+  const [dmOpen, setDmOpen] = useState(false);
+  const [dmBusy, setDmBusy] = useState(false);
   const [chMode, setChMode] = useState<"post" | "run">("post");
   const [chInput, setChInput] = useState("");
   const [chBusy, setChBusy] = useState(false);
@@ -149,13 +168,16 @@ export default function AgentPage() {
   const [runModel, setRunModel] = useState("");
   const [memberInput, setMemberInput] = useState("");
   const [memberBusy, setMemberBusy] = useState(false);
+  const [memberStatus, setMemberStatus] = useState<MemberStatus[]>([]);
+  const [memberStatusLoading, setMemberStatusLoading] = useState(false);
+  const [selMember, setSelMember] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const chFeedRef = useRef<HTMLDivElement | null>(null);
   const [activeJob, setActiveJob] = useState<{
     jobId: string; channelId: string; agentName: string;
   } | null>(null);
   const [jobEvents, setJobEvents] = useState<ChannelJobEvent[]>([]);
-  const [jobStatus, setJobStatus] = useState<"running"|"done"|"error"|null>(null);
+  const [jobStatus, setJobStatus] = useState<"running"|"done"|"error"|"stopped"|null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
   const [jobSeen, setJobSeen] = useState(0);
   const jobPollRef = useRef<number | null>(null);
@@ -225,8 +247,18 @@ export default function AgentPage() {
   }, []);
 
   useEffect(() => {
-    if (view === "channels" && channels.length === 0) loadChannels();
-  }, [view, channels.length, loadChannels]);
+    if (view === "channels") loadChannels();
+  }, [view, loadChannels]);
+
+  // Live-refresh the channel list every 8s while on the channels view so
+  // newly created sub-channels appear without a page reload.
+  useEffect(() => {
+    if (view !== "channels") return;
+    const t = window.setInterval(() => {
+      loadChannels();
+    }, 8000);
+    return () => window.clearInterval(t);
+  }, [view, loadChannels]);
 
   const fetchChannel = useCallback(async (id: string): Promise<ChannelDetail> => {
     const res = await fetch(`${API_URL}/channels/${id}`);
@@ -234,9 +266,25 @@ export default function AgentPage() {
     return (await res.json()) as ChannelDetail;
   }, []);
 
+  const loadMemberStatus = useCallback(async (id: string) => {
+    setMemberStatusLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/channels/${id}/member-status`);
+      if (!res.ok) throw new Error(`Failed to load member status (HTTP ${res.status})`);
+      setMemberStatus((await res.json()) as MemberStatus[]);
+    } catch {
+      /* non-fatal: keep last known */
+    } finally {
+      setMemberStatusLoading(false);
+    }
+  }, []);
+
   const openChannel = useCallback(
     async (id: string) => {
-      if (id !== selChannelId) resetJobState();
+      if (id !== selChannelId) {
+        resetJobState();
+        setSelMember(null);
+      }
       setSelChannelId(id);
       setDetailLoading(true);
       setChannelsError(null);
@@ -244,13 +292,14 @@ export default function AgentPage() {
         const data = await fetchChannel(id);
         setDetail(data);
         setRunAgent((cur) => cur || (data.members[0] ?? ""));
+        loadMemberStatus(id);
       } catch (e) {
         setChannelsError(e instanceof Error ? e.message : "Failed to load channel");
       } finally {
         setDetailLoading(false);
       }
     },
-    [fetchChannel, selChannelId, resetJobState],
+    [fetchChannel, selChannelId, resetJobState, loadMemberStatus],
   );
 
   const createChannel = useCallback(async () => {
@@ -322,12 +371,13 @@ export default function AgentPage() {
       );
       setRunAgent((cur) => cur || agentName);
       setMemberInput("");
+      loadMemberStatus(selChannelId);
     } catch (e) {
       setChannelsError(e instanceof Error ? e.message : "Failed to add member");
     } finally {
       setMemberBusy(false);
     }
-  }, [memberInput, selChannelId, memberBusy]);
+  }, [memberInput, selChannelId, memberBusy, loadMemberStatus]);
 
   const removeMember = useCallback(
     async (agentName: string) => {
@@ -342,11 +392,106 @@ export default function AgentPage() {
         const data = (await res.json()) as ChannelDetail;
         setDetail(data);
         if (runAgent === agentName) setRunAgent(data.members[0] ?? "");
+        if (selMember === agentName) setSelMember(null);
+        loadMemberStatus(selChannelId);
       } catch (e) {
         setChannelsError(e instanceof Error ? e.message : "Failed to remove member");
       }
     },
-    [selChannelId, runAgent],
+    [selChannelId, runAgent, selMember, loadMemberStatus],
+  );
+
+  /**
+   * Load the discoverable agent catalog for the "Add member" / "New DM" pickers.
+   * Falls back to keeping whatever was loaded before on failure.
+   */
+  const loadAvailableAgents = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/agent/workspaces`);
+      if (!res.ok) return;
+      const data = (await res.json()) as WorkspaceInfo;
+      setAvailableAgents(data.agents ?? []);
+    } catch {
+      /* non-fatal: leave pickers empty */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "channels") loadAvailableAgents();
+  }, [view, loadAvailableAgents]);
+
+  /**
+   * Open a private 1:1 DM with an agent: find-or-create a dedicated
+   * single-agent channel named "dm-<agent>", select it, and enter "run" mode
+   * so the composer immediately talks to (runs) that agent.
+   */
+  const openDirectMessage = useCallback(
+    async (agentName: string) => {
+      if (dmBusy) return;
+      setDmBusy(true);
+      setChannelsError(null);
+      setDmOpen(false);
+      try {
+        const existing = channels.find(
+          (c) => c.slug === `dm-${agentName}` || c.name.toLowerCase() === `dm-${agentName}`,
+        );
+        let id = existing?.id;
+        if (!id) {
+          const res = await fetch(`${API_URL}/channels`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: `dm-${agentName}`,
+              creatorAgent: agentName,
+            }),
+          });
+          if (!res.ok) throw new Error(`Failed to open DM (HTTP ${res.status})`);
+          const data = (await res.json()) as ChannelDetail;
+          id = data.id;
+          setChannels((prev) => [...prev, data]);
+        }
+        await loadChannels();
+        await openChannel(id!);
+        setRunAgent(agentName);
+        setLiveAgent(agentName);
+        setChMode("run");
+      } catch (e) {
+        setChannelsError(e instanceof Error ? e.message : "Failed to open DM");
+      } finally {
+        setDmBusy(false);
+      }
+    },
+    [channels, dmBusy, loadChannels, openChannel],
+  );
+
+  const pollJob = useCallback(
+    (jobId: string, channelId: string) => {
+      stopPolling();
+      jobPollRef.current = window.setInterval(async () => {
+        try {
+          const res = await fetch(`${API_URL}/channels/${channelId}/jobs/${jobId}`);
+          if (!res.ok) throw new Error(`Poll failed (HTTP ${res.status})`);
+          const data = (await res.json()) as ChannelJobResponse;
+          setJobEvents(data.events);
+          setJobStatus(data.status);
+          setJobError(data.error ?? null);
+          if (data.status === "done" || data.status === "error" || data.status === "stopped") {
+            stopPolling();
+            setActiveJob(null);
+            loadMemberStatus(channelId);
+            try {
+              const fresh = await fetchChannel(channelId);
+              setDetail(fresh);
+            } catch {
+              /* keep current detail */
+            }
+          }
+        } catch {
+          /* transient poll errors ignored */
+        }
+      }, 1200);
+    },
+    [stopPolling, fetchChannel, loadMemberStatus],
   );
 
   const postToChannel = useCallback(async () => {
@@ -361,44 +506,36 @@ export default function AgentPage() {
         body: JSON.stringify({ role: "user", author: "you", text }),
       });
       if (!res.ok) throw new Error(`Failed to post message (HTTP ${res.status})`);
-      const msg = (await res.json()) as ChannelMessage;
+      const data = (await res.json()) as {
+        msg: ChannelMessage;
+        jobId?: string;
+        status?: string;
+        agentName?: string;
+      };
+      const msg = data.msg;
       setDetail((d) => (d ? { ...d, messages: [...d.messages, msg] } : d));
       setChInput("");
+      // The backend auto-starts a streaming reply job on plain posts; if one
+      // was created, watch it so the observation panel + final answer appear.
+      const replyJobId = (data as { jobId?: string }).jobId;
+      const replyAgent = (data as { agentName?: string }).agentName;
+      if (replyJobId && replyAgent) {
+        setActiveJob({ jobId: replyJobId, channelId: selChannelId, agentName: replyAgent });
+        setLiveAgent(replyAgent);
+        setJobEvents([]);
+        setJobStatus("running");
+        setJobError(null);
+        setJobSeen(0);
+        setSelMember(replyAgent);
+        loadMemberStatus(selChannelId);
+        pollJob(replyJobId, selChannelId);
+      }
     } catch (e) {
       setChannelsError(e instanceof Error ? e.message : "Failed to post message");
     } finally {
       setChBusy(false);
     }
-  }, [chInput, selChannelId, chBusy]);
-
-  const pollJob = useCallback(
-    (jobId: string, channelId: string) => {
-      stopPolling();
-      jobPollRef.current = window.setInterval(async () => {
-        try {
-          const res = await fetch(`${API_URL}/channels/${channelId}/jobs/${jobId}`);
-          if (!res.ok) throw new Error(`Poll failed (HTTP ${res.status})`);
-          const data = (await res.json()) as ChannelJobResponse;
-          setJobEvents(data.events);
-          setJobStatus(data.status);
-          setJobError(data.error ?? null);
-          if (data.status === "done" || data.status === "error") {
-            stopPolling();
-            setActiveJob(null);
-            try {
-              const fresh = await fetchChannel(channelId);
-              setDetail(fresh);
-            } catch {
-              /* keep current detail */
-            }
-          }
-        } catch {
-          /* transient poll errors ignored */
-        }
-      }, 1200);
-    },
-    [stopPolling, fetchChannel],
-  );
+  }, [chInput, selChannelId, chBusy, pollJob, loadMemberStatus]);
 
   const startJob = useCallback(async () => {
     const message = chInput.trim();
@@ -442,11 +579,13 @@ export default function AgentPage() {
       if (!jobId) throw new Error("No jobId returned");
       setActiveJob({ jobId, channelId: selChannelId, agentName });
       setLiveAgent(agentName);
+      setSelMember(agentName);
       setJobEvents([]);
       setJobStatus("running");
       setJobError(null);
       setJobSeen(0);
       setChInput("");
+      loadMemberStatus(selChannelId);
       pollJob(jobId, selChannelId);
     } catch (e) {
       setDetail((d) =>
@@ -467,7 +606,7 @@ export default function AgentPage() {
           : d,
       );
     }
-  }, [chInput, runAgent, runModel, selChannelId, pollJob]);
+  }, [chInput, runAgent, runModel, selChannelId, pollJob, loadMemberStatus]);
 
   const interject = useCallback(async () => {
     const text = chInput.trim();
@@ -489,10 +628,38 @@ export default function AgentPage() {
     }
   }, [chInput, activeJob]);
 
+  const stopJob = useCallback(async () => {
+    if (!activeJob) return;
+    setChannelsError(null);
+    try {
+      const res = await fetch(
+        `${API_URL}/channels/${activeJob.channelId}/jobs/${activeJob.jobId}/stop`,
+        { method: "POST", headers: { "Content-Type": "application/json" } },
+      );
+      if (!res.ok) throw new Error(`Stop failed (HTTP ${res.status})`);
+      stopPolling();
+      setActiveJob(null);
+      setJobStatus("stopped");
+      setJobEvents((ev) => [
+        ...ev,
+        { type: "status", ts: new Date().toISOString(), text: "Agent run stopped." },
+      ]);
+      try {
+        const fresh = await fetchChannel(activeJob.channelId);
+        setDetail(fresh);
+      } catch {
+        /* keep current detail */
+      }
+    } catch (e) {
+      setChannelsError(e instanceof Error ? e.message : "Failed to stop agent");
+    }
+  }, [activeJob, stopPolling, fetchChannel]);
+
   const selectMember = useCallback(
     (agentName: string) => {
       setRunAgent(agentName);
       setLiveAgent(agentName);
+      setSelMember(agentName);
       if (selChannelId) {
         loadChannels();
         openChannel(selChannelId);
@@ -853,38 +1020,113 @@ export default function AgentPage() {
                 {channels.length === 0 ? (
                   <div className={styles.muted}>No channels yet</div>
                 ) : (
-                  channels.map((c) => (
-                    <div
-                      key={c.id}
-                      className={`${styles.channelRow} ${
-                        selChannelId === c.id ? styles.channelRowActive : ""
-                      }`}
-                    >
-                      <button
-                        className={styles.channelBtn}
-                        onClick={() => openChannel(c.id)}
-                      >
-                        <span className={styles.channelName}># {c.name}</span>
-                        <span className={styles.channelMeta}>
-                          {c.memberCount} member{c.memberCount === 1 ? "" : "s"}
-                          {c.projectName ? ` · ${c.projectName}` : ""}
-                        </span>
-                      </button>
-                      <button
-                        className={styles.iconBtn}
-                        title="Delete channel"
-                        onClick={() => deleteChannel(c.id)}
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  ))
+                  (() => {
+                    const parents = channels.filter((c) => !c.parentId);
+                    const subs = channels.filter((c) => c.parentId);
+                    const items: (ChannelSummary | null)[] = [];
+                    for (const p of parents) {
+                      items.push(p);
+                      const children = subs.filter((s) => s.parentId === p.id);
+                      if (children.length > 0) items.push(...children);
+                    }
+                    // Any orphaned sub-channels (parent missing) at the end.
+                    const orphanSubs = subs.filter(
+                      (s) => !parents.some((p) => p.id === s.parentId),
+                    );
+                    if (orphanSubs.length > 0) items.push(...orphanSubs);
+                    return items.map((c) =>
+                      c === null ? null : (
+                        <div
+                          key={c.id}
+                          className={`${styles.channelRow} ${
+                            c.parentId ? styles.channelRowSub : ""
+                          } ${selChannelId === c.id ? styles.channelRowActive : ""}`}
+                        >
+                          <button
+                            className={styles.channelBtn}
+                            onClick={() => openChannel(c.id)}
+                          >
+                            <span className={styles.channelName}>
+                              {c.parentId ? "└ " : "# "}
+                              {c.name}
+                            </span>
+                            <span className={styles.channelMeta}>
+                              {c.agentName
+                                ? `debug · ${c.parentId ? "discuss with " : ""}${c.agentName}`
+                                : `${c.memberCount} member${c.memberCount === 1 ? "" : "s"}${
+                                    c.projectName ? ` · ${c.projectName}` : ""
+                                  }`}
+                            </span>
+                          </button>
+                          <button
+                            className={styles.iconBtn}
+                            title="Delete channel"
+                            onClick={() => deleteChannel(c.id)}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      ),
+                    );
+                  })()
                 )}
               </div>
               <button className={styles.btnGhost} onClick={() => setShowNew(true)}>
                 ＋ New channel
               </button>
+              {view === "channels" && (
+                <button
+                  className={styles.btnGhost}
+                  onClick={() => {
+                    if (!dmOpen) loadAvailableAgents();
+                    setDmOpen((v) => !v);
+                  }}
+                  disabled={dmBusy}
+                >
+                  {dmOpen ? "Close DM" : "＋ New DM"}
+                </button>
+              )}
             </aside>
+
+          {dmOpen && (
+            <div className={styles.dmOverlay} onClick={() => setDmOpen(false)}>
+              <div
+                className={styles.dmPanel}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className={styles.dmHead}>
+                  <span>Start a direct message</span>
+                  <button
+                    className={styles.iconBtn}
+                    onClick={() => setDmOpen(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className={styles.dmBody}>
+                  {availableAgents.length === 0 ? (
+                    <div className={styles.muted}>
+                      No agents available. Add agents to a channel first.
+                    </div>
+                  ) : (
+                    availableAgents.map((a) => (
+                      <button
+                        key={a.name}
+                        className={styles.dmRow}
+                        disabled={dmBusy}
+                        onClick={() => openDirectMessage(a.name)}
+                      >
+                        <span className={styles.dmRowName}>{a.name}</span>
+                        {a.label && (
+                          <span className={styles.muted}>{a.label}</span>
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
             {/* ------------------------------------------------ conversation -- */}
             <section className={styles.conversation}>
@@ -994,9 +1236,12 @@ export default function AgentPage() {
                             <div className={styles.chMsgText}>{jobError}</div>
                           </div>
                         )}
-                        {jobStatus === "running" && (
+                        {jobStatus === "running" && activeJob && (
                           <div className={`${styles.chMsg} ${styles.liveStatus}`}>
-                            <div className={styles.typing}>Agent is working…</div>
+                            <div className={styles.typing}>
+                              {activeJob.agentName} is working… (type + Post to
+                              divert, or Stop)
+                            </div>
                           </div>
                         )}
                       </>
@@ -1060,8 +1305,11 @@ export default function AgentPage() {
                       className={styles.composer}
                       onSubmit={(e) => {
                         e.preventDefault();
-                        if (chMode === "post") postToChannel();
-                        else if (activeJob && jobStatus === "running") interject();
+                        // When an agent is already running, the composer
+                        // diverts (interjects) it rather than posting/starting a
+                        // new turn — that's how you redirect a wrong agent.
+                        if (activeJob && jobStatus === "running") interject();
+                        else if (chMode === "post") postToChannel();
                         else startJob();
                       }}
                     >
@@ -1070,11 +1318,13 @@ export default function AgentPage() {
                         value={chInput}
                         onChange={(e) => setChInput(e.target.value)}
                         placeholder={
-                          chMode === "post"
-                            ? "Post a message to #" +
-                              (detail.slug || detail.name) +
-                              "…"
-                            : "Message the selected agent to run…"
+                          activeJob && jobStatus === "running"
+                            ? "Divert the agent: tell it to change course…"
+                            : chMode === "post"
+                              ? "Post a message to #" +
+                                (detail.slug || detail.name) +
+                                "…"
+                              : "Message the selected agent to run…"
                         }
                         rows={1}
                         disabled={chMode === "post" ? chBusy : false}
@@ -1091,37 +1341,115 @@ export default function AgentPage() {
                                 : !runAgent)
                         }
                       >
-                        {chMode === "post"
-                          ? chBusy
-                            ? "…"
-                            : "Post"
-                          : activeJob && jobStatus === "running"
-                            ? "⏳ Working…"
+                        {activeJob && jobStatus === "running"
+                          ? "↪ Divert"
+                          : chMode === "post"
+                            ? chBusy
+                              ? "…"
+                              : "Post"
                             : "Run"}
                       </button>
+                      {activeJob && jobStatus === "running" && (
+                        <button
+                          type="button"
+                          className={styles.btnDanger}
+                          onClick={stopJob}
+                        >
+                          ■ Stop
+                        </button>
+                      )}
                     </form>
                   </div>
                 </>
               )}
             </section>
 
-            {/* --------------------------------------------- project viewer -- */}
-            <aside className={styles.projectPanel}>
-              <div className={styles.wsBlockTitle}>Project</div>
-              {detail ? (
-                detail.projectTree && isProjDir(detail.projectTree) ? (
-                  <ChannelTree
-                    node={detail.projectTree}
-                    collapsed={collapsed}
-                    onToggle={toggleCollapse}
-                  />
+            {/* --------------------------------------------- right column -- */}
+            <div className={styles.rightCol}>
+              {/* member list above project */}
+              <aside className={styles.memberPanel}>
+                <div className={styles.memberPanelHead}>
+                  <span className={styles.wsBlockTitle}>Members</span>
+                  {memberStatusLoading && (
+                    <span className={styles.mutedSmall}>…</span>
+                  )}
+                </div>
+                {!detail || detail.members.length === 0 ? (
+                  <div className={styles.muted}>No members</div>
                 ) : (
-                  <div className={styles.muted}>No project tree</div>
-                )
-              ) : (
-                <div className={styles.muted}>Select a channel</div>
-              )}
-            </aside>
+                  <div className={styles.memberList}>
+                    {detail.members.map((m) => {
+                      const st = memberStatus.find((s) => s.agentName === m);
+                      const isActive =
+                        st?.status === "running" || m === liveAgent;
+                      const isSel = selMember === m;
+                      return (
+                        <button
+                          key={m}
+                          className={`${styles.memberRow} ${
+                            isSel ? styles.memberRowSel : ""
+                          }`}
+                          onClick={() =>
+                            setSelMember((cur) => (cur === m ? null : m))
+                          }
+                          title="Show debugging status"
+                        >
+                          <span
+                            className={`${styles.memberDot} ${
+                              isActive ? styles.memberDotActive : ""
+                            }`}
+                          />
+                          <span className={styles.memberRowName}>
+                            {m}
+                            {st?.status === "running" && (
+                              <span className={styles.memberRunning}>
+                                running…
+                              </span>
+                            )}
+                          </span>
+                          {st?.status &&
+                            st.status !== "running" && (
+                              <span
+                                className={`${styles.memberBadge} ${
+                                  styles[`memberBadge${st.status}`]
+                                }`}
+                              >
+                                {st.status}
+                              </span>
+                            )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* selected member debugging status */}
+                {selMember && detail && (
+                  <MemberDebug
+                    memberStatus={memberStatus.find(
+                      (s) => s.agentName === selMember,
+                    )}
+                    memberName={selMember}
+                  />
+                )}
+              </aside>
+
+              <aside className={styles.projectPanel}>
+                <div className={styles.wsBlockTitle}>Project</div>
+                {detail ? (
+                  detail.projectTree && isProjDir(detail.projectTree) ? (
+                    <ChannelTree
+                      node={detail.projectTree}
+                      collapsed={collapsed}
+                      onToggle={toggleCollapse}
+                    />
+                  ) : (
+                    <div className={styles.muted}>No project tree</div>
+                  )
+                ) : (
+                  <div className={styles.muted}>Select a channel</div>
+                )}
+              </aside>
+            </div>
           </div>
         </>
       )}
@@ -1256,6 +1584,14 @@ function LiveJobEvents({ events }: { events: ChannelJobEvent[] }) {
             </div>
           );
         }
+        if (ev.type === "stopped") {
+          return (
+            <div key={key} className={`${styles.chMsg} ${styles.liveStopped}`}>
+              <div className={styles.chMsgRole}>[stopped]</div>
+              <div className={styles.chMsgText}>{ev.text}</div>
+            </div>
+          );
+        }
         return (
           <div key={key} className={`${styles.chMsg} ${styles.liveStatus}`}>
             <div className={styles.chMsgRole}>[status]</div>
@@ -1264,6 +1600,160 @@ function LiveJobEvents({ events }: { events: ChannelJobEvent[] }) {
         );
       })}
     </>
+  );
+}
+
+function MemberDebug({
+  memberName,
+  memberStatus,
+}: {
+  memberName: string;
+  memberStatus: MemberStatus | undefined;
+}) {
+  const [open, setOpen] = useState<Record<number, boolean>>({});
+  if (!memberStatus || !memberStatus.hasRun) {
+    return (
+      <div className={styles.memberDebug}>
+        <div className={styles.memberDebugName}>{memberName}</div>
+        <div className={styles.mutedSmall}>
+          No debugging activity yet. Post a message or run an agent to see its
+          live status (tool calls, answer, errors).
+        </div>
+      </div>
+    );
+  }
+  const events = memberStatus.events ?? [];
+  const running = memberStatus.status === "running";
+  // Derive "what it is/was running" from the most recent meaningful events:
+  // the freshest tool_call (name+args) or status text. Computed regardless of
+  // running state so the debug status always shows the agent's activity.
+  let currentActivity: string | null = null;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i];
+    if (ev.type === "tool_call" && ev.name) {
+      currentActivity = `Running tool: ${ev.name}`;
+      break;
+    }
+  }
+  if (!currentActivity) {
+    for (let i = events.length - 1; i >= 0; i--) {
+      const ev = events[i];
+      if (ev.type === "status" && ev.text) {
+        currentActivity = ev.text;
+        break;
+      }
+    }
+  }
+  return (
+    <div className={styles.memberDebug}>
+      <div className={styles.memberDebugName}>{memberName}</div>
+      <div className={styles.memberDebugMeta}>
+        <span
+          className={`${styles.memberDebugStatus} ${
+            styles[`memberBadge${memberStatus.status ?? "null"}`] ??
+            styles.memberBadgenull
+          }`}
+        >
+          {running
+            ? "running…"
+            : memberStatus.status ?? "idle"}
+        </span>
+        {memberStatus.startedAt && (
+          <span className={styles.mutedSmall}>
+            started {new Date(memberStatus.startedAt).toLocaleTimeString()}
+          </span>
+        )}
+        {memberStatus.steps != null && (
+          <span className={styles.mutedSmall}>
+            · {memberStatus.steps} tool call{memberStatus.steps === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+      {currentActivity && (
+        <div className={styles.memberDebugCurrent}>
+          <span className={styles.memberDebugCurrentLabel}>
+            {running ? "⚙ Currently running" : "⚙ Last activity"}
+          </span>
+          <span className={styles.memberDebugCurrentText}>
+            {currentActivity}
+            {running ? <span className={styles.spinner}> ▚</span> : null}
+          </span>
+        </div>
+      )}
+      {memberStatus.error && (
+        <div className={styles.memberDebugError}>{memberStatus.error}</div>
+      )}
+      {memberStatus.answer && (
+        <div className={styles.memberDebugAnswer}>
+          <div className={styles.memberDebugLabel}>Last answer</div>
+          <div>{memberStatus.answer}</div>
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className={styles.memberDebugEvents}>
+          <div className={styles.memberDebugLabel}>
+            Debug trace ({events.length})
+          </div>
+          {events.slice(0, 60).map((ev, i) => (
+            <div key={i} className={styles.memberDebugEvRow}>
+              {ev.type === "tool_call" ? (
+                <button
+                  className={styles.memberDebugEv}
+                  onClick={() => setOpen((o) => ({ ...o, [i]: !o[i] }))}
+                >
+                  <span className={styles.traceCaret}>
+                    {open[i] ? "▾" : "▸"}
+                  </span>
+                  <span className={styles.memberDebugEvType}>🔧</span>
+                  <code>{ev.name}</code>
+                  <span className={styles.traceArgs}>
+                    {ev.arguments != null && ev.arguments.length > 60
+                      ? ev.arguments.slice(0, 60) + "…"
+                      : ev.arguments ?? ""}
+                  </span>
+                </button>
+              ) : (
+                <div className={`${styles.memberDebugEv} ${styles.memberDebugEvText}`}>
+                  <span className={styles.memberDebugEvType}>
+                    {ev.type === "interject"
+                      ? "↩"
+                      : ev.type === "answer"
+                        ? "▣"
+                        : ev.type === "error"
+                          ? "✕"
+                          : ev.type === "stopped"
+                            ? "■"
+                            : "•"}
+                  </span>
+                  <span>{ev.text}</span>
+                </div>
+              )}
+              {open[i] && ev.type === "tool_call" && (
+                <div className={styles.memberDebugEvBody}>
+                  {ev.arguments != null && (
+                    <>
+                      <div className={styles.traceLabel}>args</div>
+                      <pre className={styles.traceCode}>{ev.arguments}</pre>
+                    </>
+                  )}
+                  {ev.result != null && (
+                    <>
+                      <div className={styles.traceLabel}>result</div>
+                      <pre className={styles.traceCode}>{ev.result}</pre>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          {events.length > 60 && (
+            <div className={styles.mutedSmall}>
+              … {events.length - 60} more
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

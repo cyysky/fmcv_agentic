@@ -3,8 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
 import { WorkspaceService } from './workspace.service';
-import { buildWorkspaceTools } from './workspace-tools';
+import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Base agent for FMCC Agentic.
@@ -100,10 +101,11 @@ export class BaseAgentService {
   private readonly logger = new Logger(BaseAgentService.name);
 
   private readonly baseUrl: string;
-  private readonly apiKey: string;
   private readonly defaultModelId: string;
   private readonly llmTimeoutMs: number;
   private readonly workspaces: WorkspaceService;
+  private readonly prisma: PrismaService;
+  private readonly envApiKey: string;
 
   /** In-memory sessions keyed by id (sessions persist for the process only). */
   private readonly sessions = new Map<string, Session>();
@@ -111,14 +113,39 @@ export class BaseAgentService {
   /** Registered tools, keyed by tool name. */
   private readonly tools = new Map<string, BaseTool>();
 
-  constructor(config: ConfigService, workspaces: WorkspaceService) {
+  constructor(
+    config: ConfigService,
+    workspaces: WorkspaceService,
+    prisma: PrismaService,
+  ) {
     this.baseUrl = (config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? '').replace(/\/+$/, '');
-    this.apiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
+    this.envApiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
     this.defaultModelId = config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
     this.llmTimeoutMs = Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
     this.workspaces = workspaces;
+    this.prisma = prisma;
     this.registerTools(buildWorkspaceTools(workspaces));
     this.logger.log(`Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId}`);
+  }
+
+  /**
+   * Resolve the LLM API key: the `AGENT_API_KEY` env var wins if set; otherwise
+   * fall back to the first `connections` row matching this agent's base URL,
+   * read live from the DB. This removes the need to pass the key at deploy
+   * time — the backend reads it wherever it is configured (the DB).
+   */
+  private async apiKey(): Promise<string> {
+    if (this.envApiKey) return this.envApiKey;
+    try {
+      const row = await this.prisma.connection.findFirst({
+        where: { baseUrl: { equals: this.baseUrl, mode: 'insensitive' } },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (row?.apiKey) return row.apiKey;
+    } catch (err) {
+      this.logger.warn(`Could not read API key from DB: ${(err as Error).message}`);
+    }
+    return '';
   }
 
   /* ------------------------------------------------------------------ *
@@ -220,6 +247,7 @@ export class BaseAgentService {
     thread: string;
     message: string;
     model?: string;
+    maxSteps?: number;
     channelPost: (text: string, toolCalls?: unknown[]) => Promise<unknown>;
   }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
@@ -229,6 +257,8 @@ export class BaseAgentService {
       '',
       `You are working in team channel #${opts.channelSlug}.`,
       `The channel owns a project folder named "${opts.channelProjectName}".`,
+      `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
+      `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
       'You can work directly on this channel project folder with the',
       'channel_list / channel_read / channel_write tools, and you can also work',
       'in your own agent folder with the workspace tools. Use channel_post to',
@@ -263,7 +293,10 @@ export class BaseAgentService {
     const baseTools = this.listTools().filter(
       (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
     );
-    const turnTools = [...channelTools, ...baseTools];
+    // Self-scoped equivalents of the workspace tools, bound to THIS agent so
+    // the model never has to pass its own agent name (no more guessing).
+    const selfTools = buildSelfTools(this.workspaces, opts.agentName);
+    const turnTools = [...channelTools, ...selfTools, ...baseTools];
 
     // Run the loop with the restricted tool set. To avoid mutating the global
     // tool registry per request, we run the core loop directly with an injectable
@@ -273,7 +306,11 @@ export class BaseAgentService {
       // Temporarily replace the registry so executeTool resolves channel tools.
       this.tools.clear();
       for (const t of turnTools) this.tools.set(t.name, t);
-      const { answer, steps, trace } = await this.runLoop(messages, spec, 12);
+      const { answer, steps, trace } = await this.runLoop(
+        messages,
+        spec,
+        opts.maxSteps && opts.maxSteps > 0 ? opts.maxSteps : 12,
+      );
       return { answer, steps, trace };
     } finally {
       this.tools.clear();
@@ -298,10 +335,17 @@ export class BaseAgentService {
     thread: string;
     message: string;
     model?: string;
+    maxSteps?: number;
     channelPost: (text: string, toolCalls?: unknown[]) => Promise<unknown>;
+    /** Optional separate callback for the per-tool-call status posts (the
+     *  lightweight "used <tool> on <target>" updates). When provided, these
+     *  go to a different feed (e.g. an agent sub-channel / debug trace) than
+     *  `channel_post` and the final answer. Defaults to `channelPost`. */
+    toolStatusPost?: (text: string, toolCalls?: unknown[]) => Promise<unknown>;
     messages: ChatMessage[];
     onEvent: (event: ChannelTurnStreamEvent) => void;
     interject: () => string[];
+    signal?: AbortSignal;
   }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
 
@@ -310,6 +354,8 @@ export class BaseAgentService {
       '',
       `You are working in team channel #${opts.channelSlug}.`,
       `The channel owns a project folder named "${opts.channelProjectName}".`,
+      `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
+      `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
       'You can work directly on this channel project folder with the',
       'channel_list / channel_read / channel_write tools, and you can also work',
       'in your own agent folder with the workspace tools. Use channel_post to',
@@ -344,7 +390,10 @@ export class BaseAgentService {
     const baseTools = this.listTools().filter(
       (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
     );
-    const turnTools = [...channelTools, ...baseTools];
+    // Self-scoped equivalents of the workspace tools, bound to THIS agent so
+    // the model never has to pass its own agent name (no more guessing).
+    const selfTools = buildSelfTools(this.workspaces, opts.agentName);
+    const turnTools = [...channelTools, ...selfTools, ...baseTools];
 
     const prevTools = new Map(this.tools);
     try {
@@ -352,11 +401,23 @@ export class BaseAgentService {
       this.tools.clear();
       for (const t of turnTools) this.tools.set(t.name, t);
 
-      let steps = 0;
+      let steps = 0; // counts executed tool CALLS (matches the trace length)
       let answer = '';
       const trace: ToolTraceStep[] = [];
+      // Harden against degenerate loops: if this many consecutive rounds of
+      // tool calls return errors, stop instead of burning the whole budget.
+      const MAX_CONSECUTIVE_ERROR_ROUNDS = 3;
+      let consecutiveErrorRounds = 0;
+      const maxIterations = opts.maxSteps && opts.maxSteps > 0 ? opts.maxSteps : 12;
 
-      for (; steps < 12; steps++) {
+      for (let iter = 0; iter < maxIterations && !opts.signal?.aborted; iter++) {
+        // 0. Bail immediately if a stop was requested (e.g. the user pressed
+        //    Stop or Divert while the previous step was running).
+        if (opts.signal?.aborted) {
+          answer = answer || '[stopped]';
+          break;
+        }
+
         // 1. Drain the mailbox: any queued interjections land in context now.
         const interjections = opts.interject();
         for (const text of interjections) {
@@ -367,14 +428,19 @@ export class BaseAgentService {
         // 2. Call the model with the (possibly interjected-upon) messages.
         let completion;
         try {
-          completion = await this.callModel(messages, spec);
+          completion = await this.callModel(messages, spec, opts.signal);
         } catch (err) {
+          // If the aborted call was due to a stop request, end the turn quietly.
+          if (opts.signal?.aborted) {
+            answer = answer || '[stopped]';
+            break;
+          }
           const fb = fallbackFor(spec);
           if (!fb) throw err;
           this.logger.warn(
             `Primary model ${spec.id} failed (${(err as Error).message}); falling back to ${fb.id}`,
           );
-          completion = await this.callModel(messages, fb);
+          completion = await this.callModel(messages, fb, opts.signal);
         }
 
         if (completion.tool_calls && completion.tool_calls.length > 0) {
@@ -387,9 +453,21 @@ export class BaseAgentService {
               function: { name: tc.name, arguments: tc.arguments },
             })),
           });
+          let roundErrors = 0;
+          const roundCalls = completion.tool_calls.length;
           // 3. Execute each tool call, stream it, and post a short feed update.
           for (const call of completion.tool_calls) {
             const result = await this.executeTool(call);
+            // Count a round as "failed" if every call in it errored.
+            let isError = false;
+            try {
+              const parsed = JSON.parse(result);
+              isError = !!parsed?.error;
+            } catch {
+              /* non-JSON result counts as success */
+            }
+            if (isError) roundErrors++;
+            steps += 1; // each executed tool call is one step
             trace.push({
               type: 'tool_call',
               name: call.name,
@@ -409,9 +487,28 @@ export class BaseAgentService {
               result,
               step: steps,
             });
-            await opts.channelPost(this.shortToolText(call.name, call.arguments), [
-              { name: call.name, arguments: call.arguments, result },
-            ]);
+            await (opts.toolStatusPost ?? opts.channelPost)(
+              this.shortToolText(call.name, call.arguments),
+              [
+                { name: call.name, arguments: call.arguments, result },
+              ],
+            );
+          }
+          if (roundErrors === roundCalls && roundCalls > 0) {
+            consecutiveErrorRounds++;
+          } else {
+            consecutiveErrorRounds = 0;
+          }
+          if (consecutiveErrorRounds >= MAX_CONSECUTIVE_ERROR_ROUNDS) {
+            answer =
+              answer ||
+              '[stopped] Repeated tool errors — the agent could not make progress.';
+            opts.onEvent({
+              type: 'answer',
+              text: answer,
+              step: steps,
+            });
+            break;
           }
           continue; // loop again so the model sees tool results
         }
@@ -538,6 +635,7 @@ export class BaseAgentService {
   private async callModel(
     messages: ChatMessage[],
     spec: ModelSpec,
+    signal?: AbortSignal,
   ): Promise<{ content: string | null; tool_calls?: ToolCallRequest[] }> {
     const body: Record<string, unknown> = {
       model: spec.provider_model,
@@ -552,15 +650,22 @@ export class BaseAgentService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.llmTimeoutMs);
 
+    // Combine the internal timeout with an optional external stop signal so a
+    // caller (e.g. the channel-job stop endpoint) can abort an in-flight call.
+    const combinedSignal = signal
+      ? AbortSignal.any([controller.signal, signal])
+      : controller.signal;
+
     try {
+      const key = await this.apiKey();
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          ...(this.apiKey ? { authorization: `Bearer ${this.apiKey}` } : {}),
+          ...(key ? { authorization: `Bearer ${key}` } : {}),
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: combinedSignal,
       });
 
       if (!response.ok) {

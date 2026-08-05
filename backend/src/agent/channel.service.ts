@@ -16,6 +16,8 @@ export interface ChannelSummary {
   slug: string;
   name: string;
   projectName: string;
+  parentId: string | null;
+  agentName: string | null;
   memberCount: number;
   createdAt: string;
 }
@@ -101,6 +103,62 @@ export class ChannelService {
     return this.get(channel.id);
   }
 
+  /** Create (or return the existing) sub-channel for an agent in a channel.
+   *  Sub-channels host the agent's debug trace + user↔agent discussion, so the
+   *  main channel feed stays clean (final message only). Named
+   *  `{agentName}` under a parent channel (the UI shows the parent name for
+   *  context). Idempotent per (parentId, agentName). */
+  async ensureSubChannel(
+    parentId: string,
+    agentName: string,
+  ): Promise<ChannelDetail> {
+    const parent = await this.prisma.channel.findUnique({ where: { id: parentId } });
+    if (!parent) throw new NotFoundException(`Channel ${parentId} not found`);
+
+    // If this channel is already a sub-channel (has a parent), it IS the debug
+    // channel — don't nest. This prevents an auto-reply inside a sub-channel
+    // from creating a sub-sub-channel.
+    if (parent.parentId) return this.get(parent.id);
+
+    const existing = await this.prisma.channel.findFirst({
+      where: { parentId, agentName },
+    });
+    if (existing) return this.get(existing.id);
+
+    const slug = `${parent.slug}-${agentName.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}`;
+    const channel = await this.prisma.channel.create({
+      data: {
+        slug,
+        name: `${agentName}`,
+        projectName: parent.projectName,
+        parentId,
+        agentName,
+      },
+    });
+
+    // The sub-channel shares the parent's project folder; give it the parent
+    // members so the agent (and humans) can be addressed there. Copy parent
+    // members into the sub-channel.
+    const parentMembers = await this.prisma.channelMember.findMany({
+      where: { channelId: parentId },
+    });
+    await this.prisma.channelMember.createMany({
+      data: parentMembers.map((m) => ({
+        channelId: channel.id,
+        agentName: m.agentName,
+      })),
+      skipDuplicates: true,
+    });
+
+    await this.postMessage(
+      channel.id,
+      'system',
+      'system',
+      `Debug trace channel for ${agentName} in #${parent.slug}.`,
+    );
+    return this.get(channel.id);
+  }
+
   async list(): Promise<ChannelSummary[]> {
     const channels = await this.prisma.channel.findMany({
       orderBy: { createdAt: 'asc' },
@@ -111,6 +169,8 @@ export class ChannelService {
       slug: c.slug,
       name: c.name,
       projectName: c.projectName,
+      parentId: c.parentId,
+      agentName: c.agentName,
       memberCount: c._count.members,
       createdAt: c.createdAt.toISOString(),
     }));
@@ -132,6 +192,8 @@ export class ChannelService {
       slug: channel.slug,
       name: channel.name,
       projectName: channel.projectName,
+      parentId: channel.parentId,
+      agentName: channel.agentName,
       memberCount: channel.members.length,
       createdAt: channel.createdAt.toISOString(),
       members: channel.members.map((m) => m.agentName),
@@ -281,14 +343,38 @@ export class ChannelService {
   }
 
   /**
+   * Pick the agent that should auto-reply to a human post: the @mentioned
+   * member if any, else the first member. Returns null when the channel has
+   * no agent members, so callers can skip auto-reply.
+   */
+  async resolveReplyAgent(channelId: string, text: string): Promise<string | null> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+      include: { members: true },
+    });
+    if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
+    const members = channel.members.map((m) => m.agentName);
+    if (members.length === 0) return null;
+    for (const m of members) {
+      if (new RegExp(`@${m}\\b`, 'i').test(text)) return m;
+    }
+    return members[0];
+  }
+
+  /**
    * Shared setup for a channel turn: validate the agent is a member, persist
    * the human request, and build the thread context. Used by the blocking
    * `runTurn` and the streaming job layer.
+   *
+   * Pass `persistHuman: false` when the human message was already written to
+   * the feed by the caller (e.g. the auto-reply path in postMessage), to
+   * avoid duplicating it.
    */
   async prepareChannelTurn(input: {
     channelId: string;
     agentName: string;
     message: string;
+    persistHuman?: boolean;
   }): Promise<{
     channel: { slug: string; projectName: string };
     thread: string;
@@ -309,8 +395,10 @@ export class ChannelService {
       );
     }
 
-    // Persist the human request first.
-    await this.postMessage(input.channelId, 'user', input.agentName, input.message);
+    // Persist the human request unless the caller already did.
+    if (input.persistHuman !== false) {
+      await this.postMessage(input.channelId, 'user', input.agentName, input.message);
+    }
 
     const recent = await this.prisma.channelMessage.findMany({
       where: { channelId: input.channelId },

@@ -150,6 +150,12 @@ export class ChannelMessageDto {
   @IsOptional()
   @IsString()
   author?: string;
+
+  /** Ignored by the backend (always stored as 'user' for human posts), but
+   *  whitelisted so the frontend payload is accepted under ValidationPipe. */
+  @IsOptional()
+  @IsIn(['user', 'agent', 'system'])
+  role?: string;
 }
 
 /** Ask a channel-members agent to work in the channel. */
@@ -180,6 +186,12 @@ export class CreateChannelJobDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  maxSteps?: number;
 }
 
 /** Interject user text into a running channel job. */

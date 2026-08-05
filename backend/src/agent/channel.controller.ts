@@ -77,22 +77,64 @@ export class ChannelController {
     return this.channels.removeMember(id, agentName);
   }
 
+  /**
+   * Per-member debugging status for a channel: for each member (agent) return
+   * their most recent job summary (status + event stream) so the UI can show a
+   * member's debugging detail even when no job is actively running.
+   */
+  @Get(':id/member-status')
+  async memberStatus(@Param('id') id: string) {
+    const channel = await this.channels.get(id);
+    return channel.members.map((agentName) => {
+      const job = this.jobs.statusFor(id, agentName);
+      return {
+        agentName,
+        hasRun: !!job,
+        status: job?.status ?? null,
+        answer: job?.answer ?? null,
+        steps: job?.steps ?? null,
+        error: job?.error ?? null,
+        events: job?.events ?? [],
+        startedAt: job?.startedAt ?? null,
+      };
+    });
+  }
+
   @Get(':id/messages')
   listMessages(@Param('id') id: string) {
     return this.channels.listMessages(id);
   }
 
   @Post(':id/messages')
-  postMessage(
+  async postMessage(
     @Param('id') id: string,
     @Body() dto: ChannelMessageDto,
   ) {
-    return this.channels.postMessage(
+    const msg = await this.channels.postMessage(
       id,
       'user',
       dto.author ?? 'human',
       dto.text,
     );
+
+    // Auto-reply: pick the target agent (@mention wins, else first member) and
+    // start a streaming agent job so posting a message in a channel elicits a
+    // live agent response with observation + divert. Returns jobId so the UI
+    // can poll the run. A `system` post (e.g. "joined") doesn't trigger runs.
+    if (dto.role !== 'system') {
+      const agentName = await this.channels.resolveReplyAgent(id, dto.text);
+      if (agentName) {
+        const job = this.jobs.create({
+          channelId: id,
+          agentName,
+          message: dto.text,
+          persistHuman: false, // already persisted above
+        });
+        return { msg, jobId: job.id, status: job.status, agentName };
+      }
+    }
+
+    return { msg };
   }
 
   @Post(':id/turn')
@@ -116,6 +158,7 @@ export class ChannelController {
       agentName: dto.agentName,
       message: dto.message,
       model: dto.model,
+      maxSteps: dto.maxSteps,
     });
     return { jobId: job.id, status: job.status };
   }
@@ -144,5 +187,14 @@ export class ChannelController {
   ) {
     this.jobs.interject(jobId, id, dto.text);
     return { ok: true };
+  }
+
+  @Post(':id/jobs/:jobId/stop')
+  stop(
+    @Param('id') id: string,
+    @Param('jobId') jobId: string,
+  ) {
+    this.jobs.stop(jobId, id);
+    return { ok: true, status: 'stopped' };
   }
 }
