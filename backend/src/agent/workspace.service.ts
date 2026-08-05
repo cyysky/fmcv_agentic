@@ -76,11 +76,14 @@ export class WorkspaceService {
     return name;
   }
 
-  /** Reject unknown named agents. */
+  /** Reject unknown named agents. The error lists the valid names so a
+   *  calling model can recover on the first miss instead of guessing. */
   assertAgentName(name: string): void {
     this.sanitizeName(name);
     if (!NAMED_AGENTS.some((a) => a.name === name)) {
-      throw new BadRequestException(`Unknown agent: ${name}`);
+      throw new BadRequestException(
+        `Unknown agent: ${name}. Valid named agents: ${NAMED_AGENTS.map((a) => a.name).join(', ')}`,
+      );
     }
   }
 

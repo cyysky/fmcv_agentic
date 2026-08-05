@@ -133,7 +133,9 @@ export function buildSelfTools(
 export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
   /** Recursive JSON tree of an agent's own folder or a public project. */
   const listWorkspace: BaseTool['run'] = async (args) => {
-    const agent = argString(args, 'agent');
+    // `agent` is only needed for agent-folder listings; public-project
+    // listings (path "projects/...") work without it.
+    const agent = typeof args.agent === 'string' ? args.agent : '';
     let relPath = argOptionalString(args, 'path');
     const normalized = relPath.replace(/^\/+/, '');
 
@@ -145,6 +147,7 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
       return ws.readTree(target);
     }
 
+    if (!agent) throw new Error('agent must be a non-empty string');
     ws.assertAgentName(agent);
     const root = ws.getAgentRoot(agent);
     const target = await ws.safeResolve(root, relPath || '.');
@@ -203,14 +206,19 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
       parameters: {
         type: 'object',
         properties: {
-          agent: { type: 'string', description: 'Named agent id (e.g. coder, researcher).' },
+          agent: {
+            type: 'string',
+            description:
+              'Named agent id (e.g. coder, researcher) — required only when ' +
+              'path does NOT start with "projects/".',
+          },
           path: {
             type: 'string',
             description:
               'Relative path inside the agent folder, or "projects/<name>" to list a public project.',
           },
         },
-        required: ['agent', 'path'],
+        required: [],
       },
       run: listWorkspace,
     },
