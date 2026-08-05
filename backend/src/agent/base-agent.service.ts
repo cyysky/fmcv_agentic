@@ -49,6 +49,14 @@ export interface ToolCallRequest {
   arguments: string;
 }
 
+/** One tool invocation recorded for the turn trace shown in the UI. */
+export interface ToolTraceStep {
+  type: 'tool_call';
+  name: string;
+  arguments: string;
+  result: string;
+}
+
 /** OpenAI-compatible tool call shape for assistant messages on the wire. */
 export interface ApiToolCall {
   id: string;
@@ -162,6 +170,7 @@ export class BaseAgentService {
     answer: string;
     model: string;
     steps: number;
+    trace?: ToolTraceStep[];
   }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
     const messages: ChatMessage[] = [
@@ -169,8 +178,8 @@ export class BaseAgentService {
       ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
       { role: 'user', content: opts.message },
     ];
-    const { answer, steps } = await this.runLoop(messages, spec, opts.maxSteps ?? 10);
-    return { answer, model: spec.id, steps };
+    const { answer, steps, trace } = await this.runLoop(messages, spec, opts.maxSteps ?? 10);
+    return { answer, model: spec.id, steps, trace };
   }
 
   /** Append a user message to a session, run the loop, return the final text. */
@@ -198,9 +207,10 @@ export class BaseAgentService {
     messages: ChatMessage[],
     spec: ModelSpec,
     maxSteps: number,
-  ): Promise<{ answer: string; steps: number; messages: ChatMessage[] }> {
+  ): Promise<{ answer: string; steps: number; messages: ChatMessage[]; trace: ToolTraceStep[] }> {
     let steps = 0;
     let lastAnswer = '';
+    const trace: ToolTraceStep[] = [];
 
     for (; steps < maxSteps; steps++) {
       let completion;
@@ -231,6 +241,12 @@ export class BaseAgentService {
         });
         for (const call of completion.tool_calls) {
           const result = await this.executeTool(call);
+          trace.push({
+            type: 'tool_call',
+            name: call.name,
+            arguments: call.arguments,
+            result,
+          });
           messages.push({
             role: 'tool',
             tool_call_id: call.id,
@@ -247,7 +263,7 @@ export class BaseAgentService {
       break;
     }
 
-    return { answer: lastAnswer, steps, messages };
+    return { answer: lastAnswer, steps, messages, trace };
   }
 
   /* ------------------------------------------------------------------ *

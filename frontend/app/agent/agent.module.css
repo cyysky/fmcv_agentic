@@ -193,3 +193,188 @@
 .muted {
   color: #9ca3af;
 }
+
+/* ------------------------------ workspace ------------------------------- */
+
+.workspace {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.wsRow {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.wsBlock {
+  flex: 1;
+  min-width: 200px;
+}
+
+.wsBlockTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin-bottom: 0.5rem;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #111827;
+  padding: 0.2rem 0;
+  text-align: left;
+}
+
+.treeItem:hover {
+  color: #2563eb;
+}
+
+.treeCaret {
+  display: inline-block;
+  width: 1rem;
+  color: #9ca3af;
+  font-size: 0.8rem;
+}
+
+.treeNested {
+  margin-left: 1.1rem;
+  border-left: 1px solid #e5e7eb;
+  padding-left: 0.5rem;
+}
+
+.treeList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.treeLeaf {
+  font-size: 0.85rem;
+  padding: 0.1rem 0;
+  color: #374151;
+  word-break: break-all;
+}
+
+.treeFolder {
+  color: #0f766e;
+}
+
+.treeFile {
+  color: #374151;
+}
+
+.wsError {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: #fde8e8;
+  color: #b91c1c;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+/* -------------------------------- trace -------------------------------- */
+
+.trace {
+  margin-top: 0.7rem;
+  border-top: 1px dashed #e5e7eb;
+  padding-top: 0.6rem;
+}
+
+.traceHeader {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin-bottom: 0.4rem;
+}
+
+.traceStep {
+  margin-bottom: 0.35rem;
+}
+
+.traceTool {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.82rem;
+  color: #111827;
+  cursor: pointer;
+  text-align: left;
+}
+
+.traceTool:hover {
+  border-color: #2563eb;
+}
+
+.traceCaret {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+.traceArgs {
+  color: #6b7280;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.traceBody {
+  margin-top: 0.4rem;
+  padding: 0.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.traceLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.traceLabel:first-child {
+  margin-top: 0;
+}
+
+.traceCode {
+  margin: 0;
+  font-size: 0.78rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+}
