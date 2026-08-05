@@ -235,7 +235,6 @@ export class ChannelJobService {
       signal: job.abort.signal,
     });
 
-    job.status = 'done';
     job.answer = result.answer;
     job.steps = result.steps;
     job.finishedAt = new Date().toISOString();
@@ -243,12 +242,14 @@ export class ChannelJobService {
     // Persist the agent's final answer into the main channel feed (unless we
     // stopped). The final answer is the ONLY thing guaranteed to land in the
     // main channel from a run — the per-tool debug trace lives in the
-    // sub-channel.
+    // sub-channel. When a stop was requested, `stop()` already emitted the
+    // single 'stopped' event and set the status, so the run only mirrors that
+    // status here without emitting a duplicate.
     if (!job.abort.signal.aborted) {
+      job.status = 'done';
       await channelPost(result.answer, result.trace);
     } else {
       job.status = 'stopped';
-      await this.emit(job, { type: 'stopped', text: 'Agent run stopped.' });
     }
   }
 
