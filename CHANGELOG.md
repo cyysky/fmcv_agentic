@@ -1,3 +1,15 @@
+## Round 2026-08-06 — Round 8 · autonomous iteration round 6
+
+### Changed
+- Browser E2E prune check no longer needs docker: it verifies channel project
+  folders are gone through the backend's `GET /api/agent/workspaces` snapshot
+  (still a hard failure when a `browser-e2e-*` folder survives).
+- Browser E2E tab cleanup stops echoing the non-fatal CDP
+  `Target is closing` text as a warning (`/json/close` returns plain text, not
+  JSON); only real close failures log now. End-of-run output is clean.
+- README refresh (browser E2E description reflects the docker-free prune
+  check + clean tab close).
+
 ## Round 2026-08-06 — Round 7 · autonomous iteration round 5
 
 ### Added

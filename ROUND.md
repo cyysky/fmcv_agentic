@@ -1,57 +1,44 @@
-# ROUND 5 — 2026-08-06 (autonomous iteration round 5)
+# ROUND 6 — 2026-08-06 (autonomous iteration round 6)
 
 ## What changed this round
 
-- **Optional bearer-token gate** — the backend accepts a new `API_TOKEN` env
-  var: when set, every request must carry `Authorization: Bearer <token>`
-  (constant-time compare, else `401 Unauthorized`); when empty/unset the API
-  is fully open (fail-open local dev, browser E2E unaffected).
-- **Frontend token forwarding** — new `frontend/lib/api.ts` (`apiFetch`)
-  reads `NEXT_PUBLIC_API_URL`/`NEXT_PUBLIC_API_TOKEN` and adds the bearer
-  header when configured; the agent and settings clients now use it.
-- **Compose/Docker wiring** — `docker-compose.yml` + frontend `Dockerfile`
-  plumb `API_TOKEN` and `NEXT_PUBLIC_API_TOKEN` through with empty defaults.
-- **E2E harness fix (suite-count bug)** — `bootstrapApp` moved from
-  `app.e2e-spec.ts` into a shared `test/test-app.ts`. Importing it from the
-  other four suites used to re-register app's 5 tests inside every importing
-  suite, silently inflating totals (4 suites → 46, 5 suites → 54). Counts now
-  equal the declared tests exactly.
-- **New coverage** — `ApiTokenGuard` unit specs (3) + `auth.e2e-spec.ts`
-  (reject anonymous/wrong-token with 401, accept correct token for reads and
-  mutations).
+- **Docker-free project prune check** — `projectFolderPruneCheck` in
+  `e2e/browser-e2e.mjs` now reads the backend's `GET /api/agent/workspaces`
+  snapshot of the on-disk `projects/` directory instead of running
+  `docker exec fmcv-backend ...`. The harness no longer needs the docker CLI
+  or the container name; it still hard-fails when a `browser-e2e-*` project
+  folder survives channel deletion.
+- **Silenced CDP tab-close noise** — `/json/close` returns the plain-text
+  body `Target is closing` (200), which `httpJson` mis-parsed as JSON and
+  logged as a non-fatal `warn` for every tab. `closeCreatedTabs` now fetches
+  the close endpoint directly and only warns on real failures (non-2xx or
+  network error). The end-of-run output is clean.
 
 ## Test status
 
-- Unit: **45 passed / 8 suites** (was 42/7; +3 guard specs).
+- Unit: **45 passed / 8 suites** (unchanged from Round 5).
 - API E2E: **34 passed / 5 suites** — app 5, connections 4, agent 10,
-  channels 12, auth 3; each matches the source `it()` count (verified file by
-  file after the harness fix).
+  channels 12, auth 3 (unchanged, per-file verified).
 - Frontend: `tsc --noEmit` clean, `eslint` clean.
 - Backend: `npm run build` clean.
-- Browser E2E (real Chrome over CDP, live model): `/`, `/settings`, `/agent`
-  route checks plus the channel journey and the sessions journey all green
-  with zero console/network errors; `e2e/report.json` + screenshots refreshed.
-- Live API-token proof (docker, `API_TOKEN` set to a throwaway dev-only literal):
-  `/api/agent/models` → 401 without header, 401 with a wrong bearer, 200 with
-  the correct bearer. Rebuilt without the var → 200 without header (fail-open).
-  Containers were left in the fail-open state.
+- Browser E2E (real Chrome over CDP, live model): 3 route checks + channel
+  journey + sessions journey all green, **zero warnings** (`Target is
+  closing` gone), zero console/network errors, and the prune check now passes
+  through the workspace API (`ok: true`, no `browser-e2e-*` leftovers).
+  `e2e/report.json` + screenshots refreshed.
 
 ## Known issues / open tickets
 
-1. **E2E harness portability** — `projectPrune` still needs `docker` (skipped
-   cleanly when absent); the CDP tab-close still logs a non-fatal
-   `Target is closing` warning at the end of every browser run.
-2. **Session naming** — new sessions are titled "New session"; there is no
+1. **Session naming** — new sessions are titled "New session"; there is no
    rename affordance yet (cosmetic).
-3. **Deployment hardening (by design)** — `NEXT_PUBLIC_API_TOKEN` is baked
+2. **Deployment hardening (by design)** — `NEXT_PUBLIC_API_TOKEN` is baked
    into browser JS, so it is not a secret; it only gates the deployed API
    against casual anonymous use. Real user auth/rate limiting is still a
    pre-deployment item.
 
 ## Next round focus (ordered by value)
 
-1. E2E harness portability: drop the docker dependency for the prune check and
-   silence the non-fatal CDP `Target is closing` tab-close warnings.
-2. Session naming: rename sessions from the UI/sidebar and refresh titles.
-3. Looping audit: once 1–2 land, re-run the exit audit (empty next focus /
+1. Session naming: allow renaming a session and refresh titles in the UI and
+   sidebar.
+2. Looping audit: once 1 lands, re-run the exit audit (empty next focus /
    degenerate guard) before opening anything new.

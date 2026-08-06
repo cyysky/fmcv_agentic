@@ -122,9 +122,12 @@ cd e2e && node browser-e2e.mjs
   history-survives → delete. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
-  failures. Per-step timeouts + a global watchdog bound the run and all
-  created tabs are closed even on failure. Artifacts land in
-  `e2e/screenshots/` and `e2e/report.json`.
+  failures. The channel-delete step also proves the channel project folder is
+  pruned server-side via the workspace API (no docker dependency), and tab
+  cleanup no longer logs the non-fatal CDP `Target is closing` text as a
+  warning. Per-step timeouts + a global watchdog bound the run and all created
+  tabs are closed even on failure. Artifacts land in `e2e/screenshots/` and
+  `e2e/report.json`.
 
 ## Progress (from git history)
 
