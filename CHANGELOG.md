@@ -1,3 +1,18 @@
+## Round 2026-08-06 — Round 5 · autonomous iteration round 3
+
+### Added
+- `AGENT_LLM_STUB=1` deterministic offline mode: `BaseAgentService.callModel`
+  short-circuits to a stable `[stub] <last user message>` answer (no gateway,
+  no API key).
+
+### Changed
+- API E2E is now hermetic: `e2e-setup.ts` defaults the stub on, so converse /
+  channel suites run without the external model gateway (~9s → ~2.8s); browser
+  E2E still exercises the live model.
+- Unit + API E2E coverage for stub determinism (unit 41 → 42; API E2E 45 → 46).
+- README: new "Agent environment" section (`AGENT_BASE_URL`,
+  `AGENT_DEFAULT_MODEL`, `AGENT_API_KEY`, `AGENT_LLM_STUB`).
+
 ## Round 2026-08-06 — Round 4 · autonomous iteration round 2
 
 ### Added
