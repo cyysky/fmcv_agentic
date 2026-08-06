@@ -272,6 +272,26 @@ export default function FilesPanel() {
     }
   };
 
+  const downloadEntry = async (entry: FileEntry) => {
+    const target = joinPath(path, entry.name);
+    try {
+      const res = await apiFetch(`/files/download?${query({ scope, path: target })}`);
+      if (!res.ok) throw new Error(await apiError(res));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = entry.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setNotice(`Downloaded ${target}`);
+    } catch (e) {
+      setError(errText(e));
+    }
+  };
+
   const deleteEntry = async (entry: FileEntry) => {
     const target = joinPath(path, entry.name);
     setError(null);
@@ -517,6 +537,14 @@ export default function FilesPanel() {
                 >
                   View
                 </button>
+                {entry.type === "file" && (
+                  <button
+                    className={styles.btnGhost}
+                    onClick={() => downloadEntry(entry)}
+                  >
+                    Download
+                  </button>
+                )}
                 {!readOnly && (
                   <>
                     <button
@@ -544,6 +572,14 @@ export default function FilesPanel() {
           <div className={styles.panelTitle}>
             <span className={styles.viewerName}>{viewer.entry.name}</span>
             <span className={styles.panelActions}>
+              {viewer.entry.type === "file" && (
+                <button
+                  className={styles.btnGhost}
+                  onClick={() => downloadEntry(viewer.entry)}
+                >
+                  Download
+                </button>
+              )}
               {!readOnly && (
                 <button className={styles.btnGhost} onClick={editViewerFile}>
                   Edit
