@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
@@ -6,6 +6,7 @@ import { WorkspaceService } from './workspace.service';
 import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 /**
  * Base agent for FMCC Agentic.
@@ -97,7 +98,7 @@ You have access to a set of tools. Reason about the user's request, call the
 right tools when they help, and give a clear, correct final answer. Be concise.`;
 
 @Injectable()
-export class BaseAgentService {
+export class BaseAgentService implements OnModuleInit {
   private readonly logger = new Logger(BaseAgentService.name);
 
   private readonly baseUrl: string;
@@ -182,6 +183,7 @@ export class BaseAgentService {
       messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }],
     };
     this.sessions.set(session.id, session);
+    this.safePersistSession(session);
     return session;
   }
 
@@ -198,9 +200,67 @@ export class BaseAgentService {
   deleteSession(id: string): { deleted: boolean } {
     const ok = this.sessions.delete(id);
     if (!ok) throw new NotFoundException(`Session ${id} not found`);
+    // The row is removed after the in-memory map, best effort (a session may
+    // have existed only in memory).
+    void this.prisma.agentSession
+      .delete({ where: { id } })
+      .catch(() => undefined);
     return { deleted: true };
   }
 
+
+  /** Best-effort write of a session row to Postgres; a DB failure must never
+   *  break the in-memory session flow, so it is logged and swallowed. */
+  private safePersistSession(session: Session): void {
+    void this.prisma.agentSession
+      .upsert({
+        where: { id: session.id },
+        create: {
+          id: session.id,
+          title: session.title,
+          model: session.model,
+          messages: session.messages as unknown as Prisma.InputJsonValue,
+          createdAt: new Date(session.createdAt),
+        },
+        update: {
+          title: session.title,
+          model: session.model,
+          messages: session.messages as unknown as Prisma.InputJsonValue,
+        },
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Could not persist session ${session.id}: ${(err as Error).message}`,
+        );
+      });
+  }
+
+  /** Reload persisted sessions after a restart so `/api/agent/sessions`
+   *  and GET-by-id keep working (in-memory wins for live sessions). */
+  async onModuleInit(): Promise<void> {
+    try {
+      const rows = await this.prisma.agentSession.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      for (const row of rows) {
+        if (this.sessions.has(row.id)) continue;
+        this.sessions.set(row.id, {
+          id: row.id,
+          title: row.title,
+          model: row.model,
+          createdAt: row.createdAt.toISOString(),
+          messages: (row.messages as unknown as ChatMessage[]) ?? [],
+        });
+      }
+      if (rows.length > 0) {
+        this.logger.log(`Recovered ${rows.length} persisted session(s)`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Could not recover sessions on startup: ${(err as Error).message}`,
+      );
+    }
+  }
   /* ------------------------------------------------------------------ *
    * Public turn entry points
    * ------------------------------------------------------------------ */
@@ -231,6 +291,7 @@ export class BaseAgentService {
     const maxRunSteps = maxSteps && maxSteps > 0 ? maxSteps : 10;
     const { answer, steps, messages } = await this.runLoop(session.messages, spec, maxRunSteps);
     session.messages = messages;
+    this.safePersistSession(session);
     return { answer, steps };
   }
 

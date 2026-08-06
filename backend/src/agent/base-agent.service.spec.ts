@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BaseAgentService, ChatMessage } from './base-agent.service';
+import { BaseAgentService, ChatMessage, DEFAULT_SYSTEM_PROMPT } from './base-agent.service';
 import { WorkspaceService } from './workspace.service';
 import type { ToolCallRequest } from './base-agent.service';
 
@@ -18,8 +18,15 @@ function configMock(root: string) {
 }
 
 function prismaDouble() {
+  const agentSession = {
+    upsert: jest.fn(async () => ({ id: 's' })),
+    findMany: jest.fn(async () => []),
+    findUnique: jest.fn(async () => null),
+    delete: jest.fn(async () => ({ id: 's' })),
+  };
   return {
     connection: { findFirst: jest.fn(async () => null) },
+    agentSession,
   } as never;
 }
 
@@ -32,6 +39,43 @@ async function makeAgent() {
 }
 
 describe('BaseAgentService sessions', () => {
+
+  it('persists sessions to Postgres and recovers them on startup', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-sess-'));
+    try {
+      const fake = prismaDouble() as unknown as { agentSession: { upsert: jest.Mock; findMany: jest.Mock; delete: jest.Mock } };
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+
+      const s = agent.createSession('persist me');
+      // create + converse would both persist; here create alone does an upsert.
+      expect(fake.agentSession.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ create: expect.objectContaining({ id: s.id, title: 'persist me' }) }),
+      );
+
+      // Simulate a restart: memory is cleared, startup reloads from DB.
+      const row = {
+        id: s.id,
+        title: 'persist me',
+        model: 'ds4-flash',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        messages: [
+          { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+          { role: 'user', content: 'hi' },
+        ],
+      };
+      fake.agentSession.findMany.mockResolvedValue([row]);
+      const fresh = new BaseAgentService(configMock(root), ws, fake as never);
+      await fresh.onModuleInit();
+      expect(fresh.getSession(s.id).messages.map((m) => m.role)).toEqual(['system', 'user']);
+
+      fresh.deleteSession(s.id);
+      expect(fake.agentSession.delete).toHaveBeenCalledWith({ where: { id: s.id } });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it('creates sessions with the default model and resolves unknown models', async () => {
     const { agent, root } = await makeAgent();
     try {

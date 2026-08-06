@@ -95,3 +95,19 @@ model ChannelRun {
   @@index([channelId, agentName, createdAt])
   @@map("channel_runs")
 }
+
+/**
+ * Persisted agent chat sessions (BaseAgentService). Messages are stored as
+ * JSON; the row is written on create and every conversation turn, so chat
+ * history survives backend restarts. Mirrors the ChannelRun restart pattern.
+ */
+model AgentSession {
+  id        String    @id
+  title     String
+  model     String
+  messages  Json
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("agent_sessions")
+}

@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { bootstrapApp } from './app.e2e-spec';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Agent API (e2e, real Postgres + workspace)', () => {
   let app: INestApplication<App>;
@@ -33,6 +34,23 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(created.body.model).toBe('ds4-flash');
     const list = await http().get('/api/agent/sessions').expect(200);
     expect(list.body.map((s: { id: string }) => s.id)).toContain(sessionId);
+  });
+
+  it('persists conversation history to Postgres (restart resilience)', async () => {
+    const prisma = app.get(PrismaService);
+    const rowBefore = await prisma.agentSession.findUnique({ where: { id: sessionId } });
+    expect(rowBefore).not.toBeNull();
+    expect(rowBefore!.messages).toBeDefined();
+
+    // Real converse: messages make it into the DB row after the turn.
+    const res = await http()
+      .post(`/api/agent/sessions/${sessionId}/converse`)
+      .send({ message: 'remember this turn for me', maxSteps: 2 })
+      .ok((r) => r.status === 201 || r.status === 200);
+    expect([200, 201]).toContain(res.status);
+    const row = await prisma.agentSession.findUnique({ where: { id: sessionId } });
+    const texts = JSON.parse(JSON.stringify(row!.messages)) as Array<{ role: string; content: string | null }>;
+    expect(texts.some((m) => m.role === 'user' && m.content === 'remember this turn for me')).toBe(true);
   });
 
   it('converse validates maxSteps and unknown props without calling the LLM', async () => {
@@ -92,8 +110,10 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
   it('deletes a session', async () => {
     const del = await http().delete(`/api/agent/sessions/${sessionId}`).expect(200);
     expect(del.body).toEqual({ deleted: true });
+    const prisma = app.get(PrismaService);
+    expect(await prisma.agentSession.findUnique({ where: { id: sessionId } })).toBeNull();
     sessionId = '';
-    await http().get(`/api/agent/sessions/${del.body.id || '00000000-0000-0000-0000-000000000001'}`).expect(404);
+    await http().get(`/api/agent/sessions/00000000-0000-0000-0000-000000000001`).expect(404);
   });
 
   it('manages workspace projects and agent folders', async () => {
