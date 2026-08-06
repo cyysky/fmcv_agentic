@@ -65,10 +65,17 @@ export class ChannelController {
   @Delete(':id')
   async remove(@Param('id') id: string) {
     // Stop any running agent jobs for the channel tree before the rows go
-    // away, so workers never keep running against a deleted channel.
+    // away, so workers never keep running against a deleted channel. The
+    // begin/end guards reject NEW jobs while delete is in progress, closing
+    // the window between stopForChannel() and row removal.
     const ids = await this.channels.deletionCandidates(id);
-    this.jobs.stopForChannel(ids);
-    return this.channels.remove(id);
+    this.jobs.beginChannelDelete(ids);
+    try {
+      this.jobs.stopForChannel(ids);
+      return await this.channels.remove(id);
+    } finally {
+      this.jobs.endChannelDelete(ids);
+    }
   }
 
   @Post(':id/members')
@@ -89,19 +96,24 @@ export class ChannelController {
   @Get(':id/member-status')
   async memberStatus(@Param('id') id: string) {
     const channel = await this.channels.get(id);
-    return channel.members.map((agentName) => {
-      const job = this.jobs.statusFor(id, agentName);
-      return {
-        agentName,
-        hasRun: !!job,
-        status: job?.status ?? null,
-        answer: job?.answer ?? null,
-        steps: job?.steps ?? null,
-        error: job?.error ?? null,
-        events: job?.events ?? [],
-        startedAt: job?.startedAt ?? null,
-      };
-    });
+    return Promise.all(
+      channel.members.map(async (agentName) => {
+        // In-memory job first (live runs); persisted history after restart.
+        const job =
+          this.jobs.statusFor(id, agentName) ??
+          (await this.jobs.latestFor(id, agentName));
+        return {
+          agentName,
+          hasRun: !!job,
+          status: job?.status ?? null,
+          answer: job?.answer ?? null,
+          steps: job?.steps ?? null,
+          error: job?.error ?? null,
+          events: job?.events ?? [],
+          startedAt: job?.startedAt ?? null,
+        };
+      }),
+    );
   }
 
   @Get(':id/messages')
@@ -168,9 +180,9 @@ export class ChannelController {
   }
 
   @Get(':id/jobs/:jobId')
-  getJob(@Param('id') id: string, @Param('jobId') jobId: string) {
-    const job = this.jobs.get(jobId);
-    if (job.channelId !== id) {
+  async getJob(@Param('id') id: string, @Param('jobId') jobId: string) {
+    const job = await this.jobs.snapshot(jobId);
+    if (!job || job.channelId !== id) {
       throw new NotFoundException(`Job ${jobId} not found in channel ${id}`);
     }
     return {
