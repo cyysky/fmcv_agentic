@@ -77,6 +77,29 @@ describe('BaseAgentService sessions', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+  it('renames a session, persists the new title, and rejects blank input', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-rename-'));
+    try {
+      const fake = prismaDouble() as unknown as { agentSession: { upsert: jest.Mock } };
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+
+      const s = agent.createSession('old title');
+      const renamed = agent.renameSession(s.id, '  new title  ');
+      expect(renamed.title).toBe('new title');
+      expect(agent.getSession(s.id).title).toBe('new title');
+      expect(fake.agentSession.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: s.id },
+          update: expect.objectContaining({ title: 'new title' }),
+        }),
+      );
+      expect(() => agent.renameSession(s.id, '   ')).toThrow(/blank/);
+      expect(() => agent.renameSession('00000000-0000-4000-8000-000000000000', 'x')).toThrow();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it('creates sessions with the default model and resolves unknown models', async () => {
     const { agent, root } = await makeAgent();
     try {

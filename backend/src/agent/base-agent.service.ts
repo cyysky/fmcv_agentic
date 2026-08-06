@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
@@ -201,6 +201,17 @@ export class BaseAgentService implements OnModuleInit {
 
   listSessions(): Session[] {
     return [...this.sessions.values()];
+  }
+
+  renameSession(id: string, title: string): Session {
+    const clean = title.trim();
+    if (!clean) {
+      throw new BadRequestException('Session title must not be blank');
+    }
+    const session = this.getSession(id);
+    session.title = clean;
+    this.safePersistSession(session);
+    return session;
   }
 
   deleteSession(id: string): { deleted: boolean } {

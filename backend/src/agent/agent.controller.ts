@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
 } from '@nestjs/common';
 import { BaseAgentService } from './base-agent.service';
@@ -15,6 +16,7 @@ import {
   CreateSessionDto,
   CreateWorkspaceAgentDto,
   CreateWorkspaceProjectDto,
+  RenameSessionDto,
   RunTurnDto,
 } from './agent.dto';
 
@@ -71,6 +73,11 @@ export class AgentController {
   @Post('sessions/:id/converse')
   converse(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ConverseDto) {
     return this.agent.converse(id, dto.message, dto.model, dto.maxSteps);
+  }
+
+  @Patch('sessions/:id')
+  renameSession(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RenameSessionDto) {
+    return this.agent.renameSession(id, dto.title);
   }
 
   @Delete('sessions/:id')

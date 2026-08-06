@@ -118,6 +118,31 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(res.body.message).toContain('not found');
   });
 
+  it('renames a session and persists the new title', async () => {
+    const created = await http()
+      .post('/api/agent/sessions')
+      .send({ title: 'before rename' })
+      .expect(201);
+    const id = created.body.id;
+    try {
+      const renamed = await http()
+        .patch(`/api/agent/sessions/${id}`)
+        .send({ title: '  after rename  ' })
+        .expect(200);
+      expect(renamed.body.title).toBe('after rename');
+
+      const fetched = await http().get(`/api/agent/sessions/${id}`).expect(200);
+      expect(fetched.body.title).toBe('after rename');
+
+      await http().patch(`/api/agent/sessions/${id}`).send({ title: '   ' }).expect(400);
+      await http().patch(`/api/agent/sessions/${id}`).send({}).expect(400);
+
+      const other = '00000000-0000-4000-8000-000000000000';
+      await http().patch(`/api/agent/sessions/${other}`).send({ title: 'x' }).expect(404);
+    } finally {
+      await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+    }
+  });
   it('deletes a session', async () => {
     const del = await http().delete(`/api/agent/sessions/${sessionId}`).expect(200);
     expect(del.body).toEqual({ deleted: true });

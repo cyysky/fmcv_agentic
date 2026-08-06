@@ -8,6 +8,7 @@ import {
   Matches,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -79,6 +80,14 @@ export class ConverseDto {
   @Min(1)
   @Max(20)
   maxSteps?: number;
+}
+
+/** Rename an existing session (trimmed server-side; blank rejected). */
+export class RenameSessionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(120)
+  title: string;
 }
 
 /** Manually build a conversation for the stateless turn. */

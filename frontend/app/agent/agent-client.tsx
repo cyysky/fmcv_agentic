@@ -170,6 +170,8 @@ export default function AgentPage() {
   const [sessionInput, setSessionInput] = useState("");
   const [sessionBusy, setSessionBusy] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [draftSessionTitle, setDraftSessionTitle] = useState("");
   const [creatingSession, setCreatingSession] = useState(false);
 
   // channels view state
@@ -838,6 +840,38 @@ export default function AgentPage() {
     [selSessionId],
   );
 
+  const startSessionRename = useCallback((s: AgentSessionSummary) => {
+    setEditingSessionId(s.id);
+    setDraftSessionTitle(s.title && s.title !== "New session" ? s.title : "");
+  }, []);
+
+  const commitSessionRename = useCallback(
+    async (id: string) => {
+      const title = draftSessionTitle.trim();
+      const current = sessions.find((s) => s.id === id)?.title;
+      if (!title || title === current) {
+        setEditingSessionId(null);
+        return;
+      }
+      setSessionsError(null);
+      try {
+        const res = await apiFetch(`/agent/sessions/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+        if (!res.ok) throw new Error(`Failed to rename session (HTTP ${res.status})`);
+        setEditingSessionId(null);
+        setDraftSessionTitle("");
+        setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
+      } catch (e) {
+        setSessionsError(e instanceof Error ? e.message : "Failed to rename session");
+        setEditingSessionId(id);
+      }
+    },
+    [draftSessionTitle, sessions],
+  );
+
   const sendSession = useCallback(async () => {
     const text = sessionInput.trim();
     if (!text || sessionBusy || !selSessionId) return;
@@ -1184,12 +1218,50 @@ export default function AgentPage() {
                         className={styles.sessionOpen}
                         onClick={() => void openSession(s.id)}
                       >
-                        <span className={styles.sessionTitle}>
-                          {s.title || "Untitled"}
-                        </span>
+                        {editingSessionId === s.id ? (
+                          <span
+                            className={styles.sessionTitle}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              className={styles.sessionRenameInput}
+                              value={draftSessionTitle}
+                              autoFocus
+                              aria-label="Session title"
+                              onChange={(e) => setDraftSessionTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void commitSessionRename(s.id);
+                                } else if (e.key === "Escape") {
+                                  setEditingSessionId(null);
+                                }
+                              }}
+                              onBlur={() => {
+                                if (draftSessionTitle.trim() && draftSessionTitle.trim() !== (s.title || "")) {
+                                  void commitSessionRename(s.id);
+                                } else {
+                                  setEditingSessionId(null);
+                                }
+                              }}
+                            />
+                          </span>
+                        ) : (
+                          <span className={styles.sessionTitle}>
+                            {s.title || "Untitled"}
+                          </span>
+                        )}
                         <span className={styles.sessionMeta}>
                           {new Date(s.createdAt).toLocaleString()}
                         </span>
+                      </button>
+                      <button
+                        className={styles.sessionRenameBtn}
+                        title="Rename session"
+                        aria-label={`Rename session ${s.title || "Untitled"}`}
+                        onClick={() => startSessionRename(s)}
+                      >
+                        ✎
                       </button>
                       <button
                         className={styles.sessionDelete}
