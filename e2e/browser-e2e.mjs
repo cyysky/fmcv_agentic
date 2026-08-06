@@ -22,6 +22,9 @@
 //      back, delete both through the UI and verify server-side removal
 //   8. Global nav: active-route state per page + nav links drive real
 //      client-side navigation between all four routes
+//   9. Dark mode: all four routes re-probed with prefers-color-scheme: dark
+//      (Emulation.setEmulatedMedia), asserting dark surfaces actually apply
+//      and the pages still render without console/network errors
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -178,6 +181,9 @@ const rowBtnExpr = (name, text) => `(() => {
 /** Build a page expression that calls document.querySelector safely. */
 const selExpr = (selector) => `document.querySelector(${JSON.stringify(selector)})`;
 
+/** Dark-mode assertions shared by every route probe. */
+const bodyBgDark = `["rgb(0, 0, 0)", "rgb(10, 10, 10)"].includes(getComputedStyle(document.body).backgroundColor)`;
+
 /** Global-nav assertions shared by every route probe. */
 const navChecks = {
   present: `!!${selExpr('nav[aria-label="Main"]')}`,
@@ -265,6 +271,11 @@ async function probeRoute(route) {
   const { tab, c } = await setupPage(route.url);
   try {
     wireErrorCapture(c, sink);
+    if (route.emulate === "dark") {
+      await c.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-color-scheme", value: "dark" }],
+      });
+    }
     await c.send("Page.navigate", { url: route.url });
     const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, `${route.route} ready`);
     if (!ready) throw new Error(`${route.route}: page never reached readyState complete`);
@@ -291,6 +302,11 @@ async function probeRoute(route) {
     }
     if (route.jsChecks) {
       for (const [name, expr] of Object.entries(route.jsChecks)) {
+        checks[name] = Boolean(await evalJs(c, expr));
+      }
+    }
+    if (route.darkChecks) {
+      for (const [name, expr] of Object.entries(route.darkChecks)) {
         checks[name] = Boolean(await evalJs(c, expr));
       }
     }
@@ -1077,6 +1093,54 @@ async function main() {
         navLinks: navChecks.links,
         activeFiles: navActive("/files"),
         scopeSelect: "!!document.querySelector('select[aria-label=\"Scope\"]')",
+      },
+    },
+    {
+      route: "home-dark",
+      url: `${APP}/`,
+      emulate: "dark",
+      title: "FMCV Agentic",
+      waitText: "Open Agent",
+      bodyText: { title: "FMCV Agentic" },
+      darkChecks: { bodyDark: bodyBgDark },
+    },
+    {
+      route: "settings-dark",
+      url: `${APP}/settings`,
+      emulate: "dark",
+      title: "Settings - FMCV Agentic",
+      waitText: "Connections (",
+      bodyText: { title: "Settings", connections: "Connections (" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        cardDark: `getComputedStyle(document.querySelector('form[class*="card"]')).backgroundColor === "rgb(17, 24, 39)"`,
+        inputDark: `getComputedStyle(document.querySelector('form[class*="card"] input')).backgroundColor === "rgb(31, 41, 55)"`,
+      },
+    },
+    {
+      route: "agent-dark",
+      url: `${APP}/agent`,
+      emulate: "dark",
+      title: "Agent - FMCV Agentic",
+      waitText: "Channels",
+      bodyText: { title: "Agent", channelsTab: "Channels" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        modelSelectDark: `getComputedStyle(document.querySelector('[class*="modelSelect"]')).backgroundColor === "rgb(17, 24, 39)"`,
+        inputDark: `getComputedStyle(document.querySelector('textarea')).backgroundColor === "rgb(31, 41, 55)"`,
+      },
+    },
+    {
+      route: "files-dark",
+      url: `${APP}/files`,
+      emulate: "dark",
+      title: "Files - FMCV Agentic",
+      waitText: "New file",
+      bodyText: { title: "Files", newFile: "New file", refresh: "Refresh" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        selectDark: `getComputedStyle(document.querySelector('select[aria-label="Scope"]')).backgroundColor === "rgb(17, 24, 39)"`,
+        primaryStaysBlue: `getComputedStyle(document.querySelector('button[class*="btnPrimary"]')).backgroundColor === "rgb(37, 99, 235)"`,
       },
     },
   ];
