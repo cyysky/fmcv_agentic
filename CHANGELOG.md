@@ -1,3 +1,28 @@
+## Round 2026-08-06 — Round 17 · autonomous iteration round 15
+
+### Added
+- File downloads: `GET /api/files/download?scope=&path=` streams the target
+  as `application/octet-stream` with an `attachment` filename (quotes /
+  CR / LF stripped) and `Content-Length` — binary-safe and without the
+  100 KB viewer cap; directories, empty paths, and path escapes are
+  rejected.
+- Files page Download buttons: one per file row and one in the viewer panel
+  (the viewer one also works in read-only project scopes); clicking starts a
+  browser save and shows a dismissible "Downloaded …" success notice.
+- Test coverage: `FilesService.download()` unit tests (resolve returns
+  metadata, directory/empty-path 400s, missing file 404), files API E2E
+  additions (text download headers/body, binary download byte-for-byte,
+  directory/escape 400), and the CDP browser E2E journey now clicks the row
+  Download, asserts the wire headers, saves the file to disk via
+  `Browser.setDownloadBehavior`, and compares the bytes.
+
+### Changed
+- Counts: unit 62/10, API E2E 47/7; frontend `tsc --noEmit` + `eslint` clean
+  (`next build` clean in Docker); backend `nest build` clean; browser E2E all
+  green (exit 0, zero console/network errors) including the saved-to-disk
+  download check and the 360px mobile probes; `files-download.png`
+  screenshot and `e2e/report.json` refreshed.
+
 ## Round 2026-08-06 — Round 16 · autonomous iteration round 14
 
 ### Added

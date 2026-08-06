@@ -46,11 +46,12 @@ and coordinate multi-agent teams in Slack-style channels.
   tools plus connection-credentials lookup.
 - **File manager (`/files`)** — human-facing browser over the same
   workspace: pick an agent (read/write) or public project (read-only) scope,
-  navigate one level at a time with a breadcrumb, view file contents, create
+  navigate one level at a time with a breadcrumb, view or download file
+  contents (downloads are binary-safe and bypass the viewer cap), create
   files/folders, edit, and delete files or empty folders. Dotfiles are shown,
   path escapes are rejected by the API, the create/edit panel submits from the
-  name field (Enter), and every create/save/delete action shows a dismissible
-  success notice.
+  name field (Enter), and every create/save/download/delete action shows a
+  dismissible success notice.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -94,6 +95,7 @@ check):
 |--------|---------------------------------------|---------------------------------------|
 | GET    | `/api/files/list?scope=&path=`        | one-level directory listing (dirs first) |
 | GET    | `/api/files/read?scope=&path=`        | read a text file (100 KB viewer cap)  |
+| GET    | `/api/files/download?scope=&path=`    | stream a file as an attachment (binary-safe, no cap) |
 | PUT    | `/api/files/write?scope=&path=`       | write a file (parents created)        |
 | POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
 | DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
@@ -134,20 +136,23 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 59 tests / 10 suites** — model catalog, workspace service + tools,
+- **Unit: 62 tests / 10 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, and the file manager service
-  (list/read/write/mkdir/delete, directory-first ordering, `..`/absolute/
-  symlink escapes rejected, project scopes read-only, 100 KB read cap).
-- **API E2E: 44 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
+  (list/read/download/write/mkdir/delete, directory-first ordering,
+  `..`/absolute/symlink escapes rejected, project scopes read-only, 100 KB
+  read cap, download resolver rejects directories / empty paths / missing
+  files).
+- **API E2E: 47 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD (4), agent
   sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
-  (12), files manager (6: CRUD round-trip, directory-first ordering, empty-dir
+  (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
   delete + file delete, path-escape 400, project-scope 403, scope
-  validation), the API token gate (3), and throttling (2: over-limit 429 then
-  window recovery). Deleting a channel stops its running
+  validation, text download headers/body, binary download byte-for-byte,
+  directory/escape download 400), the API token gate (3), and throttling
+  (2: over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
   (verified per file).
@@ -167,8 +172,10 @@ cd e2e && node browser-e2e.mjs
   sidebar → rename via the UI → page reload → reopen →
   history-and-new-title-survive → delete, and a files journey that creates a
   nested file + dotfile through the `/files` UI, reads the content back,
+  downloads the created file (asserts the attachment headers on the wire and
+  saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
   deletes both through the UI, confirms the removal server-side via the
-  files API, and asserts the success notice after each create/delete. The sessions step waits for the CDP navigation
+  files API, and asserts the success notice after each create/download/delete. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is

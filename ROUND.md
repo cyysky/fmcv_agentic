@@ -1,51 +1,46 @@
-# ROUND 14 — 2026-08-06 (autonomous iteration round 14)
+# ROUND 15 — 2026-08-06 (autonomous iteration round 15)
 
-User instruction: **improve UI/UX** — mobile/responsive polish across every
-page, verified through device-emulated browser probes.
+User instruction: **add download button for files** — a per-file download
+action with a binary-safe backend endpoint, verified through browser E2E.
 
 ## What changed this round
 
-- **Site nav on small screens** — at ≤640px the nav gutters, gaps, and link
-  padding compact; at ≤380px the brand shortens to "FMCV" so all five nav
-  links fit a 320px-wide viewport (previously the Settings link was clipped
-  off-screen).
-- **Agent page** — `.container` now shrinks to the viewport (`min-width: 0`),
-  header action rows (Chat/Sessions/Channels/Workspace/model/Clear) wrap, and
-  the composer with the Send button stays fully on-screen at 320px (previously
-  a 657px-wide row pushed the content off-center and clipped Send).
-- **Settings page** — container, field rows, action rows, and connection-list
-  items wrap at small widths so no control extends past the viewport.
-- **Files page** — container shrink, header scope select/refresh wrap, and
-  file rows switch to a three-column grid (icon, ellipsized name, actions)
-  with size/mtime hidden on phones; long names truncate instead of wrapping
-  or overflowing.
-- **Home page** — dark mode now renders the landing card as a `#111827`
-  surface with a border (previously an invisible black-on-black panel); CTA
-  rows wrap and the layout compacts on narrow screens.
-- **Browser E2E** — new mobile probes for all four routes at 360×640
-  (`Emulation.setDeviceMetricsOverride`): no horizontal overflow, nav links
-  fit, agent composer visible, files rows use the responsive grid; the home
-  dark probe now also asserts the card color. New `*-mobile.png` screenshots;
-  report refreshed.
+- **Backend download endpoint** — `GET /api/files/download?scope=&path=`
+  streams the target as `application/octet-stream` with an
+  `attachment; filename="…"` header (quotes / CR / LF stripped) and
+  `Content-Length`, bypassing the 100 KB viewer cap so binaries download
+  intact. Directories and empty paths get a 400, missing targets 404, and
+  every path still passes through the workspace anti-traversal check.
+- **Files UI Download buttons** — each file row gets a Download action and
+  the viewer panel gets one too (so read-only project scopes can
+  download); a click starts the browser save and shows a dismissible
+  "Downloaded …" success notice.
+- **Verification** — `FilesService.download()` unit tests (resolve returns
+  metadata; directory / empty-path / missing-file rejections), files API E2E
+  additions (text download headers + body, byte-for-byte binary download,
+  directory/escape 400), and the CDP browser journey now clicks the row
+  Download, asserts `application/octet-stream` + attachment headers on the
+  wire, saves the file to disk via `Browser.setDownloadBehavior`, and
+  compares the bytes. Frontend + backend containers rebuilt; the updated
+  endpoint/buttons are live.
 
 ## Test status
 
-- Unit: **59 passed / 10 suites**.
-- API E2E: **44 passed / 7 suites**.
+- Unit: **62 passed / 10 suites**.
+- API E2E: **47 passed / 7 suites**.
 - Backend build: `nest build` clean.
 - Frontend: `tsc --noEmit` + `eslint` clean (`next build` clean in Docker).
-- Browser E2E: all green, exit 0 — zero console/network errors on every
-  probe (light, dark, mobile) and all live flows; mobile + dark checks pass.
+- Browser E2E: all green, exit 0 — saved-to-disk download verified, zero
+  console/network errors on every probe (light, dark, mobile) and all live
+  flows.
 
 ## Known issues / open tickets
 
-- None. 320px is the verified floor; real phones below that (rare legacy
-  devices) would need a hamburger menu, which is not worth the complexity for
-  this tool. No TODO/FIXME/XXX/HACK markers introduced; worktree clean end of
+- None. No TODO/FIXME/XXX/HACK markers introduced; worktree clean end of
   round.
 
 ## Next round focus
 
-- (empty) — mobile polish shipped with green suites and accurate docs; no open
-  tickets and no obviously valuable follow-up without a new user instruction.
-  Loop closed per exit condition C.
+- (empty) — the download feature shipped with green suites and accurate docs;
+  no open tickets and no obviously valuable follow-up without a new user
+  instruction. Loop closed per exit condition C.
