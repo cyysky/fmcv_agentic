@@ -1,3 +1,26 @@
+## Round 2026-08-06 — Round 14 · autonomous iteration round 12
+
+### Added
+- Global navigation: sticky top bar on every page (brand + Home/Agent/Files/
+  Settings) with active-route highlighting (`aria-current="page"`), rendered
+  from the root layout; page heights adjusted so each route accounts for the
+  nav (no content underlap or extra scroll).
+- Files page UX: the create/edit panel is now a real `<form>` so Enter in the
+  name field submits, Create/Save are submit actions with Cancel explicitly a
+  non-submit button, and create/save/delete render a dismissible success
+  notice (`Created …`, `Saved …`, `Deleted …`) that clears on navigation or
+  errors.
+- Browser E2E: nav assertions on every route probe (nav present, four links,
+  correct active link), a full nav journey that clicks each link and verifies
+  URL + title + active state, and files-journey assertions that the success
+  notice appears after create and delete.
+
+### Changed
+- Counts unchanged (unit 59/10, API E2E 44/7); frontend `tsc --noEmit` +
+  `eslint` clean; backend `nest build` clean; browser E2E all green (exit 0,
+  zero console/network errors) including the new nav journey; refreshed
+  screenshots, new `nav-journey.png`, and updated `e2e/report.json`.
+
 ## Round 2026-08-06 — Round 13 · autonomous iteration round 11
 
 ### Added

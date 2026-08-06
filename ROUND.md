@@ -1,46 +1,47 @@
-# ROUND 11 — 2026-08-06 (autonomous iteration round 11)
+# ROUND 12 — 2026-08-06 (autonomous iteration round 12)
 
-User instruction: build a **file manager** for the agent workspace.
+User instruction: **improve UI/UX** — global navigation plus files-page
+polish, verified through the browser E2E suite.
 
 ## What changed this round
 
-- **File manager API** (`backend/src/files/`) — one-level directory listing,
-  text read (100 KB cap), write (recursive parent mkdir), mkdir, and delete
-  (files or empty directories) over `agent:<name>` (read/write) and
-  `project:<name>` (read-only, writes 403) scopes. Every path is resolved
-  through `WorkspaceService.safeResolve`, so `..`, absolute, and symlink
-  escapes are rejected (400). Wired into `app.module.ts`; unit + API E2E
-  suites added.
-- **File manager UI** (`frontend/app/files/`) — `/files` page with a
-  scrollable agent/project scope picker, breadcrumb navigation, size + mtime
-  columns, view/edit, create file/folder, delete, dotfile rendering,
-  read-only badge for project scopes, error banner, empty state and refresh.
-  Linked from the home page (`Open Files`).
-- **Browser E2E** (`e2e/browser-e2e.mjs`) — new files journey: creates a
-  nested file + a dotfile through the UI (`agent:coder`), verifies the root
-  listing shows both, reads the content back, deletes file + folder + dotfile
-  through the UI, and confirms the removal server-side via the files API.
-  `/files` added to the route probes (title `Files - FMCV Agentic`, scope
-  picker present).
+- **Global navigation** (`frontend/app/components/site-nav.tsx`) — sticky top
+  bar rendered by the root layout with the FMCV brand and Home/Agent/Files/
+  Settings links; the current route is highlighted via `aria-current="page"`
+  (client-side through `usePathname`, server-rendered by Next). Home keeps
+  its quick-launch CTAs.
+- **Page-height fixes** — page containers now subtract `--site-nav-height`
+  (`56px`) from `100dvh` so the sticky nav adds no underlap/scroll offset on
+  home, files, settings, or agent.
+- **Files page UX** (`frontend/app/files/files-client.tsx`) — the create/edit
+  panel is a real `<form>`: Enter in the name field submits, Create/Save are
+  submit actions, Cancel is explicitly non-submit. Create, save, and delete
+  now render a dismissible success notice (`Created …`, `Saved …`, `Deleted
+  …`), cleared on navigation, new drafts, or errors.
+- **Browser E2E** (`e2e/browser-e2e.mjs`) — every route probe now asserts the
+  nav (present, four links, right active link); a new nav journey clicks each
+  link and verifies the URL, document title, and active state; the files
+  journey asserts the success notice after each create and delete. New
+  `e2e/screenshots/nav-journey.png`; report/screenshots refreshed.
 
 ## Test status
 
-- Unit: **59 passed / 10 suites** (adds files.service.spec, 7 tests).
-- API E2E: **44 passed / 7 suites** (adds files.e2e-spec, 6 tests).
+- Unit: **59 passed / 10 suites**.
+- API E2E: **44 passed / 7 suites**.
 - Backend build: `nest build` clean.
-- Frontend: `tsc --noEmit` + `eslint` clean.
+- Frontend: `tsc --noEmit` + `eslint` clean (`next build` clean in Docker).
 - Browser E2E: all green, exit 0 — zero console/network errors on `/`,
-  `/settings`, `/agent`, `/files`; files journey verified end-to-end and
-  server-side cleanup confirmed (screenshots + report committed).
+  `/settings`, `/agent`, `/files`; nav journey, agent channel, sessions, and
+  files journeys all verified (success notices included), server-side
+  cleanup confirmed.
 
 ## Known issues / open tickets
 
 - None. No TODO/FIXME/XXX/HACK markers introduced; worktree clean end of
-  round. (Real user auth remains an optional deployment decision from Round
-  10, deliberately out of scope for the local-first tool.)
+  round.
 
 ## Next round focus
 
-- (empty) — file manager shipped backend + frontend + E2E with green suites
-  and accurate docs; no open tickets and no obviously valuable improvement
-  without a new user instruction. Loop closed per exit condition C.
+- (empty) — UI/UX improvement shipped with green suites and accurate docs; no
+  open tickets and no obviously valuable follow-up without a new user
+  instruction. Loop closed per exit condition C.

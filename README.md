@@ -23,6 +23,9 @@ and coordinate multi-agent teams in Slack-style channels.
 
 ## Features
 
+- **Global navigation** — sticky top bar on every page (`/`, `/agent`,
+  `/files`, `/settings`) with active-route highlighting and client-side
+  transitions; the home page keeps its quick-launch CTAs.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
   connections, optional key).
@@ -37,8 +40,10 @@ and coordinate multi-agent teams in Slack-style channels.
 - **File manager (`/files`)** — human-facing browser over the same
   workspace: pick an agent (read/write) or public project (read-only) scope,
   navigate one level at a time with a breadcrumb, view file contents, create
-  files/folders, edit, and delete files or empty folders. Dotfiles are shown
-  and path escapes are rejected by the API.
+  files/folders, edit, and delete files or empty folders. Dotfiles are shown,
+  path escapes are rejected by the API, the create/edit panel submits from the
+  name field (Enter), and every create/save/delete action shows a dismissible
+  success notice.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -142,13 +147,15 @@ cd e2e && node browser-e2e.mjs
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent`, `/files` render their content and document titles with no
-  console/network errors, then drives live journeys: a channel create → post →
+  console/network errors, asserts the global nav on each route (links present,
+  correct active link) and drives a nav journey that clicks through every route
+  verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the
   sidebar → rename via the UI → page reload → reopen →
   history-and-new-title-survive → delete, and a files journey that creates a
   nested file + dotfile through the `/files` UI, reads the content back,
-  deletes both through the UI, and confirms the removal server-side via the
-  files API. The sessions step waits for the CDP navigation
+  deletes both through the UI, confirms the removal server-side via the
+  files API, and asserts the success notice after each create/delete. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
