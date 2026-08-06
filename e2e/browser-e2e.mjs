@@ -542,6 +542,46 @@ async function agentSessionsFlow() {
     flow.timings.elapsedMs = Date.now() - started;
     log(`  sessions reply rendered in ${flow.timings.elapsedMs}ms (user text seen: ${flow.answerSeen})`);
 
+    // 2b. Rename the session from the sidebar; the new title must survive the
+    //     reload below just like the message history.
+    const renameTitle = `Renamed ${Date.now().toString(36)}`;
+    const renameClicked = await evalJs(c, `(() => {
+      const btn = [...document.querySelectorAll("button")].find((b) =>
+        (b.getAttribute("aria-label") || "").startsWith("Rename session"));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+    if (!renameClicked) throw new Error("sessions flow: rename affordance missing");
+    const renameInput = await waitFor(
+      c,
+      `!!document.querySelector('input[aria-label="Session title"]')`,
+      15000,
+      400,
+      "rename input",
+    );
+    if (!renameInput) throw new Error("sessions flow: rename input never appeared");
+    const typed = await evalJs(c, `(() => {
+      const input = document.querySelector('input[aria-label="Session title"]');
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      setter.call(input, ${JSON.stringify(renameTitle)});
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+    if (!typed) throw new Error("sessions flow: rename input not editable");
+    const titleShown = await waitFor(
+      c,
+      `[...document.querySelectorAll('[class*="sessionTitle"]')].some((el) => el.textContent.trim() === ${JSON.stringify(renameTitle)})`,
+      15000,
+      400,
+      "renamed title in sidebar",
+    );
+    if (!titleShown) throw new Error("sessions flow: renamed title not rendered in sidebar");
+    flow.renamedTitle = renameTitle;
+    flow.steps.push("renamed-session");
+    log(`  session renamed to "${renameTitle}"`);
+
     // 3. Reload the page; the session should be persisted in the sidebar and
     //    its history should re-render when reopened. Guard every stage:
     //    navigation start -> fresh document ready -> React hydration marker.
@@ -604,7 +644,6 @@ async function agentSessionsFlow() {
       throw new Error(`sessions flow: no persisted session listed after reload; snapshot=${snap}`);
     }
     flow.steps.push("reload-list");
-        flow.steps.push("reload-list");
     await evalJs(c, `(() => {
       const b = document.querySelector('[class*="sessionItem"] button[class*="sessionOpen"]');
       if (!b) return false;
@@ -621,9 +660,20 @@ async function agentSessionsFlow() {
     flow.historySeen = !!history;
     if (!history) throw new Error("sessions flow: persisted history not rendered after reload");
     flow.steps.push("history-rendered");
+    // The renamed title must also have survived the reload (proves the rename
+    // was persisted server-side, not just painted locally).
+    const renamedAfterReload = await waitFor(
+      c,
+      `[...document.querySelectorAll('[class*="sessionTitle"]')].some((el) => el.textContent.trim() === ${JSON.stringify(renameTitle)})`,
+      15000,
+      500,
+      "renamed title after reload",
+    );
+    flow.titleAfterReload = !!renamedAfterReload;
+    if (!renamedAfterReload) throw new Error("sessions flow: renamed title lost after reload");
     await delay(400);
     await screenshot(c, "agent-sessions-reload.png");
-    flow.result = { persisted: true };
+    flow.result = { persisted: true, renamed: true };
     return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
   } finally {
     c.close();
