@@ -24,8 +24,12 @@ and coordinate multi-agent teams in Slack-style channels.
 ## Features
 
 - **Global navigation** — sticky top bar on every page (`/`, `/agent`,
-  `/files`, `/settings`) with active-route highlighting and client-side
-  transitions; the home page keeps its quick-launch CTAs.
+  `/files`, `/settings`) with active-route highlighting, keyboard
+  focus-visible outlines, and client-side transitions; the home page keeps
+  its quick-launch CTAs.
+- **Dark mode** — settings, agent, and files add `@media
+  (prefers-color-scheme: dark)` palettes (panels, inputs, bubbles, viewers,
+  channel UI) that follow the OS theme with no toggle needed.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
   connections, optional key).
@@ -148,7 +152,10 @@ cd e2e && node browser-e2e.mjs
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent`, `/files` render their content and document titles with no
   console/network errors, asserts the global nav on each route (links present,
-  correct active link) and drives a nav journey that clicks through every route
+  correct active link), re-runs `/settings`, `/agent`, and `/files` with CDP
+  `prefers-color-scheme: dark` emulation and asserts the dark computed styles
+  (card/input/select backgrounds, primary button still blue, body background),
+  and drives a nav journey that clicks through every route
   verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the
   sidebar → rename via the UI → page reload → reopen →

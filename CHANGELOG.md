@@ -1,3 +1,25 @@
+## Round 2026-08-06 — Round 15 · autonomous iteration round 13
+
+### Added
+- Dark-mode support via `@media (prefers-color-scheme: dark)` on the settings
+  page (cards, inputs, buttons, banners), the agent page (chat bubbles,
+  composer, workspace/tree, trace, channel sidebar/conversation/feed, member
+  chips, session rows), and the files page (panels, list, breadcrumb, scope
+  select, inputs, viewers, badges); the site nav gains keyboard
+  focus-visible outlines.
+- Browser E2E dark probes: CDP `Emulation.setEmulatedMedia` with
+  `prefers-color-scheme: dark` re-checks `/settings`, `/agent`, and `/files`
+  (computed card/input/select backgrounds, primary button stays blue, body
+  background), plus dark screenshots (`home-dark`, `settings-dark`,
+  `agent-dark`, `files-dark`).
+
+### Changed
+- Counts unchanged (unit 59/10, API E2E 44/7); frontend `tsc --noEmit` +
+  `eslint` clean (`next build` clean in Docker); backend `nest build` clean;
+  browser E2E all green (exit 0, zero console/network errors) including the
+  four dark probes; screenshots and `e2e/report.json` refreshed.
+
+
 ## Round 2026-08-06 — Round 14 · autonomous iteration round 12
 
 ### Added
