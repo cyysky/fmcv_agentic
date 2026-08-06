@@ -341,3 +341,114 @@ span.rowName {
   background: #fde8e8;
   border-color: #fecaca;
 }
+
+/* ------------------------------ dark mode ------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  .subtitle {
+    color: #9ca3af;
+  }
+
+  .select {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .btnGhost {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .btnGhost:hover {
+    background: #1f2937;
+  }
+
+  .errorBanner {
+    background: #2b0f0f;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+
+  .successBanner {
+    background: #0f2a1e;
+    color: #86efac;
+    border-color: #14532d;
+  }
+
+  .badge {
+    background: #422006;
+    color: #fde68a;
+    border-color: #78350f;
+  }
+
+  .breadcrumb {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .crumbLink {
+    color: #93c5fd;
+  }
+
+  .crumbCurrent {
+    color: #f9fafb;
+  }
+
+  .panel {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .panelTitle {
+    color: #f9fafb;
+  }
+
+  .fieldLabel {
+    color: #9ca3af;
+  }
+
+  .input,
+  .textarea {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .list {
+    border-color: #374151;
+  }
+
+  .row {
+    border-bottom-color: #1f2937;
+  }
+
+  .row:hover {
+    background: #111827;
+  }
+
+  .rowName {
+    color: #93c5fd;
+  }
+
+  span.rowName {
+    color: #f9fafb;
+  }
+
+  .rowMeta {
+    color: #9ca3af;
+  }
+
+  .viewer {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .viewerError {
+    background: #2b0f0f;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+}

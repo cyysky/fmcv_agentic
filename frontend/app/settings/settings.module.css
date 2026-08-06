@@ -183,3 +183,67 @@
 .muted {
   color: #9ca3af;
 }
+
+/* ------------------------------ dark mode ------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  .subtitle {
+    color: #9ca3af;
+  }
+
+  .bannerError {
+    background: #2b0f0f;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+
+  .bannerOk {
+    background: #0f2a1e;
+    color: #86efac;
+    border-color: #14532d;
+  }
+
+  .card {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .field span {
+    color: #d1d5db;
+  }
+
+  .field input,
+  .field textarea {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .btnGhost {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .btnGhost:hover {
+    background: #1f2937;
+  }
+
+  .btnDanger {
+    background: #111827;
+    border-color: #7f1d1d;
+    color: #fca5a5;
+  }
+
+  .btnDanger:hover {
+    background: #2b0f0f;
+  }
+
+  .listItem {
+    border-bottom-color: #1f2937;
+  }
+
+  .listMeta {
+    color: #9ca3af;
+  }
+}

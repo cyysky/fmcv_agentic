@@ -1376,3 +1376,369 @@
   gap: 0.6rem;
   margin-top: 0.5rem;
 }
+
+/* ------------------------------ dark mode ------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  .subtitle {
+    color: #9ca3af;
+  }
+
+  .modelSelect {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .bannerError {
+    background: #2b0f0f;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+
+  .thread {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .bubbleAgent {
+    background: #1f2937;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .bubbleError {
+    background: #2b0f0f;
+    border-color: #7f1d1d;
+    color: #fca5a5;
+  }
+
+  .input {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .input:disabled {
+    background: #111827;
+  }
+
+  .btnGhost {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .btnGhost:hover {
+    background: #1f2937;
+  }
+
+  .workspace {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .wsBlockTitle {
+    color: #9ca3af;
+  }
+
+  .treeItem {
+    color: #e5e7eb;
+  }
+
+  .treeItem:hover {
+    color: #93c5fd;
+  }
+
+  .treeNested {
+    border-left-color: #374151;
+  }
+
+  .treeLeaf {
+    color: #9ca3af;
+  }
+
+  .treeFolder {
+    color: #2dd4bf;
+  }
+
+  .treeFile {
+    color: #9ca3af;
+  }
+
+  .wsError {
+    background: #2b0f0f;
+    color: #fca5a5;
+  }
+
+  .trace {
+    border-top-color: #374151;
+  }
+
+  .traceHeader,
+  .traceLabel,
+  .traceArgs {
+    color: #9ca3af;
+  }
+
+  .traceTool {
+    background: #1f2937;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .traceBody {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .traceCode {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .channelSidebar {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .iconBtn:hover {
+    background: #1f2937;
+  }
+
+  .channelRow:hover {
+    background: #1f2937;
+  }
+
+  .channelRowActive {
+    background: #1e293b;
+  }
+
+  .channelRowSub .channelName {
+    color: #9ca3af;
+  }
+
+  .channelName {
+    color: #f9fafb;
+  }
+
+  .conversation {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .convHead {
+    border-bottom-color: #374151;
+  }
+
+  .convTitle {
+    color: #f9fafb;
+  }
+
+  .members {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .memberChip {
+    background: #1e293b;
+    border-color: #334155;
+    color: #a5b4fc;
+  }
+
+  .memberChipActive {
+    background: #1e3a8a;
+    border-color: #3b82f6;
+  }
+
+  .memberSelect {
+    color: #a5b4fc;
+  }
+
+  .memberRemove:hover {
+    color: #f87171;
+  }
+
+  .dmPanel {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .dmHead {
+    border-bottom-color: #374151;
+  }
+
+  .dmRow {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .dmRow:hover {
+    background: #1e1b4b;
+    border-color: #818cf8;
+  }
+
+  .dmRowName {
+    color: #f9fafb;
+  }
+
+  .chMsg {
+    background: #1f2937;
+    border-color: #374151;
+  }
+
+  .chMsgAuthor {
+    color: #f9fafb;
+  }
+
+  .chMsgRole {
+    color: #9ca3af;
+  }
+
+  .chMsgText {
+    color: #e5e7eb;
+  }
+
+  .liveTool {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e5e7eb;
+  }
+
+  .liveTool code {
+    color: #93c5fd;
+  }
+
+  .liveBody {
+    border-top-color: #334155;
+  }
+
+  .liveYou {
+    background: #0f2a1e;
+    border-color: #14532d;
+  }
+
+  .liveError {
+    background: #2b0f0f;
+    border-color: #7f1d1d;
+  }
+
+  .liveError .chMsgRole,
+  .liveError code {
+    color: #fca5a5;
+  }
+
+  .liveStopped {
+    background: #422006;
+    border-color: #78350f;
+  }
+
+  .liveStopped .chMsgRole,
+  .liveStopped code {
+    color: #fde68a;
+  }
+
+  .liveStatus,
+  .livePretty {
+    color: #9ca3af;
+  }
+
+  .chModeBtn {
+    background: #1f2937;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .chModeBtn:hover {
+    background: #374151;
+  }
+
+  .projectPanel {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .memberPanel {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .memberRow:hover {
+    background: #1f2937;
+  }
+
+  .memberRowSel {
+    background: #1e293b;
+    border-color: #334155;
+  }
+
+  .memberBadgedone {
+    background: #052e16;
+    color: #86efac;
+  }
+
+  .memberBadgeerror {
+    background: #450a0a;
+    color: #fca5a5;
+  }
+
+  .memberBadgestopped {
+    background: #422006;
+    color: #fde68a;
+  }
+
+  .memberBadgeunknown,
+  .memberBadgenull {
+    background: #374151;
+    color: #d1d5db;
+  }
+
+  .memberDebug {
+    border-top-color: #374151;
+  }
+
+  .memberDebugCurrent {
+    background: rgba(148, 163, 184, 0.12);
+  }
+
+  .memberDebugError {
+    background: #450a0a;
+    color: #fca5a5;
+  }
+
+  .memberDebugAnswer {
+    background: #111827;
+    border-color: #374151;
+    color: #d1d5db;
+  }
+
+  .memberDebugEv {
+    background: #1f2937;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .memberDebugEvBody {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .modal {
+    background: #111827;
+  }
+
+  .modalTitle {
+    color: #f9fafb;
+  }
+
+  .fieldLabel {
+    color: #9ca3af;
+  }
+
+  .fieldInput {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+}
