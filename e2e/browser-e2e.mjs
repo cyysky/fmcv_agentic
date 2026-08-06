@@ -15,6 +15,8 @@
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
 //   5. Channel deletion prunes the per-channel project folder (best-effort docker check)
+//   6. Sessions: create a persisted chat, converse, reload the page and re-open
+//      it from the sidebar (history survived), then delete the session
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -444,6 +446,207 @@ async function agentChannelCleanup(f) {
   }
 }
 
+/** Sessions flow: create a persisted chat, converse, reload the page, and
+ *  re-open the same session from the sidebar to prove history survived. */
+async function agentSessionsFlow() {
+  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  log(`flow agent sessions -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "sessions ready");
+    if (!ready) throw new Error("sessions flow: page never loaded");
+    const flow = { steps: [], timings: {}, result: null };
+
+    // 1. Open the Sessions tab and start a new chat.
+    const clickable = await waitFor(
+      c,
+      `[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Sessions")`,
+      30000,
+      500,
+      "sessions tab",
+    );
+    if (!clickable) throw new Error("sessions flow: Sessions tab missing");
+    // Click may fire before React hydration attaches handlers; retry the click
+    // until the sessions view (sidebar with "New chat") actually renders.
+    const newChat = await waitFor(
+      c,
+      `(() => {
+        if (document.body.innerText.includes("New chat")) return true;
+        const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Sessions");
+        if (b) b.click();
+        return false;
+      })()`,
+      30000,
+      600,
+      "new chat",
+    );
+    if (!newChat) throw new Error("sessions flow: New chat button missing");
+    flow.createdAt = new Date().toISOString();
+    await evalJs(c, jsClick("New chat", false));
+    flow.steps.push("created-session");
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Message this session"]')}`,
+      30000,
+      600,
+      "sessions composer",
+    );
+    if (!composer) throw new Error("sessions flow: sessions composer never appeared");
+
+    // 2. Post a real message and wait for the assistant bubble.
+    const msg = `Hello from sessions E2E (${Date.now().toString(36)})`;
+    flow.sentText = msg;
+    await evalJs(c, jsSetInput('textarea[placeholder*="Message this session"]', msg));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("sessions flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    flow.timings.postedAt = new Date().toISOString();
+    log("  posted session message; waiting for agent reply");
+
+    const started = Date.now();
+    const answered = await waitFor(
+      c,
+      `(() => {
+        const els = [...document.querySelectorAll('[class*="bubbleAgent"]')];
+        return els.length > 0 &&
+          els.some((el) => el.innerText.trim().length > 0 && !el.innerText.includes("Typing"));
+      })()`,
+      180000,
+      800,
+      "sessions answer",
+    );
+    flow.timings.finishedAt = new Date().toISOString();
+    if (!answered) throw new Error("sessions flow: no agent reply within 180s");
+    const threadText = await evalJs(c, `document.querySelector('[class*="thread"]')?.innerText ?? "NO THREAD"`);
+    flow.answerSeen = threadText.includes(msg);
+    flow.threadSnippet = threadText.slice(0, 400);
+    await delay(500);
+    await screenshot(c, "agent-sessions-done.png");
+    flow.steps.push("reply-rendered");
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  sessions reply rendered in ${flow.timings.elapsedMs}ms (user text seen: ${flow.answerSeen})`);
+
+    // 3. Reload the page; the session should be persisted in the sidebar and
+    //    its history should re-render when reopened. Guard every stage:
+    //    navigation start -> fresh document ready -> React hydration marker.
+    //    Clicking an SSR-ed but not-yet-hydrated tab button is a silent no-op,
+    //    so the old "click until it appears" loop raced the dev-server compile.
+    let navStarted = false;
+    const onNavStart = () => { navStarted = true; };
+    c.on("Page.frameStartedLoading", onNavStart);
+    await c.send("Page.reload");
+    const navDeadline = Date.now() + 20000;
+    while (!navStarted && Date.now() < navDeadline) await delay(250);
+    if (!navStarted) throw new Error("sessions flow: reload never committed");
+    const reloaded = await waitFor(c, "document.readyState === 'complete'", 60000, 500, "reload ready");
+    if (!reloaded) throw new Error("sessions flow: reload stalled");
+    const hydrated = await waitFor(
+      c,
+      `(() => {
+        const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Sessions");
+        if (!b) return false;
+        return Object.keys(b).some((k) => k.startsWith("__reactProps") || k.startsWith("__reactFiber"));
+      })()`,
+      60000,
+      500,
+      "hydration after reload",
+    );
+    if (!hydrated) throw new Error("sessions flow: app never hydrated after reload");
+    let item = null;
+    let polls = 0;
+    for (; polls < 60; polls += 1) {
+      try {
+        item = await evalJs(
+          c,
+          `(() => {
+            const els = [...document.querySelectorAll('[class*="sessionItem"]')];
+            if (els.length > 0) return true;
+            const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Sessions");
+            if (b) b.click();
+            return false;
+          })()`,
+        );
+      } catch {
+        item = null;
+      }
+      if (item) break;
+      await delay(700);
+    }
+    if (!item) {
+      const snap = await evalJs(
+        c,
+        `JSON.stringify({
+          hasTab: [...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "Sessions"),
+          items: document.querySelectorAll('[class*="sessionItem"]').length,
+          sidebar: (document.querySelector('[class*="sessionSidebar"]')?.innerText ?? "(no sidebar)").slice(0, 200),
+          errorTexts: [...document.querySelectorAll("div")]
+            .filter((d) => d.children.length === 0 && (d.textContent.indexOf("failed") >= 0 || d.textContent.indexOf("error") >= 0))
+            .map((d) => d.textContent.trim()).slice(0, 3),
+          body: document.body.innerText.slice(0, 200).replace(/\\n/g, " | "),
+        })`,
+      ).catch(() => "(snapshot eval failed)");
+      throw new Error(`sessions flow: no persisted session listed after reload; snapshot=${snap}`);
+    }
+    flow.steps.push("reload-list");
+        flow.steps.push("reload-list");
+    await evalJs(c, `(() => {
+      const b = document.querySelector('[class*="sessionItem"] button[class*="sessionOpen"]');
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    const history = await waitFor(
+      c,
+      `document.querySelector('[class*="thread"]')?.innerText.includes(${JSON.stringify(msg)}) ?? false`,
+      30000,
+      600,
+      "reloaded session history",
+    );
+    flow.historySeen = !!history;
+    if (!history) throw new Error("sessions flow: persisted history not rendered after reload");
+    flow.steps.push("history-rendered");
+    await delay(400);
+    await screenshot(c, "agent-sessions-reload.png");
+    flow.result = { persisted: true };
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Delete every session this run created (identified by createdAt). */
+async function cleanupSessions(flow) {
+  if (!flow?.createdAt) return null;
+  const after = new Date(flow.createdAt).getTime() - 1000;
+  try {
+    const res = await fetch(`${API}/agent/sessions`);
+    if (!res.ok) throw new Error(`list sessions -> HTTP ${res.status}`);
+    const list = await res.json();
+    const owned = list.filter((s) => new Date(s.createdAt).getTime() >= after);
+    let deleted = 0;
+    for (const s of owned) {
+      const del = await fetch(`${API}/agent/sessions/${s.id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete session -> HTTP ${del.status}`);
+      deleted++;
+    }
+    log(`  cleanup: deleted ${deleted} session(s)`);
+    return deleted > 0 ? `deleted ${deleted} session(s)` : "none";
+  } catch (err) {
+    log(`  cleanup FAILED: ${err.message}`);
+    return `error: ${err.message}`;
+  }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 async function main() {
@@ -483,6 +686,8 @@ async function main() {
     report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
+    report.sessionsFlow = await agentSessionsFlow();
+    report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow);
     log("browser E2E flows done");
   } finally {
     // Never leave check tabs behind, even when a route failed midway.
@@ -510,6 +715,13 @@ async function main() {
   }
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
+
+  const sf = report.sessionsFlow;
+  if (!sf || !sf.flow.answerSeen || !sf.flow.historySeen) {
+    failures.push(`sessions flow: reply/persistence not verified (${JSON.stringify(sf && sf.flow)})`);
+  }
+  const sessErrs = errorCount(sf ? sf.errors : {});
+  if (sessErrs > 0) failures.push(`sessions flow: ${sessErrs} console/network error(s)`);
 
   writeFileSync(REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
