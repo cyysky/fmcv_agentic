@@ -1,3 +1,13 @@
+## Round 2026-08-06 — Round 12 · autonomous iteration round 10
+
+### Changed
+- Looping audit round: verified rounds 7–9 each shipped a tested,
+  user-visible improvement, no TODO/FIXME markers remain, and the worktree
+  is clean end-to-end. The only deferred item (real user auth, optional by
+  design for a local-first single-operator tool) is not an open ticket.
+- Exit condition C fired: next focus empty, no open tickets, no obviously
+  valuable improvement. Automated loop closed; `round-10` tag is final.
+
 ## Round 2026-08-06 — Round 11 · autonomous iteration round 9
 
 ### Added
