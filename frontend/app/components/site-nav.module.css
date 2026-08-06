@@ -81,3 +81,37 @@
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }
+@media (max-width: 640px) {
+  .nav {
+    gap: 0.5rem;
+    padding: 0 0.75rem;
+  }
+
+  .brand {
+    font-size: 0.85rem;
+  }
+
+  .links {
+    gap: 0.15rem;
+  }
+
+  .link {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand {
+    font-size: 0.8rem;
+    letter-spacing: 0;
+  }
+
+  .brandShort {
+    display: none;
+  }
+
+  .link {
+    padding: 0.35rem 0.5rem;
+  }
+}

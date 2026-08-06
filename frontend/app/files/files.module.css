@@ -452,3 +452,80 @@ span.rowName {
     border-color: #7f1d1d;
   }
 }
+
+
+/* --------------------------- responsive layout --------------------------- */
+
+.container {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 1.25rem 0.75rem;
+  }
+
+  .header {
+    gap: 0.75rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+
+  .headerActions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .headerActions .select {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .row {
+    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1.3rem minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .row .rowName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row .rowMeta {
+    display: none;
+  }
+
+  .row .rowActions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .row .rowActions .btnGhost,
+  .row .rowActions .btnDanger {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .panelTitle {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .panelActions {
+    flex-wrap: wrap;
+  }
+}

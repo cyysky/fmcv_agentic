@@ -19,7 +19,7 @@ export default function SiteNav() {
   return (
     <nav className={styles.nav} aria-label="Main">
       <Link className={styles.brand} href="/">
-        FMCV Agentic
+        FMCV <span className={styles.brandShort}>Agentic</span>
       </Link>
       <div className={styles.links}>
         {LINKS.map(({ href, label }) => {

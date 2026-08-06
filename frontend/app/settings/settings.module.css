@@ -247,3 +247,44 @@
     color: #9ca3af;
   }
 }
+
+
+/* --------------------------- responsive layout --------------------------- */
+
+.container {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 1.25rem 0.75rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+
+  .card {
+    padding: 1rem;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .row .field {
+    flex: 1 1 100%;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+  }
+
+  .listItem {
+    flex-wrap: wrap;
+  }
+
+  .listActions {
+    flex-wrap: wrap;
+  }
+}

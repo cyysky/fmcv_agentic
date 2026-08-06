@@ -1742,3 +1742,58 @@
     border-color: #374151;
   }
 }
+
+
+/* --------------------------- responsive layout --------------------------- */
+
+.container {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 1.25rem 0.75rem;
+    height: calc(100dvh - var(--site-nav-height) - 2.5rem);
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+
+  .header {
+    gap: 0.6rem;
+  }
+
+  .headerActions {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .headerActions .modelSelect {
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .thread {
+    padding: 0.9rem;
+  }
+
+  .bubble {
+    max-width: 92%;
+  }
+
+  .composer {
+    gap: 0.45rem;
+  }
+
+  .input {
+    font-size: 0.9rem;
+  }
+
+  .btnPrimary,
+  .btnGhost {
+    padding: 0.55rem 0.9rem;
+  }
+}
