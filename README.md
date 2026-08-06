@@ -25,9 +25,10 @@ and coordinate multi-agent teams in Slack-style channels.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
   connections, optional key).
-- **Agent chat (`/agent`)** — stateless turns plus persistent sessions; model
-  picker (`ds4-flash` default, `qwen3.6-35b`), conversation loop with a hard
-  `maxSteps` cap, tool-call trace and workspace viewer in the UI.
+- **Agent chat (`/agent`)** — stateless turns plus a persistent Sessions tab
+  (sidebar, continue, delete) backed by Postgres; model picker (`ds4-flash`
+  default, `qwen3.6-35b`), conversation loop with a hard `maxSteps` cap,
+  tool-call trace and workspace viewer in the UI.
 - **Agent workspaces** — filesystem workspace under `AGENT_WORKSPACE_ROOT`
   (Docker default `/data/workspaces`): named agent folders (`coder`,
   `researcher`) and shared project folders; agents get file read/write/list
@@ -103,10 +104,10 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 41 tests / 7 suites** — model catalog, workspace service + tools,
+- **Unit: 42 tests / 7 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`).
-- **API E2E: 45 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 46 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root): app health, connections,
   agent sessions/turns, channel lifecycle + streaming jobs (including that
   deleting a channel stops its running jobs, job history persists to
@@ -114,12 +115,14 @@ cd e2e && node browser-e2e.mjs
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent` render their content and document titles with no console/network
-  errors, then drives a live channel create → post → agent answer journey with
-  screenshots, and deletes the channel it created (a clean `[error]` terminal
-  is accepted; only stuck runs / console / network failures gate the run).
-  Per-step timeouts + a global watchdog bound the run and all created tabs are
-  closed even on failure. Artifacts land in `e2e/screenshots/` and
-  `e2e/report.json`.
+  errors, then drives live journeys: a channel create → post → agent answer →
+  delete, and a sessions create → live converse → page reload → reopen →
+  history-survives → delete. The sessions step waits for the CDP navigation
+  event and React hydration before clicking so it cannot race the dev server;
+  hard gates are stuck runs, missing persisted history, and console/network
+  failures. Per-step timeouts + a global watchdog bound the run and all
+  created tabs are closed even on failure. Artifacts land in
+  `e2e/screenshots/` and `e2e/report.json`.
 
 ## Progress (from git history)
 

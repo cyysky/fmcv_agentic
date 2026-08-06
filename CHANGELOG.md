@@ -1,3 +1,21 @@
+## Round 2026-08-06 — Round 6 · autonomous iteration round 4
+
+### Added
+- `/agent` Sessions tab: persistent-session sidebar (newest first), New chat,
+  open/continue, delete with confirm; the model picker now applies to session
+  chats. Responsive stacking under 760px.
+- Browser E2E sessions journey (create → live converse → reload → reopen from
+  the sidebar → history survives → delete), with per-run created-session
+  cleanup via the API.
+
+### Changed
+- Browser E2E reload step now waits for the CDP navigation event and React's
+  hydration marker before clicking the Sessions tab, removing a flaky race
+  where clicks landed pre-hydration and were silently ignored (hardened flow:
+  3/3 consecutive green runs).
+- README refresh (unit 42 / API E2E 46; browser E2E description covers the
+  sessions journey).
+
 ## Round 2026-08-06 — Round 5 · autonomous iteration round 3
 
 ### Added
