@@ -74,7 +74,7 @@ Channels:
 | GET    | `/api/channels`                               | list channels                               |
 | POST   | `/api/channels`                               | create channel (+ project folder)           |
 | GET    | `/api/channels/:id`                           | detail (members, messages, tree)            |
-| DELETE | `/api/channels/:id`                           | remove channel                              |
+| DELETE | `/api/channels/:id`                           | remove channel (stops its running jobs)     |
 | POST   | `/api/channels/:id/members`                   | add an agent member                         |
 | DELETE | `/api/channels/:id/members/:agentName`        | remove a member                             |
 | GET    | `/api/channels/:id/member-status`             | per-member last job status / debug data     |
@@ -105,13 +105,17 @@ cd e2e && node browser-e2e.mjs
 
 - **Unit: 37 tests / 7 suites** — model catalog, workspace service + tools,
   channel service, job service, base-agent loop (incl. abort and `maxSteps`).
-- **API E2E: 41 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 43 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root): app health, connections,
-  agent sessions/turns, channel lifecycle + streaming jobs.
-- **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; verifies
-  `/`, `/settings`, `/agent` render with no console/network errors, then drives
-  a live channel create → post → agent answer journey with screenshots.
-  Artifacts land in `e2e/screenshots/` and `e2e/report.json`.
+  agent sessions/turns, channel lifecycle + streaming jobs (including that
+  deleting a channel stops its running jobs with a single `stopped` event).
+- **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
+  fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
+  `/agent` render their content and document titles with no console/network
+  errors, then drives a live channel create → post → agent answer journey with
+  screenshots. Per-step timeouts + a global watchdog bound the run and all
+  created tabs are closed even on failure. Artifacts land in `e2e/screenshots/`
+  and `e2e/report.json`.
 
 ## Progress (from git history)
 

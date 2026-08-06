@@ -34,6 +34,7 @@ Environment overrides:
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
 | `E2E_SHOT_DIR`      | `e2e/screenshots`             | screenshot output dir               |
 | `E2E_REPORT`        | `e2e/report.json`             | JSON report path                    |
+| `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
 
 ## What it checks
 
@@ -41,11 +42,13 @@ Environment overrides:
    content with **no console errors, no uncaught exceptions, no failed
    network requests, and no HTTP >= 400 responses** (measured over CDP events,
    including polling fetches the SPA makes after first paint).
-2. **Real user journey**: on `/agent`, the script opens the Channels tab,
+2. **Document titles**: each route must expose its expected browser tab
+   title (`FMCV Agentic`, `Settings - FMCV Agentic`, `Agent - FMCV Agentic`).
+3. **Real user journey**: on `/agent`, the script opens the Channels tab,
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state
    (`[answer]`, `[stopped]`, or `[error]`).
-3. **Screenshots**: key screens (home, settings, agent, channel running,
+4. **Screenshots**: key screens (home, settings, agent, channel running,
    channel done) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate
@@ -57,8 +60,14 @@ Failures print the failing routes/checks and the collected errors in
 
 ## Notes
 
-- The script reuses an existing tab whose URL matches, otherwise opens a new
-  tab and closes any tab it created when done.
+- Every check opens a brand-new tab via `PUT /json/new` and closes every tab
+  it created in a `finally` block — even when a route fails — so runs never
+  leave stray `localhost:3333` tabs behind in a busy Chrome.
+- Wait loops have explicit per-step timeouts and content settle conditions
+  (e.g. the settings page waits for "Connections (" before checking body
+  text), so slow renders on a loaded machine don't produce false failures.
+- Progress is logged per route/step; a global watchdog aborts after
+  `E2E_WATCHDOG_MS` (default 10 min).
 - Messages that auto-start agent jobs invoke the real LLM configured by the
   backend; the run usually finishes in a few seconds.
 - Navigation aborts (`net::ERR_ABORTED`) are ignored as noise — they are the
