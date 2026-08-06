@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-06T02:23:46.143Z",
+  "ranAt": "2026-08-06T02:28:25.045Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "2A3E4C8D90EC57F3F1F223D328FE95FB",
+        "id": "0159902CC9CBA0A712A1F5DEC5FD95E2",
         "created": true
       },
       "checks": {
@@ -30,7 +30,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "7C339DA053E37B741B9D8E2A993DEB7D",
+        "id": "177DEF046B5E1F2B4900607AA59CEBA1",
         "created": true
       },
       "checks": {
@@ -51,7 +51,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "55790E66D683AD78AE232DE0B113459F",
+        "id": "B132F1C9029A12C0606BEB79B04CDD8D",
         "created": true
       },
       "checks": {
@@ -72,10 +72,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "03E41353181551060B15A895E8C30AB3",
+      "id": "02CA1AE1AE3332D55276969CB863C663",
       "created": true
     },
-    "channelName": "browser-e2e-msgw6nbd",
+    "channelName": "browser-e2e-msgwcmg4",
     "flow": {
       "steps": [
         "created-channel",
@@ -83,9 +83,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-06T02:23:53.040Z",
-        "finishedAt": "2026-08-06T02:23:55.692Z",
-        "elapsedMs": 1371
+        "postedAt": "2026-08-06T02:28:31.845Z",
+        "finishedAt": "2026-08-06T02:28:36.130Z",
+        "elapsedMs": 2968
       },
       "result": {
         "answer": true,
@@ -93,8 +93,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msgw6nbd",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T02:23:52.329Z\nAgent coder joined #browser-e2e-msgw6nbd.\nsystem\n[SYSTEM]\n2026-08-06T02:23:52.343Z\nChannel #browser-e2e-msgw6nbd created.\nyou\n[USER]\n2026-08-06T02:23:53.042Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T02:23:54.868Z\nHello! I've written `round2.md` into my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Ro"
+      "channelName": "browser-e2e-msgwcmg4",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T02:28:31.227Z\nAgent coder joined #browser-e2e-msgwcmg4.\nsystem\n[SYSTEM]\n2026-08-06T02:28:31.262Z\nChannel #browser-e2e-msgwcmg4 created.\nyou\n[USER]\n2026-08-06T02:28:31.853Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T02:28:34.306Z\nHello! I've written `round2.md` into my own agent folder (agents/coder) as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \""
     },
     "errors": {
       "netFailures": [],
