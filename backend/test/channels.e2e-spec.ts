@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { bootstrapApp } from './app.e2e-spec';
+import { bootstrapApp } from './test-app';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Channel API (e2e, real Postgres + workspace)', () => {
