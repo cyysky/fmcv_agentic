@@ -1,3 +1,32 @@
+## Round 2026-08-06 — Round 13 · autonomous iteration round 11
+
+### Added
+- File manager API: `GET /api/files/list`, `GET /api/files/read`,
+  `PUT /api/files/write`, `POST /api/files/mkdir` and
+  `DELETE /api/files/delete`, scoped `agent:<name>` (read/write) or
+  `project:<name>` (read-only — writes 403). Every path resolves through
+  `WorkspaceService.safeResolve`, so `..`, absolute, and symlink escapes are
+  rejected (400); lists are one-level entries (name/type/size/mtimeMs,
+  directories first), reads cap at 100 KB (413), writes mkdir parents
+  recursively, and deletes accept files or empty directories only.
+- `/files` frontend page: agent/project scope picker, breadcrumb navigation,
+  one-level listing with size + mtime, view/edit, create file/folder,
+  delete, dotfile rendering, read-only marking for project scopes, error
+  banner, and refresh. Linked from the home page.
+- Browser E2E files journey in `e2e/browser-e2e.mjs` (create nested file +
+  dotfile via the UI, read content back, delete through the UI, verify
+  server-side removal), plus `/files` in the route probes; files screenshots
+  + report refreshed.
+
+### Changed
+- Unit tests 52 → 59 (10 suites); API E2E 38 → 44 (7 suites, new files
+  suite); frontend `tsc --noEmit` + `eslint` clean; browser E2E all green
+  (exit 0, zero console/network errors).
+- README refresh: Files feature + REST table, updated test counts, `/files`
+  route in stack/local-dev docs.
+
+## Round 2026-08-06 — Round 12 · autonomous iteration round 10
+
 ## Round 2026-08-06 — Round 12 · autonomous iteration round 10
 
 ### Changed

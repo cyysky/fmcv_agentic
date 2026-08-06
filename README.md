@@ -5,7 +5,8 @@ built-in agents (`coder`, `researcher`), share files through project folders,
 and coordinate multi-agent teams in Slack-style channels.
 
 - **Frontend** — Next.js 16 (React 19, TypeScript) on port 3333: home,
-  `/settings` (connection management) and `/agent` (chat, workspaces, channels).
+  `/settings` (connection management), `/agent` (chat, workspaces, channels)
+  and `/files` (file manager).
 - **Backend** — NestJS 11 (TypeScript) on port 5555: REST API under `/api`,
   global `ValidationPipe` (`whitelist` + `forbidNonWhitelisted`).
 - **Database** — PostgreSQL 16 via Docker Compose (port 5432), Prisma ORM 7
@@ -15,7 +16,7 @@ and coordinate multi-agent teams in Slack-style channels.
 
 | Layer      | Tech                                                     | Port | Notes                                        |
 |------------|----------------------------------------------------------|------|----------------------------------------------|
-| Frontend   | Next.js 16 (React 19, TypeScript)                        | 3333 | App Router; `/settings` + `/agent` UI        |
+| Frontend   | Next.js 16 (React 19, TypeScript)                        | 3333 | App Router; `/settings` + `/agent` + `/files` |
 | Backend    | NestJS 11 (TypeScript)                                   | 5555 | REST under `/api`; SSE streaming for jobs    |
 | Database   | PostgreSQL 16 (Docker)                                   | 5432 | Reachable from services + host tooling       |
 | ORM        | Prisma 7 (`@prisma/client` + `@prisma/adapter-pg`)       | —    | Driver-adapter based                         |
@@ -33,6 +34,11 @@ and coordinate multi-agent teams in Slack-style channels.
   (Docker default `/data/workspaces`): named agent folders (`coder`,
   `researcher`) and shared project folders; agents get file read/write/list
   tools plus connection-credentials lookup.
+- **File manager (`/files`)** — human-facing browser over the same
+  workspace: pick an agent (read/write) or public project (read-only) scope,
+  navigate one level at a time with a breadcrumb, view file contents, create
+  files/folders, edit, and delete files or empty folders. Dotfiles are shown
+  and path escapes are rejected by the API.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -67,6 +73,18 @@ Agent:
 | POST   | `/api/agent/workspaces/agents`         | ensure agent folder exists                  |
 | GET    | `/api/agent/workspaces/projects/:name` | list project content                        |
 | GET    | `/api/agent/workspaces/agents/:name`   | list agent folder content                   |
+
+Files (file manager — `agent:<name>` scopes are read/write, `project:<name>`
+scopes are read-only; every path resolves through the workspace anti-traversal
+check):
+
+| Method | Path                                  | Purpose                               |
+|--------|---------------------------------------|---------------------------------------|
+| GET    | `/api/files/list?scope=&path=`        | one-level directory listing (dirs first) |
+| GET    | `/api/files/read?scope=&path=`        | read a text file (100 KB viewer cap)  |
+| PUT    | `/api/files/write?scope=&path=`       | write a file (parents created)        |
+| POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
+| DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
 
 Channels:
 
@@ -104,26 +122,33 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 52 tests / 9 suites** — model catalog, workspace service + tools,
+- **Unit: 59 tests / 10 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
-  rename + auto-title, request-throttle guard.
-- **API E2E: 38 tests / 6 suites** (`backend/test/*.e2e-spec.ts`) — real
+  rename + auto-title, request-throttle guard, and the file manager service
+  (list/read/write/mkdir/delete, directory-first ordering, `..`/absolute/
+  symlink escapes rejected, project scopes read-only, 100 KB read cap).
+- **API E2E: 44 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD (4), agent
   sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
-  (12), the API token gate (3), and throttling (2: over-limit 429 then
+  (12), files manager (6: CRUD round-trip, directory-first ordering, empty-dir
+  delete + file delete, path-escape 400, project-scope 403, scope
+  validation), the API token gate (3), and throttling (2: over-limit 429 then
   window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
   (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
-  `/agent` render their content and document titles with no console/network
-  errors, then drives live journeys: a channel create → post → agent answer →
-  delete, and a sessions create → live converse → auto-title in the sidebar →
-  rename via the UI → page reload → reopen → history-and-new-title-survive →
-  delete. The sessions step waits for the CDP navigation
+  `/agent`, `/files` render their content and document titles with no
+  console/network errors, then drives live journeys: a channel create → post →
+  agent answer → delete, a sessions create → live converse → auto-title in the
+  sidebar → rename via the UI → page reload → reopen →
+  history-and-new-title-survive → delete, and a files journey that creates a
+  nested file + dotfile through the `/files` UI, reads the content back,
+  deletes both through the UI, and confirms the removal server-side via the
+  files API. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
@@ -170,6 +195,18 @@ cd e2e && node browser-e2e.mjs
 - CDP browser E2E script driving the agent channel flow (repeatable; committed
   screenshots + report).
 
+### `493a99d` → `ec1c5d7` — File manager (Round 11)
+- File manager API (`/api/files/list|read|write|mkdir|delete`) over agent
+  (read/write) and project (read-only) scopes; every path goes through the
+  workspace anti-traversal check, reads cap at 100 KB, writes mkdir parents,
+  and deletes accept files/empty directories only. Unit + API E2E covered.
+- `/files` Next.js page: scope picker, breadcrumb navigation, one-level
+  listing with size + mtime, view/edit/create/delete, dotfiles rendered, and
+  read-only marking for public projects.
+- CDP browser E2E files journey (create nested file + dotfile → read back →
+  delete via UI → server-side verify) plus `/files` in the route probes;
+  screenshots + report refreshed.
+
 ## Local development
 
 ```bash
@@ -180,7 +217,7 @@ docker compose up --build
 Then open:
 
 - Frontend UI: http://localhost:3333 (Settings: http://localhost:3333/settings,
-  Agent: http://localhost:3333/agent)
+  Agent: http://localhost:3333/agent, Files: http://localhost:3333/files)
 - Backend API: http://localhost:5555/api/connections
 
 Stop everything with `docker compose down`.
