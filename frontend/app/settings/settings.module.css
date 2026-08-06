@@ -3,6 +3,7 @@
   margin: 0 auto;
   padding: 2rem 1.5rem;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  min-height: calc(100dvh - var(--site-nav-height));
 }
 
 .title {

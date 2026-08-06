@@ -12,7 +12,7 @@
   justify-content: center;
   font-family: var(--font-geist-sans);
   background-color: var(--background);
-  min-height: 100vh;
+  min-height: calc(100dvh - var(--site-nav-height));
 }
 
 .main {

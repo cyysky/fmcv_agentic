@@ -1,6 +1,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --site-nav-height: 56px;
 }
 
 @media (prefers-color-scheme: dark) {
