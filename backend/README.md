@@ -33,5 +33,6 @@ src/
   connections/       # connection CRUD
   agent/             # agent loop, workspaces, channels, streaming jobs
 test/                # API E2E suites + helpers
-prisma/              # schema.prisma + migrations
+prisma/              # schema.prisma (Connection, Channel, ChannelMember,
+                     # ChannelMessage, ChannelRun) + migrations
 ```

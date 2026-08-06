@@ -1,3 +1,27 @@
+## Round 2026-08-06 — Round 3 (autonomous iteration round 1)
+
+### Added
+- `channel_runs` Postgres table: streaming job history is persisted on create
+  and at every terminal state, so member debug panes and job polling survive
+  backend restarts.
+- Recovery-on-startup: runs still `running` when the process died are marked
+  `stopped` with an explicit "restarted" event instead of spinning forever.
+- Browser E2E channel cleanup: the flow deletes its own channel via the API
+  after the journey and verifies the row is gone.
+
+### Fixed
+- Channel deletion race: the delete path now reserves the channel tree before
+  stopping jobs; new jobs for a channel mid-delete are rejected instead of
+  slipping between stop and row removal.
+- Browser E2E gate: a real agent `[error]` terminal is no longer treated as a
+  browser failure (checked page console/network errors still fail the run).
+
+### Changed
+- Unit 38 → 40 tests (TOCTOU guard, restart recovery, persistence upserts);
+  API E2E 43 → 44 tests (real job persisted in `channel_runs`, delete
+  cascade-prunes history).
+- E2E screenshots + report refreshed; `vision_test.png` ignored.
+
 # Changelog
 
 Git history is the source of truth (`git log`); this file summarizes

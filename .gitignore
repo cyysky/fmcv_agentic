@@ -18,3 +18,7 @@ reference/
 .claude/
 .windsurf/
 skills-lock.json
+
+
+# Generated Vision test snapshot (not part of the project)
+vision_test.png
