@@ -19,7 +19,8 @@
 //   6. Sessions: create a persisted chat, converse, reload the page and re-open
 //      it from the sidebar (history survived), then delete the session
 //   7. Files: create a file + dotfile through the /files UI, read the content
-//      back, delete both through the UI and verify server-side removal
+//      back, download it (wire headers/bytes + saved-to-disk when CDP allows),
+//      then delete both through the UI and verify server-side removal
 //   8. Global nav: active-route state per page + nav links drive real
 //      client-side navigation between all four routes
 //   9. Dark mode: all four routes re-probed with prefers-color-scheme: dark
@@ -30,8 +31,9 @@
 //      composer / files row grid are usable
 // Exits non-zero when a main flow fails (quality gate for the round).
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOST = process.env.CHROME_DEBUG_HOST || "127.0.0.1";
@@ -843,13 +845,16 @@ async function cleanupSessions(flow) {
 }
 
 /** Files flow: create a file + a dotfile through the /files UI, read the
- *  content back, delete both through the UI, and prove the removal really
+ *  content back, download it (wire headers/bytes + saved-to-disk when CDP
+ *  allows), then delete both through the UI and prove the removal really
  *  happened (server-side) via the backend API. */
 async function filesFlow() {
   const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/files`;
   log(`flow files -> ${url}`);
   const { tab, c } = await setupPage(url);
+  let downloadDir = null;
+  let browserSock = null;
   try {
     wireErrorCapture(c, sink);
     await c.send("Page.navigate", { url });
@@ -970,6 +975,108 @@ async function filesFlow() {
     await evalJs(c, jsClick("Close", true));
     await delay(200);
 
+    // Download through the row action. Verify the wire bytes + attachment
+    // headers; when CDP allows, also compare the bytes Chrome saved to disk.
+    const downloadHits = [];
+    const onDownload = (p) => {
+      if (!p.response?.url?.includes("/files/download")) return;
+      downloadHits.push({
+        requestId: p.requestId,
+        url: p.response.url,
+        status: p.response.status,
+        contentType: p.response.headers["Content-Type"] ?? p.response.headers["content-type"] ?? "",
+        disposition: p.response.headers["Content-Disposition"] ?? p.response.headers["content-disposition"] ?? "",
+      });
+    };
+    c.on("Network.responseReceived", onDownload);
+    let realDownload = "skipped";
+    try {
+      const { webSocketDebuggerUrl } = await httpJson("/json/version");
+      const b = new CDP(webSocketDebuggerUrl);
+      await b.open();
+      browserSock = b;
+      downloadDir = mkdtempSync(join(tmpdir(), "fmcv-dl-"));
+      await b.send("Browser.setDownloadBehavior", {
+        behavior: "allow",
+        downloadPath: downloadDir,
+        eventsEnabled: true,
+      });
+    } catch (err) {
+      log(`  files flow: real CDP download unavailable (${err.message}) — wire bytes still verified`);
+      realDownload = "skipped";
+    }
+    const dlClicked = await evalJs(c, rowBtnExpr("hello.txt", "Download"));
+    if (!dlClicked) throw new Error("files flow: Download button missing");
+    const dlNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes("Downloaded") ?? false`,
+      10000,
+      400,
+      "download success notice",
+    );
+    if (!dlNotice) throw new Error("files flow: download success notice missing");
+    let dlHit = null;
+    for (const deadline = Date.now() + 10000; Date.now() < deadline && !dlHit;) {
+      dlHit = downloadHits.find((h) => h.status === 200);
+      if (!dlHit) await delay(250);
+    }
+    if (!dlHit) throw new Error("files flow: no successful /files/download response captured");
+    const ctOk = /application\/octet-stream/.test(dlHit.contentType);
+    const cdOk = /attachment/.test(dlHit.disposition);
+    if (!ctOk || !cdOk) {
+      throw new Error(
+        `files flow: download headers unexpected (type=${dlHit.contentType} disposition=${dlHit.disposition})`,
+      );
+    }
+    // Saved-to-disk is the strongest evidence of an end-to-end download.
+    if (downloadDir) {
+      for (const deadline = Date.now() + 8000; Date.now() < deadline;) {
+        for (const name of ["hello.txt", "hello (1).txt"]) {
+          try {
+            if (readFileSync(join(downloadDir, name), "utf8") === content) {
+              realDownload = "ok";
+              break;
+            }
+          } catch { /* file not saved (yet) */ }
+        }
+        if (realDownload === "ok") break;
+        await delay(300);
+      }
+      if (realDownload !== "ok") realDownload = "failed";
+    }
+    flow.realDownload = realDownload;
+    log(`  files flow: download verified (saved-to-disk=${realDownload})`);
+    if (realDownload === "failed") {
+      throw new Error("files flow: real download did not save expected bytes");
+    }
+
+    // Wire fallback (Chrome may not retain a network body for download
+    // responses, so verify the endpoint bytes directly in that case).
+    let wireBytes;
+    if (realDownload === "ok") {
+      wireBytes = Buffer.from(content, "utf8");
+    } else {
+      try {
+        const body = await c.send("Network.getResponseBody", { requestId: dlHit.requestId });
+        wireBytes = Buffer.from(body.body, body.base64Encoded ? "base64" : "utf8");
+      } catch {
+        const direct = await fetch(
+          `${API}/files/download?scope=${encodeURIComponent(flow.scope)}&path=${encodeURIComponent(file)}`,
+        );
+        if (!direct.ok) throw new Error(`files flow: direct download fetch HTTP ${direct.status}`);
+        wireBytes = Buffer.from(await direct.arrayBuffer());
+      }
+      if (wireBytes.toString("utf8") !== content) {
+        throw new Error(
+          `files flow: downloaded bytes mismatch (got ${wireBytes.length}B expected ${content.length}B)`,
+        );
+      }
+    }
+    flow.downloadVerified = true;
+    flow.downloadHeaders = { contentType: dlHit.contentType, disposition: dlHit.disposition };
+    flow.steps.push("downloaded-hello.txt");
+    await screenshot(c, "files-download.png");
+
     // Delete the file through the UI and wait for the row to disappear.
     const delClicked = await evalJs(c, rowBtnExpr("hello.txt", "Delete"));
     if (!delClicked) throw new Error("files flow: Delete button missing");
@@ -1031,6 +1138,10 @@ async function filesFlow() {
     return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
   } finally {
     c.close();
+    if (browserSock) {
+      try { browserSock.close(); } catch { /* best-effort */ }
+    }
+    if (downloadDir) rmSync(downloadDir, { recursive: true, force: true });
   }
 }
 
@@ -1287,8 +1398,14 @@ async function main() {
   if (sessErrs > 0) failures.push(`sessions flow: ${sessErrs} console/network error(s)`);
 
   const ffl = report.filesFlow;
-  if (!ffl || !ffl.flow.result?.created || !ffl.flow.contentSeen || !ffl.flow.deletedFileViaUi) {
-    failures.push(`files flow: create/read/delete not verified (${JSON.stringify(ffl && ffl.flow)})`);
+  if (
+    !ffl ||
+    !ffl.flow.result?.created ||
+    !ffl.flow.contentSeen ||
+    !ffl.flow.downloadVerified ||
+    !ffl.flow.deletedFileViaUi
+  ) {
+    failures.push(`files flow: create/read/download/delete not verified (${JSON.stringify(ffl && ffl.flow)})`);
   }
   if (ffl && ffl.cleanup !== "clean") {
     failures.push(`files flow: cleanup not verified (${ffl.cleanup})`);
