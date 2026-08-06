@@ -1,3 +1,20 @@
+## Round 2026-08-06 — Round 9 · autonomous iteration round 7
+
+### Added
+- `PATCH /api/agent/sessions/:id` — rename a session (`{ title }`, trimmed,
+  max 120 chars; 400 on blank, 404 on unknown id), persisted to Postgres like
+  create/converse.
+- Session rename UI: a `✎` button on each sessions-sidebar item opens an
+  inline title input (Enter saves, Escape cancels, blur saves) and updates the
+  sidebar title in place.
+
+### Changed
+- Browser E2E sessions journey now renames the created session through the UI
+  and asserts both the message history and the renamed title survive a page
+  reload; removed a duplicated `reload-list` step marker from the report.
+- README refresh: unit 46/8, API E2E 35/5 (agent 11 incl. rename), browser
+  E2E description covers the rename step.
+
 ## Round 2026-08-06 — Round 8 · autonomous iteration round 6
 
 ### Changed
