@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { BaseAgentService } from './base-agent.service';
@@ -11,6 +12,8 @@ import type {
   ChannelTurnStreamEvent,
 } from './base-agent.service';
 import { ChannelService } from './channel.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 export type ChannelJobEventType =
   | 'status'
@@ -60,9 +63,13 @@ export interface ChannelJob {
  * for this feature.
  */
 @Injectable()
-export class ChannelJobService {
+export class ChannelJobService implements OnModuleInit {
   private readonly logger = new Logger(ChannelJobService.name);
   private readonly jobs = new Map<string, ChannelJob>();
+  /** Channel ids currently being deleted (set by the channel controller
+   *  before it stops jobs/removes rows). New jobs are rejected for these so
+   *  an auto-reply can't sneak in between stopForChannel() and row removal. */
+  private readonly deletingChannels = new Set<string>();
   /** Most recent job per channel+agent, so a member's debugging status
    *  (running/stopped/error + event stream) can be shown even when nothing is
    *  actively running. Keyed by `${channelId}::${agentName}`. */
@@ -71,6 +78,7 @@ export class ChannelJobService {
   constructor(
     private readonly channels: ChannelService,
     private readonly baseAgent: BaseAgentService,
+    private readonly prisma: PrismaService,
   ) {}
 
   create(input: {
@@ -83,6 +91,11 @@ export class ChannelJobService {
     /** skip re-persisting the human message (already in the feed). */
     persistHuman?: boolean;
   }): ChannelJob {
+    if (this.deletingChannels.has(input.channelId)) {
+      throw new BadRequestException(
+        `Channel ${input.channelId} is being deleted; cannot start a new job`,
+      );
+    }
     const job: ChannelJob = {
       id: randomUUID(),
       channelId: input.channelId,
@@ -96,6 +109,10 @@ export class ChannelJobService {
       abort: new AbortController(),
       maxSteps: input.maxSteps,
     };
+
+    // Best-effort persistence: a DB hiccup must never fail the in-memory
+    // job itself, so failures are logged and the live run continues.
+    this.safePersist(job);
 
     job.process = this.run(job, input).catch((err) => {
       if (job.abort.signal.aborted) {
@@ -254,6 +271,7 @@ export class ChannelJobService {
     } else {
       job.status = 'stopped';
     }
+    this.safePersist(job);
   }
 
   /**
@@ -266,6 +284,7 @@ export class ChannelJobService {
     job.status = 'stopped';
     job.finishedAt = new Date().toISOString();
     this.emit(job, { type: 'stopped', text: 'Agent run stopped.' });
+    this.safePersist(job);
   }
 
   /**
@@ -286,8 +305,188 @@ export class ChannelJobService {
       job.status = 'stopped';
       job.finishedAt = new Date().toISOString();
       this.emit(job, { type: 'stopped', text: 'Channel deleted; run stopped.' });
+      this.safePersist(job);
       stopped += 1;
     }
+    // Channel rows (and their cascade-deleted runs) are about to go away;
+    // drop the persisted history so the debug pane cannot reference ghosts.
+    void this.prisma.channelRun
+      .deleteMany({ where: { channelId: { in: [...ids] } } })
+      .catch((err) =>
+        this.logger.warn(
+          `Could not prune run history for deleted channels: ${(err as Error).message}`,
+        ),
+      );
     return { stopped };
+  }
+
+
+  /**
+   * Terminal/current snapshot serialized to Postgres (channel_runs) so job
+   * statuses survive backend restarts. `events` is stored as a JSON array;
+   * the mailbox and live messages stay in memory only.
+   */
+  private safePersist(job: ChannelJob): void {
+    const record = this.toRecord(job);
+    const op: Promise<unknown> = job.id
+      ? this.prisma.channelRun
+          .upsert({
+            where: { id: job.id },
+            create: record as Prisma.ChannelRunUncheckedCreateInput,
+            update: record as Prisma.ChannelRunUncheckedUpdateInput,
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `Could not persist job ${job.id}: ${(err as Error).message}`,
+            );
+            return null;
+          })
+      : Promise.resolve(null);
+    void op;
+  }
+
+  private toRecord(job: ChannelJob) {
+    return {
+      id: job.id,
+      channelId: job.channelId,
+      agentName: job.agentName,
+      status: job.status,
+      events: job.events as unknown as Prisma.InputJsonValue,
+      answer: job.answer ?? null,
+      steps: job.steps ?? null,
+      error: job.error ?? null,
+      maxSteps: job.maxSteps ?? null,
+      startedAt: new Date(job.startedAt),
+      finishedAt: job.finishedAt ? new Date(job.finishedAt) : null,
+    };
+  }
+
+  /** Recover persisted history after a backend restart. Any run that was
+   *  still `running` when the process died can never complete: mark it
+   *  `stopped` with one explicit event so the UI shows an honest terminal
+   *  state instead of a forever-pending spinner. */
+  async onModuleInit(): Promise<void> {
+    let stale;
+    try {
+      stale = await this.prisma.channelRun.findMany({
+        where: { status: 'running' },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not recover job history on startup: ${(err as Error).message}`,
+      );
+      return;
+    }
+    const now = new Date().toISOString();
+    for (const row of stale) {
+      const events = (row.events as unknown as ChannelJobEvent[]) ?? [];
+      const terminal = [
+        ...events,
+        {
+          type: 'stopped' as const,
+          ts: now,
+          text: 'Backend restarted; run interrupted.',
+        },
+      ];
+      const job: ChannelJob = {
+        id: row.id,
+        channelId: row.channelId,
+        agentName: row.agentName,
+        status: 'stopped',
+        events: terminal,
+        mailbox: [],
+        startedAt: row.startedAt.toISOString(),
+        finishedAt: now,
+        answer: row.answer ?? undefined,
+        steps: row.steps ?? undefined,
+        error: row.error ?? undefined,
+        messages: [],
+        process: Promise.resolve(),
+        abort: new AbortController(),
+        maxSteps: row.maxSteps ?? undefined,
+      };
+      this.jobs.set(job.id, job);
+      this.recentByAgent.set(
+        `${job.channelId}::${job.agentName}`,
+        job,
+      );
+      this.safePersist(job);
+      this.logger.warn(
+        `Recovered interrupted run ${job.id} (${job.channelId}/${job.agentName}) as stopped`,
+      );
+    }
+  }
+
+  /** Look up a job from memory, falling back to the persisted history. */
+  async snapshot(jobId: string): Promise<ChannelJob | null> {
+    const live = this.jobs.get(jobId);
+    if (live) return live;
+    try {
+      const row = await this.prisma.channelRun.findUnique({
+        where: { id: jobId },
+      });
+      if (!row) return null;
+      return {
+        id: row.id,
+        channelId: row.channelId,
+        agentName: row.agentName,
+        status: row.status as ChannelJob['status'],
+        events: (row.events as unknown as ChannelJobEvent[]) ?? [],
+        mailbox: [],
+        startedAt: row.startedAt.toISOString(),
+        finishedAt: row.finishedAt?.toISOString(),
+        answer: row.answer ?? undefined,
+        steps: row.steps ?? undefined,
+        error: row.error ?? undefined,
+        messages: [],
+        process: Promise.resolve(),
+        abort: new AbortController(),
+        maxSteps: row.maxSteps ?? undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Most recent persisted run for a channel+agent (restart recovery path). */
+  async latestFor(channelId: string, agentName: string): Promise<ChannelJob | null> {
+    try {
+      const row = await this.prisma.channelRun.findFirst({
+        where: { channelId, agentName },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!row) return null;
+      return {
+        id: row.id,
+        channelId: row.channelId,
+        agentName: row.agentName,
+        status: row.status as ChannelJob['status'],
+        events: (row.events as unknown as ChannelJobEvent[]) ?? [],
+        mailbox: [],
+        startedAt: row.startedAt.toISOString(),
+        finishedAt: row.finishedAt?.toISOString(),
+        answer: row.answer ?? undefined,
+        steps: row.steps ?? undefined,
+        error: row.error ?? undefined,
+        messages: [],
+        process: Promise.resolve(),
+        abort: new AbortController(),
+        maxSteps: row.maxSteps ?? undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Reserve a channel tree for deletion: reject new jobs until
+   *  endChannelDelete() runs. Called before stopForChannel() so no job can
+   *  start in the window between "find jobs to stop" and "rows are gone". */
+  beginChannelDelete(channelIds: string[]): void {
+    for (const id of channelIds) this.deletingChannels.add(id);
+  }
+
+  /** Release a channel tree after deletion finished (or failed). */
+  endChannelDelete(channelIds: string[]): void {
+    for (const id of channelIds) this.deletingChannels.delete(id);
   }
 }

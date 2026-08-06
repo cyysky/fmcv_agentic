@@ -36,6 +36,7 @@ model Channel {
 
   members  ChannelMember[]
   messages ChannelMessage[]
+  runs     ChannelRun[]
 
   @@index([parentId])
   @@map("channels")
@@ -66,4 +67,31 @@ model ChannelMessage {
 
   @@index([channelId, createdAt])
   @@map("channel_messages")
+}
+
+/**
+ * Persisted history of streaming channel jobs (ChannelJobService). The live
+ * event stream runs in memory; the row is written on create and updated with
+ * its terminal snapshot so statuses/debug traces survive backend restarts.
+ * Rows are cascade-deleted with their channel.
+ */
+model ChannelRun {
+  id         String    @id
+  channelId  String
+  agentName  String
+  status     String // running | done | error | stopped
+  events     Json      @default("[]")
+  answer     String?
+  steps      Int?
+  error      String?
+  maxSteps   Int?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([channelId, agentName, createdAt])
+  @@map("channel_runs")
 }

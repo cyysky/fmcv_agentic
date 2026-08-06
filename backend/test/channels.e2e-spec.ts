@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { bootstrapApp } from './app.e2e-spec';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 describe('Channel API (e2e, real Postgres + workspace)', () => {
   let app: INestApplication<App>;
@@ -178,10 +179,48 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
     expect(stoppedEvents(after.body)).toBe(1);
   });
 
+  it('persists job history to Postgres (restart resilience)', async () => {
+    const prisma = app.get(PrismaService);
+    const res = await http()
+      .post(`/api/channels/${channelId}/jobs`)
+      .send({ agentName: 'coder', message: 'persist me', maxSteps: 2 })
+      .expect(201);
+    const jobId = res.body.jobId as string;
+
+    // Wait for the run to reach a terminal state (real streaming loop).
+    let terminal: { status: string } | null = null;
+    for (let i = 0; i < 40; i++) {
+      const poll = await http().get(`/api/channels/${channelId}/jobs/${jobId}`).expect(200);
+      if (['done', 'error', 'stopped'].includes(poll.body.status)) {
+        terminal = poll.body;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    expect(terminal).not.toBeNull();
+
+    // The same snapshot is visible from the database directly.
+    const row = await prisma.channelRun.findUnique({ where: { id: jobId } });
+    expect(row).not.toBeNull();
+    expect(row!.status).toBe(terminal!.status);
+    expect(Array.isArray(row!.events)).toBe(true);
+    expect((row!.events as Array<{ type: string }>).length).toBeGreaterThanOrEqual(1);
+
+    // Deleting the channel cascade-deletes its run history.
+    await http().delete(`/api/channels/${channelId}/jobs`).ok(() => true);
+  });
+
   it('deletes a channel', async () => {
+    const prisma = app.get(PrismaService);
     const res = await http().delete(`/api/channels/${channelId}`).expect(200);
     expect(res.body).toEqual({ deleted: true });
     await http().get(`/api/channels/${channelId}`).expect(404);
+
+    // Channel runs were removed with the channel rows.
+    const orphanRuns = await prisma.channelRun.count({
+      where: { channelId },
+    });
+    expect(orphanRuns).toBe(0);
     channelId = '';
   });
 });
