@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-06T00:51:23.513Z",
+  "ranAt": "2026-08-06T02:19:44.699Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "CDF087ABD52821919FFD5252A49AA828",
+        "id": "C6EBFDFA69744D6BE3E1E4AFD667078F",
         "created": true
       },
       "checks": {
@@ -30,7 +30,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "2BAC34F73EF34B002C41286D3650AD8E",
+        "id": "577B778A127CCB998B399CA13F717914",
         "created": true
       },
       "checks": {
@@ -51,7 +51,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "DACC9737D2F3684EFE17B70FDF62FFB1",
+        "id": "B7E0EEE9FE30DF1F5973FBE97684F8BD",
         "created": true
       },
       "checks": {
@@ -72,9 +72,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "BB4114840079C6414FB73E0758377950",
+      "id": "92C55301ED3B50C3D449B030D686648D",
       "created": true
     },
+    "channelName": "browser-e2e-msgw1h1r",
     "flow": {
       "steps": [
         "created-channel",
@@ -82,9 +83,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-06T00:51:30.797Z",
-        "finishedAt": "2026-08-06T00:51:35.224Z",
-        "elapsedMs": 3072
+        "postedAt": "2026-08-06T02:19:51.638Z",
+        "finishedAt": "2026-08-06T02:19:55.914Z",
+        "elapsedMs": 2964
       },
       "result": {
         "answer": true,
@@ -92,8 +93,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msgsvuw9",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T00:51:30.099Z\nAgent coder joined #browser-e2e-msgsvuw9.\nsystem\n[SYSTEM]\n2026-08-06T00:51:30.124Z\nChannel #browser-e2e-msgsvuw9 created.\nyou\n[USER]\n2026-08-06T00:51:30.799Z\nFollow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.\ncoder\n[AGENT]\n2026-08-06T00:51:33.134Z\nhello\ncoder\n[AGENT]\n2026-08-06T00:51:33.980Z\nDone. I wrote `hello_round.md` into the channel project and replied **hello** to the channel.\n[STATUS]\nAgent started\n🔧 channel_list\n[STEP 1]\n▸\nchannel_list\n{\"path\": \"\"}\n🔧 channel_write\n[STEP 2]\n▸\nchannel_w"
+      "channelName": "browser-e2e-msgw1h1r",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T02:19:50.939Z\nAgent coder joined #browser-e2e-msgw1h1r.\nsystem\n[SYSTEM]\n2026-08-06T02:19:50.964Z\nChannel #browser-e2e-msgw1h1r created.\nyou\n[USER]\n2026-08-06T02:19:51.641Z\nFollow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.\ncoder\n[AGENT]\n2026-08-06T02:19:53.305Z\nhello\ncoder\n[AGENT]\n2026-08-06T02:19:54.120Z\nDone. Wrote `hello_round.md` to the channel project and posted \"hello\" to the channel feed.\n[STATUS]\nAgent started\n🔧 channel_write\n[STEP 1]\n▸\nchannel_write\n{\"path\": \"hello_round.md\", \"content\": \"# Hello Rou"
     },
     "errors": {
       "netFailures": [],
@@ -101,6 +102,7 @@
       "consoleErrors": [],
       "exceptions": [],
       "logErrors": []
-    }
+    },
+    "cleanup": "deleted"
   }
 }
