@@ -46,8 +46,6 @@ export interface ChannelJob {
   maxSteps?: number;
   // internal
   messages: ChatMessage[]; // live ChatMessage[] so interjections land in context
-  spec: unknown;
-  tools: Map<string, unknown>;
   process: Promise<void>;
   abort: AbortController; // stop/divert signal consumed by the streaming loop
 }
@@ -94,14 +92,19 @@ export class ChannelJobService {
       mailbox: [],
       startedAt: new Date().toISOString(),
       messages: [],
-      spec: {},
-      tools: new Map(),
       process: Promise.resolve(),
       abort: new AbortController(),
       maxSteps: input.maxSteps,
     };
 
     job.process = this.run(job, input).catch((err) => {
+      if (job.abort.signal.aborted) {
+        // Already stopped via stop()/stopForChannel() — keep that terminal
+        // status and never downgrade it to error, even if the run later trips
+        // over the channel being deleted/out of context.
+        job.finishedAt ??= new Date().toISOString();
+        return;
+      }
       job.status = 'error';
       job.error = (err as Error).message ?? String(err);
       job.finishedAt = new Date().toISOString();
@@ -263,5 +266,28 @@ export class ChannelJobService {
     job.status = 'stopped';
     job.finishedAt = new Date().toISOString();
     this.emit(job, { type: 'stopped', text: 'Agent run stopped.' });
+  }
+
+  /**
+   * Stop every in-memory job belonging to a channel (or one of its
+   * sub-channels) and forget its per-member debug bookkeeping. Called when a
+   * channel tree is deleted, so a running agent doesn't keep working on a
+   * channel that no longer exists. Emits exactly one `stopped` event per
+   * running job and leaves already-finished jobs untouched.
+   */
+  stopForChannel(channelIds: string[]): { stopped: number } {
+    const ids = new Set(channelIds);
+    let stopped = 0;
+    for (const job of this.jobs.values()) {
+      if (!ids.has(job.channelId)) continue;
+      this.recentByAgent.delete(`${job.channelId}::${job.agentName}`);
+      if (job.status !== 'running') continue;
+      job.abort.abort();
+      job.status = 'stopped';
+      job.finishedAt = new Date().toISOString();
+      this.emit(job, { type: 'stopped', text: 'Channel deleted; run stopped.' });
+      stopped += 1;
+    }
+    return { stopped };
   }
 }

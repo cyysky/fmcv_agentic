@@ -155,6 +155,29 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
     }
   });
 
+  it('deleting a channel stops its running jobs with exactly one stopped event', async () => {
+    const res = await http()
+      .post('/api/channels')
+      .send({ name: `delete-jobs ${stamp}`, creatorAgent: 'coder' })
+      .expect(201);
+    const id = res.body.id as string;
+
+    const job = await http()
+      .post(`/api/channels/${id}/jobs`)
+      .send({ agentName: 'coder', message: 'work in the channel', maxSteps: 20 })
+      .expect(201);
+    expect(job.body.status).toBe('running');
+
+    const del = await http().delete(`/api/channels/${id}`).expect(200);
+    expect(del.body.deleted).toBe(true);
+
+    const after = await http()
+      .get(`/api/channels/${id}/jobs/${job.body.jobId}`)
+      .expect(200);
+    expect(after.body.status).toBe('stopped');
+    expect(stoppedEvents(after.body)).toBe(1);
+  });
+
   it('deletes a channel', async () => {
     const res = await http().delete(`/api/channels/${channelId}`).expect(200);
     expect(res.body).toEqual({ deleted: true });

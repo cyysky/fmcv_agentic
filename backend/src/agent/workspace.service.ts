@@ -102,6 +102,22 @@ export class WorkspaceService {
     return { name: safe, path: dir };
   }
 
+  /** Remove a public project folder only when it holds no files/subdirs.
+   *  Keeps folders that still carry artifacts, since projects can be shared
+   *  across channels or contain work worth preserving. Returns whether the
+   *  folder was actually removed (missing folders count as cleanly absent). */
+  async removeProjectIfEmpty(name: string): Promise<{ removed: boolean }> {
+    const safe = this.sanitizeName(name);
+    try {
+      await fs.rmdir(path.join(this.getProjectRoot(), safe));
+      return { removed: true };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTEMPTY') return { removed: false };
+      throw err;
+    }
+  }
+
   /** Ensure a named agent's folder (and its `work/` dir) exists on disk. */
   async ensureAgentFolder(name: string): Promise<{
     name: string;

@@ -216,10 +216,34 @@ export class ChannelService {
     };
   }
 
+  /** Ids of a channel and all its sub-channels — the full set that must be
+   *  stopped/cleaned when the channel tree is deleted. */
+  async deletionCandidates(id: string): Promise<string[]> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!channel) throw new NotFoundException(`Channel ${id} not found`);
+    const children = await this.prisma.channel.findMany({
+      where: { parentId: id },
+      select: { id: true },
+    });
+    return [id, ...children.map((c) => c.id)];
+  }
+
   async remove(id: string): Promise<{ deleted: boolean }> {
     const channel = await this.prisma.channel.findUnique({ where: { id } });
     if (!channel) throw new NotFoundException(`Channel ${id} not found`);
+
+    // Sub-channels are cascade-deleted by Prisma; their project content lives
+    // in the workspace, not in the channel row, so no extra cleanup there.
     await this.prisma.channel.delete({ where: { id } });
+
+    // The channel owns its project folder; prune it when nothing is left in
+    // it (folders with artifacts are kept — they may be shared or hold work
+    // the team wants to preserve).
+    await this.workspaces.removeProjectIfEmpty(channel.projectName);
+
     return { deleted: true };
   }
 

@@ -63,7 +63,11 @@ export class ChannelController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  async remove(@Param('id') id: string) {
+    // Stop any running agent jobs for the channel tree before the rows go
+    // away, so workers never keep running against a deleted channel.
+    const ids = await this.channels.deletionCandidates(id);
+    this.jobs.stopForChannel(ids);
     return this.channels.remove(id);
   }
 

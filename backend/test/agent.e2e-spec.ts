@@ -55,6 +55,32 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(JSON.stringify(empty.body.message)).toContain('message');
   });
 
+  it('POST /api/agent/turn — validates maxSteps and payload shape without calling the LLM', async () => {
+    const tooBig = await http()
+      .post('/api/agent/turn')
+      .send({ message: 'hi', maxSteps: 21 })
+      .expect(400);
+    expect(JSON.stringify(tooBig.body.message)).toContain('maxSteps');
+
+    const tooSmall = await http()
+      .post('/api/agent/turn')
+      .send({ message: 'hi', maxSteps: 0 })
+      .expect(400);
+    expect(JSON.stringify(tooSmall.body.message)).toContain('maxSteps');
+
+    const noMessage = await http()
+      .post('/api/agent/turn')
+      .send({ maxSteps: 3 })
+      .expect(400);
+    expect(JSON.stringify(noMessage.body.message)).toContain('message');
+
+    const extra = await http()
+      .post('/api/agent/turn')
+      .send({ message: 'hi', bogus: 1 })
+      .expect(400);
+    expect(JSON.stringify(extra.body.message)).toContain('bogus');
+  });
+
   it('rejects unknown session ids with 404', async () => {
     const res = await http()
       .post('/api/agent/sessions/00000000-0000-0000-0000-000000000001/converse')
