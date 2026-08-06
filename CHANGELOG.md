@@ -1,3 +1,18 @@
+## Round 2026-08-06 — Round 11 · autonomous iteration round 9
+
+### Added
+- Global per-IP request throttling on the API: `@nestjs/throttler` wired
+  through `ThrottlerModule` + a global `APP_GUARD`, with `RATE_LIMIT_MAX`
+  (default 100 req/window; `0` disables) and `RATE_LIMIT_TTL_MS` (default
+  60000) read per request, so limits change without a reboot. Over-limit
+  bursts get 429 + `Retry-After` and recover after the window.
+- Unit + API E2E coverage for throttling (unit 47 → 52; e2e 36 → 38), and
+  compose env plumbing for the two rate-limit variables.
+
+### Changed
+- README refresh: unit 52/9, API E2E 38/6 (throttle 2), env docs for
+  rate limiting.
+
 ## Round 2026-08-06 — Round 10 · autonomous iteration round 8
 
 ### Added

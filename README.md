@@ -104,15 +104,16 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 47 tests / 8 suites** — model catalog, workspace service + tools,
+- **Unit: 52 tests / 9 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
-  rename + auto-title.
-- **API E2E: 36 tests / 5 suites** (`backend/test/*.e2e-spec.ts`) — real
+  rename + auto-title, request-throttle guard.
+- **API E2E: 38 tests / 6 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD (4), agent
   sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
-  (12), and the API token gate (3). Deleting a channel stops its running
+  (12), the API token gate (3), and throttling (2: over-limit 429 then
+  window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
   (verified per file).
@@ -201,6 +202,12 @@ Stop everything with `docker compose down`.
 - `NEXT_PUBLIC_API_TOKEN` — optional frontend build-time token; forwarded as
   the bearer header by `frontend/lib/api.ts` when `API_TOKEN` is set on the
   backend. It ships in browser JS, so treat it as access gating, not a secret.
+- `RATE_LIMIT_MAX` — max requests per window per client IP (default 100);
+  set `0` to disable throttling entirely. Over-limit bursts get 429 with
+  `Retry-After` and recover once the window elapses.
+- `RATE_LIMIT_TTL_MS` — throttling window length in milliseconds (default
+  60000). Both variables are read per request, so they take effect without a
+  backend restart.
 
 ### Database & migrations (Prisma)
 
