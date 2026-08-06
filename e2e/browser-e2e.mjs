@@ -11,8 +11,9 @@
 //
 // Checks:
 //   1. /, /settings, /agent load without console errors / failed network requests
-//   2. /agent: create a channel, post a message, agent runs to an answer/stop
-//   3. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
+//   2. Each route renders its expected document.title (browser tab title)
+//   3. /agent: create a channel, post a message, agent runs to an answer/stop
+//   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -28,9 +29,16 @@ const APP = (process.env.E2E_APP_BASE || "http://localhost:3333").replace(/\/$/,
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = resolve(process.env.E2E_SHOT_DIR || resolve(SCRIPT_DIR, "screenshots"));
 const REPORT = resolve(process.env.E2E_REPORT || resolve(SCRIPT_DIR, "report.json"));
+// Overall watchdog: a stuck CDP target must not let the round hang forever.
+const WATCHDOG_MS = Number(process.env.E2E_WATCHDOG_MS || 10 * 60 * 1000);
 mkdirSync(SHOT_DIR, { recursive: true });
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const log = (...args) =>
+  console.log(`[${new Date().toISOString().slice(11, 19)}] ${args.join(" ")}`);
+
+/** Tabs this run created; they are closed in `finally` even on failure. */
+const createdTabs = [];
 
 /* ----------------------------- CDP client ----------------------------- */
 
@@ -40,7 +48,13 @@ class CDP {
     this.nextId = 0;
     this.pending = new Map();
     this.handlers = new Map();
+    this.closed = false;
     this.ws.addEventListener("message", (e) => this._onMessage(e));
+    this.ws.addEventListener("close", () => {
+      this.closed = true;
+      for (const { reject } of this.pending.values()) reject(new Error("CDP websocket closed"));
+      this.pending.clear();
+    });
   }
   open() {
     return new Promise((res, rej) => {
@@ -67,13 +81,16 @@ class CDP {
     }
   }
   send(method, params = {}) {
+    if (this.closed) return Promise.reject(new Error("CDP websocket closed"));
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
-  close() { this.ws.close(); }
+  close() {
+    if (!this.closed) this.ws.close();
+  }
 }
 
 async function httpJson(path, method = "GET") {
@@ -81,7 +98,21 @@ async function httpJson(path, method = "GET") {
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`);
   return r.json();
 }
-const httpNew = (url) => httpJson(`/json/new?${encodeURIComponent(url)}`, "PUT");
+
+/** Open a brand-new page tab (never silently reuse a busy/stale tab). */
+async function openTab(url) {
+  const t = await httpJson(`/json/new?${encodeURIComponent(url)}`, "PUT");
+  createdTabs.push(t.id);
+  return { id: t.id, url, wsUrl: t.webSocketDebuggerUrl, created: true };
+}
+
+async function closeCreatedTabs() {
+  for (const id of createdTabs.splice(0)) {
+    await httpJson(`/json/close/${id}`).catch((e) => {
+      log(`  warn: could not close tab ${id}: ${e.message}`);
+    });
+  }
+}
 
 async function evalJs(c, expression) {
   const r = await c.send("Runtime.evaluate", {
@@ -123,13 +154,20 @@ const jsSetInput = (selector, value) => `(() => {
 /** Build a page expression that calls document.querySelector safely. */
 const selExpr = (selector) => `document.querySelector(${JSON.stringify(selector)})`;
 
-async function waitFor(c, expression, timeoutMs, stepMs = 400) {
+async function waitFor(c, expression, timeoutMs, stepMs = 400, label = "") {
   const start = Date.now();
+  let last = null;
   while (Date.now() - start < timeoutMs) {
-    const v = await evalJs(c, expression);
-    if (v) return v;
+    try {
+      last = await evalJs(c, expression);
+    } catch {
+      // Page may be mid-navigation; keep polling until the timeout.
+      last = null;
+    }
+    if (last) return last;
     await delay(stepMs);
   }
+  log(`  warn: waitFor timed out after ${timeoutMs}ms${label ? ` (${label})` : ""}`);
   return null;
 }
 
@@ -175,24 +213,7 @@ function errorCount(sink) {
 
 /* ------------------------------ flow steps ------------------------------ */
 
-async function openTab(url) {
-  const targets = await httpJson("/json");
-  const existing = targets.find((t) => t.type === "page" && t.url.startsWith(url));
-  let id, wsUrl;
-  if (existing) {
-    id = existing.id;
-    wsUrl = existing.webSocketDebuggerUrl;
-  } else {
-    const t = await httpNew(url);
-    id = t.id;
-    wsUrl = t.webSocketDebuggerUrl;
-  }
-  return { id, url, wsUrl, created: !existing };
-}
-
-async function probeRoute(route) {
-  const url = route.url;
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+async function setupPage(url) {
   const tab = await openTab(url);
   const c = new CDP(tab.wsUrl);
   await c.open();
@@ -200,123 +221,183 @@ async function probeRoute(route) {
   await c.send("Runtime.enable");
   await c.send("Network.enable");
   await c.send("Log.enable");
-  wireErrorCapture(c, sink);
-  await c.send("Page.navigate", { url });
-  // Wait for document ready + SPA data fetches to settle.
-  const ready = await waitFor(c, "document.readyState === 'complete'", 15000);
-  if (!ready) throw new Error(`${route}: page never reached readyState complete`);
-  await delay(1200);
+  return { tab, c };
+}
 
-  const body = await evalJs(c, "document.body.innerText");
-  const checks = {};
-  for (const [name, text] of Object.entries(route.bodyText)) {
-    checks[name] = body.includes(text);
-  }
-  if (route.jsChecks) {
-    for (const [name, expr] of Object.entries(route.jsChecks)) {
-      checks[name] = Boolean(await evalJs(c, expr));
+async function probeRoute(route) {
+  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  log(`probe ${route.route} -> ${route.url}`);
+  const { tab, c } = await setupPage(route.url);
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url: route.url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, `${route.route} ready`);
+    if (!ready) throw new Error(`${route.route}: page never reached readyState complete`);
+
+    // Wait for the first expected body text so slow SPA renders (busy Chrome)
+    // settle instead of failing on a half-drawn page.
+    if (route.waitText) {
+      const text = await waitFor(
+        c,
+        `document.body.innerText.includes(${JSON.stringify(route.waitText)})`,
+        30000,
+        600,
+        `${route.route} content`,
+      );
+      if (!text) throw new Error(`${route.route}: expected text "${route.waitText}" never appeared`);
     }
+    await delay(600);
+
+    const docTitle = await evalJs(c, "document.title");
+    const body = await evalJs(c, "document.body.innerText");
+    const checks = {};
+    for (const [name, text] of Object.entries(route.bodyText)) {
+      checks[name] = body.includes(text);
+    }
+    if (route.jsChecks) {
+      for (const [name, expr] of Object.entries(route.jsChecks)) {
+        checks[name] = Boolean(await evalJs(c, expr));
+      }
+    }
+    if (route.title) checks.docTitle = docTitle === route.title;
+    await screenshot(c, `${route.route}.png`);
+    return {
+      route: route.route,
+      url: route.url,
+      docTitle,
+      tabInfo: { id: tab.id, created: tab.created },
+      checks,
+      errors: sink,
+    };
+  } finally {
+    c.close();
   }
-  await screenshot(c, `${route.route}.png`);
-  c.close();
-  return { route, url, tabInfo: { id: tab.id, created: tab.created }, checks, errors: sink };
 }
 
 async function agentChannelFlow() {
   const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/agent`;
-  const tab = await openTab(url);
-  const c = new CDP(tab.wsUrl);
-  await c.open();
-  await c.send("Page.enable");
-  await c.send("Runtime.enable");
-  await c.send("Network.enable");
-  await c.send("Log.enable");
-  wireErrorCapture(c, sink);
-  await c.send("Page.navigate", { url });
-  const ready = await waitFor(c, "document.readyState === 'complete'", 15000);
-  if (!ready) throw new Error("agent flow: page never loaded");
-  await delay(1500);
+  log(`flow agent channel -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "agent ready");
+    if (!ready) throw new Error("agent flow: page never loaded");
+    const flow = { steps: [], timings: {}, result: null };
 
-  const flow = { steps: [], timings: {}, result: null };
+    // Composer must exist before we try to drive the channel UI.
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea')}`,
+      30000,
+      600,
+      "agent composer",
+    );
+    if (!composer) throw new Error("agent flow: page never rendered its composer");
+    flow.docTitle = await evalJs(c, "document.title");
+    await delay(800);
 
-  // 1. Open the Channels tab and the New-channel modal.
-  await evalJs(c, jsClick("Channels", true));
-  await delay(400);
-  const modalOpen = await evalJs(c, `!!${selExpr('input[placeholder="# channel name"]')}`);
-  if (!modalOpen) {
-    await evalJs(c, jsClick("New channel", false));
+    // 1. Open the Channels tab and the New-channel modal.
+    await evalJs(c, jsClick("Channels", true));
     await delay(400);
+    const modalOpen = await evalJs(c, `!!${selExpr('input[placeholder="# channel name"]')}`);
+    if (!modalOpen) {
+      await evalJs(c, jsClick("New channel", false));
+      await delay(400);
+    }
+    const channelName = `browser-e2e-${Date.now().toString(36)}`;
+    await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
+    await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
+    await delay(100);
+    await evalJs(c, jsClick("Create", true));
+    flow.steps.push("created-channel");
+    flow.channelName = channelName;
+    log(`  created channel ${channelName}`);
+
+    // 2. The channel auto-opens; wait for its composer, then post a message.
+    const composerReady = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
+      30000,
+      600,
+      "channel composer",
+    );
+    if (!composerReady) throw new Error("agent flow: channel composer never appeared");
+    const msg = "Follow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.";
+    await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
+    await delay(100);
+    // Submit the channel composer specifically (the mode-toggle button is also
+    // labelled "Post"): find the form that holds a textarea and click its
+    // enabled submit button.
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("agent flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    flow.timings.postedAt = new Date().toISOString();
+    log("  posted message; waiting for agent run");
+
+    // Capture the "running" state a beat later for the report.
+    await delay(1800);
+    await screenshot(c, "agent-channel-running.png");
+
+    // 3. Wait for a terminal render: [answer], [stopped] or [error].
+    const started = Date.now();
+    const terminal = await waitFor(
+      c,
+      '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
+      180000,
+      800,
+      "agent terminal state",
+    );
+    flow.timings.finishedAt = new Date().toISOString();
+    if (!terminal) throw new Error("agent flow: no terminal state within 180s");
+    const state = await evalJs(c, `(() => {
+      const t = document.body.innerText.toUpperCase();
+      return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
+    })()`);
+    await delay(500);
+    await screenshot(c, "agent-channel-done.png");
+    flow.result = state;
+    flow.steps.push("terminal-state");
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  agent terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
+    const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
+    flow.feedSnippet = feed.slice(0, 600);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
   }
-  const channelName = `browser-e2e-${Date.now().toString(36)}`;
-  await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
-  await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
-  await delay(100);
-  await evalJs(c, jsClick("Create", true));
-  flow.steps.push("created-channel");
-
-  // 2. The channel auto-opens; wait for its composer, then post a message.
-  const composerReady = await waitFor(
-    c,
-    `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
-    15000,
-  );
-  if (!composerReady) throw new Error("agent flow: channel composer never appeared");
-  const msg = "Follow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.";
-  await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
-  await delay(100);
-  // Submit the channel composer specifically (the mode-toggle button is also
-  // labelled "Post"): find the form that holds a textarea and click its
-  // enabled submit button.
-  const submitted = await evalJs(c, `(() => {
-    const f = [...document.forms].find((x) => x.querySelector("textarea"));
-    const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
-    if (!b) return false;
-    b.click();
-    return true;
-  })()`);
-  if (!submitted) throw new Error("agent flow: composer submit button not found/enabled");
-  flow.steps.push("posted-message");
-  flow.timings.postedAt = new Date().toISOString();
-
-  // Capture the "running" state a beat later for the report.
-  await delay(1800);
-  await screenshot(c, "agent-channel-running.png");
-
-  // 3. Wait for a terminal render: [answer], [stopped] or [error].
-  const started = Date.now();
-  const terminal = await waitFor(
-    c,
-    '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
-    180000,
-    800,
-  );
-  flow.timings.finishedAt = new Date().toISOString();
-  flow.timings.elapsedMs = Date.now() - started;
-  if (!terminal) throw new Error("agent flow: no terminal state within 180s");
-  const state = await evalJs(c, `(() => {
-    const t = document.body.innerText.toUpperCase();
-    return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
-  })()`);
-  await delay(500);
-  await screenshot(c, "agent-channel-done.png");
-  flow.result = state;
-  flow.steps.push("terminal-state");
-  const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
-  flow.feedSnippet = feed.slice(0, 600);
-  c.close();
-  return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
 }
 
 /* --------------------------------- main --------------------------------- */
 
 async function main() {
   const routes = [
-    { route: "home", url: `${APP}/`, bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkSettings: "Open Settings" } },
-    { route: "settings", url: `${APP}/settings`, bodyText: { title: "Settings", connections: "Connections (" } },
+    {
+      route: "home",
+      url: `${APP}/`,
+      title: "FMCV Agentic",
+      waitText: "Open Agent",
+      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkSettings: "Open Settings" },
+    },
+    {
+      route: "settings",
+      url: `${APP}/settings`,
+      title: "Settings - FMCV Agentic",
+      waitText: "Connections (",
+      bodyText: { title: "Settings", connections: "Connections (" },
+    },
     {
       route: "agent",
       url: `${APP}/agent`,
+      title: "Agent - FMCV Agentic",
+      waitText: "Channels",
       bodyText: { title: "Agent", channelsTab: "Channels" },
       jsChecks: { composerPresent: "!!document.querySelector('textarea')" },
     },
@@ -324,23 +405,23 @@ async function main() {
 
   const version = await httpJson("/json/version");
   const report = { browser: version.Browser, app: APP, ranAt: new Date().toISOString(), routes: [], flow: null };
+  log("browser E2E start");
 
-  for (const r of routes) {
-    report.routes.push(await probeRoute(r));
-  }
-  report.flow = await agentChannelFlow();
-  const opened = [
-    ...report.routes.flatMap((r) => (r.tabInfo.created ? [r.tabInfo.id] : [])),
-    ...(report.flow.tabInfo.created ? [report.flow.tabInfo.id] : []),
-  ];
-  for (const id of opened) {
-    await httpJson(`/json/close/${id}`).catch(() => {});
+  try {
+    for (const r of routes) {
+      report.routes.push(await probeRoute(r));
+    }
+    report.flow = await agentChannelFlow();
+    log("browser E2E flows done");
+  } finally {
+    // Never leave check tabs behind, even when a route failed midway.
+    await closeCreatedTabs();
   }
 
   const failures = [];
   for (const r of report.routes) {
     const missing = Object.entries(r.checks).filter(([, v]) => !v).map(([k]) => k);
-    if (missing.length) failures.push(`${r.route}: missing text [${missing.join(", ")}]`);
+    if (missing.length) failures.push(`${r.route}: missing check(s) [${missing.join(", ")}]`);
     const errs = errorCount(r.errors);
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
@@ -359,7 +440,15 @@ async function main() {
   process.exit(failures.length ? 1 : 0);
 }
 
-main().catch((e) => {
-  console.error(`browser E2E failed: ${e.stack ?? e.message}`);
-  process.exit(1);
-});
+const watchdog = setTimeout(() => {
+  console.error(`browser E2E watchdog: no progress for ${WATCHDOG_MS}ms; aborting`);
+  closeCreatedTabs().finally(() => process.exit(1));
+}, WATCHDOG_MS);
+watchdog.unref();
+
+main()
+  .catch((e) => {
+    console.error(`browser E2E failed: ${e.stack ?? e.message}`);
+    process.exit(1);
+  })
+  .finally(() => clearTimeout(watchdog));

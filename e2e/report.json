@@ -1,27 +1,21 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-05T15:43:57.923Z",
+  "ranAt": "2026-08-06T00:51:23.513Z",
   "routes": [
     {
-      "route": {
-        "route": "home",
-        "url": "http://localhost:3333/",
-        "bodyText": {
-          "title": "FMCV Agentic",
-          "linkAgent": "Open Agent",
-          "linkSettings": "Open Settings"
-        }
-      },
+      "route": "home",
       "url": "http://localhost:3333/",
+      "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "B107936190A9496ED0EB625B72F4E614",
-        "created": false
+        "id": "CDF087ABD52821919FFD5252A49AA828",
+        "created": true
       },
       "checks": {
         "title": true,
         "linkAgent": true,
-        "linkSettings": true
+        "linkSettings": true,
+        "docTitle": true
       },
       "errors": {
         "netFailures": [],
@@ -32,22 +26,17 @@
       }
     },
     {
-      "route": {
-        "route": "settings",
-        "url": "http://localhost:3333/settings",
-        "bodyText": {
-          "title": "Settings",
-          "connections": "Connections ("
-        }
-      },
+      "route": "settings",
       "url": "http://localhost:3333/settings",
+      "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "E83A4F1EEB7906BBE4E89C63AE75DB98",
-        "created": false
+        "id": "2BAC34F73EF34B002C41286D3650AD8E",
+        "created": true
       },
       "checks": {
         "title": true,
-        "connections": true
+        "connections": true,
+        "docTitle": true
       },
       "errors": {
         "netFailures": [],
@@ -58,26 +47,18 @@
       }
     },
     {
-      "route": {
-        "route": "agent",
-        "url": "http://localhost:3333/agent",
-        "bodyText": {
-          "title": "Agent",
-          "channelsTab": "Channels"
-        },
-        "jsChecks": {
-          "composerPresent": "!!document.querySelector('textarea')"
-        }
-      },
+      "route": "agent",
       "url": "http://localhost:3333/agent",
+      "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "73D36A6A0E22ECFCC8F0E8E1B3D784C3",
+        "id": "DACC9737D2F3684EFE17B70FDF62FFB1",
         "created": true
       },
       "checks": {
         "title": true,
         "channelsTab": true,
-        "composerPresent": true
+        "composerPresent": true,
+        "docTitle": true
       },
       "errors": {
         "netFailures": [],
@@ -91,8 +72,8 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "73D36A6A0E22ECFCC8F0E8E1B3D784C3",
-      "created": false
+      "id": "BB4114840079C6414FB73E0758377950",
+      "created": true
     },
     "flow": {
       "steps": [
@@ -101,16 +82,18 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-05T15:44:07.380Z",
-        "finishedAt": "2026-08-05T15:44:10.174Z",
-        "elapsedMs": 805
+        "postedAt": "2026-08-06T00:51:30.797Z",
+        "finishedAt": "2026-08-06T00:51:35.224Z",
+        "elapsedMs": 3072
       },
       "result": {
         "answer": true,
         "stopped": false,
         "error": false
       },
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-05T15:44:06.873Z\nAgent coder joined #browser-e2e-msg9bwwi.\nsystem\n[SYSTEM]\n2026-08-05T15:44:06.896Z\nChannel #browser-e2e-msg9bwwi created.\nyou\n[USER]\n2026-08-05T15:44:07.378Z\nFollow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.\ncoder\n[AGENT]\n2026-08-05T15:44:08.718Z\nhello\ncoder\n[AGENT]\n2026-08-05T15:44:09.408Z\nDone. I wrote `hello_round.md` into the channel project and replied **hello** to the channel.\n[STATUS]\nAgent started\n🔧 channel_write\n[STEP 1]\n▸\nchannel_write\n{\"path\": \"hello_round.md\", \"content\": \"# Hello R"
+      "docTitle": "Agent - FMCV Agentic",
+      "channelName": "browser-e2e-msgsvuw9",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T00:51:30.099Z\nAgent coder joined #browser-e2e-msgsvuw9.\nsystem\n[SYSTEM]\n2026-08-06T00:51:30.124Z\nChannel #browser-e2e-msgsvuw9 created.\nyou\n[USER]\n2026-08-06T00:51:30.799Z\nFollow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.\ncoder\n[AGENT]\n2026-08-06T00:51:33.134Z\nhello\ncoder\n[AGENT]\n2026-08-06T00:51:33.980Z\nDone. I wrote `hello_round.md` into the channel project and replied **hello** to the channel.\n[STATUS]\nAgent started\n🔧 channel_list\n[STEP 1]\n▸\nchannel_list\n{\"path\": \"\"}\n🔧 channel_write\n[STEP 2]\n▸\nchannel_w"
     },
     "errors": {
       "netFailures": [],
