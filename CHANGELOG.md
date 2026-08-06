@@ -1,3 +1,25 @@
+## Round 2026-08-06 — Round 7 · autonomous iteration round 5
+
+### Added
+- Optional bearer-token gate: backend `API_TOKEN` env; when set, all requests
+  need `Authorization: Bearer <token>` (constant-time compare, else 401).
+  Empty/unset → fail-open so local dev and the browser E2E are unaffected.
+- Frontend `apiFetch` in `frontend/lib/api.ts`: reads `NEXT_PUBLIC_API_URL` +
+  optional `NEXT_PUBLIC_API_TOKEN` and forwards the bearer header; the agent
+  and settings clients now use it.
+- Compose/Docker plumbing for `API_TOKEN` / `NEXT_PUBLIC_API_TOKEN` (empty
+  defaults) + unit and API E2E coverage for the gate (unit 42 → 45; API E2E
+  counting corrected, below).
+
+### Changed
+- E2E harness fix: `bootstrapApp` moved from `app.e2e-spec.ts` to
+  `test/test-app.ts`. The old import re-registered app's 5 tests inside each
+  importing suite (inflated totals: 46/4 suites, then 54/5). Counts now equal
+  the declared tests: 34/5 — app 5, connections 4, agent 10, channels 12,
+  auth 3 — verified file by file.
+- README refresh: unit 45/8, API E2E 34/5 with per-suite breakdown, token env
+  vars documented, live-prove instructions added.
+
 ## Round 2026-08-06 — Round 6 · autonomous iteration round 4
 
 ### Added

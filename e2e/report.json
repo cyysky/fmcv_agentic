@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-06T02:46:58.199Z",
+  "ranAt": "2026-08-06T02:55:57.767Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "AB28E2A6EFC53DCA148F714005E53DA2",
+        "id": "90371049F604FE5418393CB610CB9BFA",
         "created": true
       },
       "checks": {
@@ -30,7 +30,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "BECA9B9E4ACBFA29BE8AB33E85488A8E",
+        "id": "C10223A11D6C7B5842A378018A7EC7DF",
         "created": true
       },
       "checks": {
@@ -51,7 +51,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "94A5ACA78DE14FDB3121F50C6E18D926",
+        "id": "DDC6305181D421196B4E31A0A8C71B8A",
         "created": true
       },
       "checks": {
@@ -72,10 +72,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "E655CF35DC8CCA2C6D905692154269D2",
+      "id": "63C448D6D2C632D07187D33053F4D8CF",
       "created": true
     },
-    "channelName": "browser-e2e-msgx0hgz",
+    "channelName": "browser-e2e-msgxc1pe",
     "flow": {
       "steps": [
         "created-channel",
@@ -83,9 +83,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-06T02:47:05.143Z",
-        "finishedAt": "2026-08-06T02:47:07.831Z",
-        "elapsedMs": 1376
+        "postedAt": "2026-08-06T02:56:04.581Z",
+        "finishedAt": "2026-08-06T02:56:07.264Z",
+        "elapsedMs": 1359
       },
       "result": {
         "answer": true,
@@ -93,8 +93,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msgx0hgz",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T02:47:04.443Z\nAgent coder joined #browser-e2e-msgx0hgz.\nsystem\n[SYSTEM]\n2026-08-06T02:47:04.469Z\nChannel #browser-e2e-msgx0hgz created.\nyou\n[USER]\n2026-08-06T02:47:05.145Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T02:47:06.991Z\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
+      "channelName": "browser-e2e-msgxc1pe",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T02:56:03.915Z\nAgent coder joined #browser-e2e-msgxc1pe.\nsystem\n[SYSTEM]\n2026-08-06T02:56:03.938Z\nChannel #browser-e2e-msgxc1pe created.\nyou\n[USER]\n2026-08-06T02:56:04.585Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T02:56:06.328Z\nHello! I've written `round2.md` into my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Ro"
     },
     "errors": {
       "netFailures": [],
@@ -122,7 +122,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "0874991D367149213EBB84516C9E5CE5",
+      "id": "5C559872076094F4430FC6B72CCD4228",
       "created": true
     },
     "flow": {
@@ -135,17 +135,17 @@
         "history-rendered"
       ],
       "timings": {
-        "postedAt": "2026-08-06T02:47:10.466Z",
-        "finishedAt": "2026-08-06T02:47:12.075Z",
-        "elapsedMs": 2177
+        "postedAt": "2026-08-06T02:56:09.910Z",
+        "finishedAt": "2026-08-06T02:56:11.518Z",
+        "elapsedMs": 2179
       },
       "result": {
         "persisted": true
       },
-      "createdAt": "2026-08-06T02:47:09.738Z",
-      "sentText": "Hello from sessions E2E (msgx0m4t)",
+      "createdAt": "2026-08-06T02:56:09.183Z",
+      "sentText": "Hello from sessions E2E (msgxc6dd)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (msgx0m4t)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. I can browse project files, read/write files in my workspace, and assist with your tasks.\n\nWhat would you like to work on?",
+      "threadSnippet": "YOU\nHello from sessions E2E (msgxc6dd)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help.\n\nI see you're testing from sessions E2E (msgxc6dd). What can I do for you today? I can:\n- Explore files in my workspace or shared projects\n- Read project files\n- Write files to my own workspace\n\nLet me know what you'd like to work on!",
       "historySeen": true
     },
     "errors": {

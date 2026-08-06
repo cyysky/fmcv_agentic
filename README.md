@@ -104,14 +104,16 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 42 tests / 7 suites** — model catalog, workspace service + tools,
+- **Unit: 45 tests / 8 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
-  base-agent loop (incl. abort and `maxSteps`).
-- **API E2E: 46 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
-  Postgres via `e2e-setup.ts` (temp workspace root): app health, connections,
-  agent sessions/turns, channel lifecycle + streaming jobs (including that
-  deleting a channel stops its running jobs, job history persists to
-  `channel_runs`, and channel delete cascade-prunes run history).
+  base-agent loop (incl. abort and `maxSteps`), API token guard.
+- **API E2E: 34 tests / 5 suites** (`backend/test/*.e2e-spec.ts`) — real
+  Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
+  `test/test-app.ts`: app health (5), connections CRUD (4), agent
+  sessions/turns (10), channel lifecycle + streaming jobs (12), and the API
+  token gate (3). Deleting a channel stops its running jobs, job history
+  persists to `channel_runs`, and channel delete cascade-prunes run history.
+  Each suite's count equals its declared tests (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent` render their content and document titles with no console/network
@@ -187,6 +189,12 @@ Stop everything with `docker compose down`.
   stable `[stub]` echo instead of calling the gateway. The API E2E suite
   defaults to this so it runs hermetically; the browser E2E still uses the
   live model.
+- `API_TOKEN` — optional bearer-token gate. Set to require
+  `Authorization: Bearer <token>` on every API request (401 otherwise);
+  empty/unset keeps the API fully open for local dev.
+- `NEXT_PUBLIC_API_TOKEN` — optional frontend build-time token; forwarded as
+  the bearer header by `frontend/lib/api.ts` when `API_TOKEN` is set on the
+  backend. It ships in browser JS, so treat it as access gating, not a secret.
 
 ### Database & migrations (Prisma)
 
