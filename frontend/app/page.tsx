@@ -13,6 +13,9 @@ export default function Home() {
           <Link className={styles.primary} href="/agent">
             Open Agent
           </Link>
+          <Link className={styles.primary} href="/files">
+            Open Files
+          </Link>
           <Link className={styles.primary} href="/settings">
             Open Settings
           </Link>
