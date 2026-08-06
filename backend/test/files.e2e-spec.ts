@@ -17,7 +17,7 @@ describe('Files API (e2e)', () => {
 
   afterAll(async () => {
     // Best-effort cleanup of everything this suite created.
-    for (const path of [filePath, `${base}/sub`, base]) {
+    for (const path of [filePath, `${base}/blob.bin`, `${base}/sub`, base]) {
       try {
         await request(app.getHttpServer())
           .delete('/api/files/delete')
@@ -77,6 +77,27 @@ describe('Files API (e2e)', () => {
     ]);
   });
 
+  it('streams a downloadable text file with attachment headers', async () => {
+    const dl = await request(app.getHttpServer())
+      .get('/api/files/download')
+      .query({ scope, path: filePath })
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(dl.headers['content-disposition']).toContain(
+      'attachment; filename="hello.txt"',
+    );
+    expect(dl.headers['content-type']).toBe('application/octet-stream');
+    expect(Number(dl.headers['content-length'])).toBe(
+      'hello file manager'.length,
+    );
+    expect((dl.body as Buffer).toString('utf8')).toBe('hello file manager');
+  });
+
   it('deletes an empty directory and then a file', async () => {
     const dir = (
       await request(app.getHttpServer())
@@ -100,6 +121,42 @@ describe('Files API (e2e)', () => {
       .get('/api/files/list')
       .query({ scope, path: `${base}/sub` })
       .expect(404);
+  });
+
+  it('downloads binary files byte-for-byte', async () => {
+    const binPath = `${base}/blob.bin`;
+    const bytes = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd, 0x0a, 0x0d]);
+    const wsRoot = (process.env.AGENT_WORKSPACE_ROOT ?? '').replace(/\/$/, '');
+    const target = require('node:path').join(wsRoot, 'agents', 'coder', binPath);
+    const { mkdir, writeFile } = require('node:fs/promises');
+    await mkdir(require('node:path').dirname(target), { recursive: true });
+    await writeFile(target, bytes);
+
+    const dl = await request(app.getHttpServer())
+      .get('/api/files/download')
+      .query({ scope, path: binPath })
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(dl.headers['content-disposition']).toContain(
+      'attachment; filename="blob.bin"',
+    );
+    expect(Buffer.compare(dl.body as Buffer, bytes)).toBe(0);
+  });
+
+  it('refuses to download a directory or an escaped path', async () => {
+    await request(app.getHttpServer())
+      .get('/api/files/download')
+      .query({ scope, path: base })
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/files/download')
+      .query({ scope, path: '../../etc/passwd' })
+      .expect(400);
   });
 
   it('rejects path escapes with 400', async () => {

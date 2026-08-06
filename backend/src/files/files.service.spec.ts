@@ -117,6 +117,32 @@ describe('FilesService', () => {
     expect(list.entries).toEqual([]);
   });
 
+  it('resolves a file for download with size metadata', async () => {
+    await files.write('agent:coder', 'notes/data.bin', '\x00\x01payload');
+    const result = await files.download('agent:coder', 'notes/data.bin');
+    expect(result.fileName).toBe('data.bin');
+    expect(result.size).toBe('\x00\x01payload'.length);
+    await expect(fsp.readFile(result.target, 'utf8')).resolves.toBe(
+      '\x00\x01payload',
+    );
+  });
+
+  it('refuses to download directories or empty paths', async () => {
+    await files.mkdir('agent:coder', 'folder');
+    await expect(files.download('agent:coder', 'folder')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(files.download('agent:coder', '')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('throws NotFound when the download target is missing', async () => {
+    await expect(files.download('agent:coder', 'missing.txt')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
   it('rejects invalid scopes', async () => {
     await expect(files.list('bogus:coder')).rejects.toThrow(BadRequestException);
     await expect(files.write('agent:unknown', 'x.txt', 'x')).rejects.toThrow(
