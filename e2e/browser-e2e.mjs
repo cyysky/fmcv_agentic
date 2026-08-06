@@ -25,6 +25,9 @@
 //   9. Dark mode: all four routes re-probed with prefers-color-scheme: dark
 //      (Emulation.setEmulatedMedia), asserting dark surfaces actually apply
 //      and the pages still render without console/network errors
+//   10. Mobile: all four routes re-probed at 360x640 with device metrics,
+//      asserting no horizontal overflow, nav links fit, and the agent
+//      composer / files row grid are usable
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -183,6 +186,11 @@ const selExpr = (selector) => `document.querySelector(${JSON.stringify(selector)
 
 /** Dark-mode assertions shared by every route probe. */
 const bodyBgDark = `["rgb(0, 0, 0)", "rgb(10, 10, 10)"].includes(getComputedStyle(document.body).backgroundColor)`;
+const noHorizontalOverflow = `document.documentElement.scrollWidth <= innerWidth + 2`;
+const navLinksFit = `[...document.querySelectorAll('nav a')].every(a => { const r = a.getBoundingClientRect(); return r.right <= innerWidth + 1 && r.left >= -1; })`;
+const composerVisible = `(() => { const f = document.querySelector('form[class*="composer"]'); if (!f) return false; const r = f.getBoundingClientRect(); return r.width > 0 && r.left >= -1 && r.right <= innerWidth + 1; })()`;
+const filesRowGrid = `(() => { const r = document.querySelector('li[class*="row"]'); if (!r) return false; return getComputedStyle(r).display === "grid" && getComputedStyle(r).gridTemplateColumns.split(" ").length === 3; })()`;
+
 
 /** Global-nav assertions shared by every route probe. */
 const navChecks = {
@@ -271,6 +279,14 @@ async function probeRoute(route) {
   const { tab, c } = await setupPage(route.url);
   try {
     wireErrorCapture(c, sink);
+    if (route.viewport) {
+      await c.send("Emulation.setDeviceMetricsOverride", {
+        width: route.viewport.width,
+        height: route.viewport.height,
+        deviceScaleFactor: 2,
+        mobile: true,
+      });
+    }
     if (route.emulate === "dark") {
       await c.send("Emulation.setEmulatedMedia", {
         features: [{ name: "prefers-color-scheme", value: "dark" }],
@@ -310,8 +326,13 @@ async function probeRoute(route) {
         checks[name] = Boolean(await evalJs(c, expr));
       }
     }
+    if (route.mobileChecks) {
+      for (const [name, expr] of Object.entries(route.mobileChecks)) {
+        checks[name] = Boolean(await evalJs(c, expr));
+      }
+    }
     if (route.title) checks.docTitle = docTitle === route.title;
-    await screenshot(c, `${route.route}.png`);
+    await screenshot(c, route.shotName || `${route.route}.png`);
     return {
       route: route.route,
       url: route.url,
@@ -1102,7 +1123,10 @@ async function main() {
       title: "FMCV Agentic",
       waitText: "Open Agent",
       bodyText: { title: "FMCV Agentic" },
-      darkChecks: { bodyDark: bodyBgDark },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        cardDark: `getComputedStyle(document.querySelector('main')).backgroundColor === "rgb(17, 24, 39)"`,
+      },
     },
     {
       route: "settings-dark",
@@ -1141,6 +1165,65 @@ async function main() {
         bodyDark: bodyBgDark,
         selectDark: `getComputedStyle(document.querySelector('select[aria-label="Scope"]')).backgroundColor === "rgb(17, 24, 39)"`,
         primaryStaysBlue: `getComputedStyle(document.querySelector('button[class*="btnPrimary"]')).backgroundColor === "rgb(37, 99, 235)"`,
+      },
+    },
+    {
+      route: "home-mobile",
+      shotName: "home-mobile.png",
+      url: `${APP}/`,
+      viewport: { width: 360, height: 640 },
+      emulate: "dark",
+      title: "FMCV Agentic",
+      waitText: "Open Agent",
+      bodyText: { title: "FMCV Agentic" },
+      darkChecks: {
+        cardDark: `getComputedStyle(document.querySelector('main')).backgroundColor === "rgb(17, 24, 39)"`,
+      },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+        ctasFit: `[...document.querySelectorAll('main a')].every(a => { const r = a.getBoundingClientRect(); return r.right <= innerWidth + 1 && r.left >= -1; })`,
+      },
+    },
+    {
+      route: "settings-mobile",
+      shotName: "settings-mobile.png",
+      url: `${APP}/settings`,
+      viewport: { width: 360, height: 640 },
+      title: "Settings - FMCV Agentic",
+      waitText: "Connections (",
+      bodyText: { title: "Settings" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+      },
+    },
+    {
+      route: "agent-mobile",
+      shotName: "agent-mobile.png",
+      url: `${APP}/agent`,
+      viewport: { width: 360, height: 640 },
+      title: "Agent - FMCV Agentic",
+      waitText: "Channels",
+      bodyText: { title: "Agent", channelsTab: "Channels" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+        composerVisible,
+      },
+    },
+    {
+      route: "files-mobile",
+      shotName: "files-mobile.png",
+      url: `${APP}/files`,
+      viewport: { width: 360, height: 640 },
+      title: "Files - FMCV Agentic",
+      waitText: "New file",
+      bodyText: { title: "Files", newFile: "New file" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+        filesRowGrid,
       },
     },
   ];
