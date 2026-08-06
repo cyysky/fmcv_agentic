@@ -6,6 +6,7 @@ services:
         # NEXT_PUBLIC_* must be set at BUILD time (inlined by Next). Runtime
         # `environment` entries for NEXT_PUBLIC_* are ignored.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://10.0.151.7:5555/api}
+        NEXT_PUBLIC_API_TOKEN: ${NEXT_PUBLIC_API_TOKEN:-}
     container_name: fmcv-frontend
     ports:
       - "3333:3333"
@@ -26,6 +27,7 @@ services:
       - AGENT_BASE_URL=${AGENT_BASE_URL:-http://60.51.17.97:9999/v1}
       - AGENT_API_KEY=${AGENT_API_KEY:-}
       - AGENT_WORKSPACE_ROOT=${AGENT_WORKSPACE_ROOT:-/data/workspaces}
+      - API_TOKEN=${API_TOKEN:-}
     volumes:
       - workspace_data:/data/workspaces
     depends_on:

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./agent.module.css";
+import { apiFetch } from "../../lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5555/api";
 
 interface ModelOption {
   id: string;
@@ -213,7 +213,7 @@ export default function AgentPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/agent/models`);
+        const res = await apiFetch(`/agent/models`);
         if (!res.ok) throw new Error(`Failed to load models (HTTP ${res.status})`);
         const data = (await res.json()) as ModelOption[];
         if (cancelled) return;
@@ -266,7 +266,7 @@ export default function AgentPage() {
 
   const loadChannels = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/channels`);
+      const res = await apiFetch(`/channels`);
       if (!res.ok) throw new Error(`Failed to load channels (HTTP ${res.status})`);
       const data = (await res.json()) as ChannelSummary[];
       setChannels(data);
@@ -291,7 +291,7 @@ export default function AgentPage() {
   }, [view, loadChannels]);
 
   const fetchChannel = useCallback(async (id: string): Promise<ChannelDetail> => {
-    const res = await fetch(`${API_URL}/channels/${id}`);
+    const res = await apiFetch(`/channels/${id}`);
     if (!res.ok) throw new Error(`Failed to load channel (HTTP ${res.status})`);
     return (await res.json()) as ChannelDetail;
   }, []);
@@ -299,7 +299,7 @@ export default function AgentPage() {
   const loadMemberStatus = useCallback(async (id: string) => {
     setMemberStatusLoading(true);
     try {
-      const res = await fetch(`${API_URL}/channels/${id}/member-status`);
+      const res = await apiFetch(`/channels/${id}/member-status`);
       if (!res.ok) throw new Error(`Failed to load member status (HTTP ${res.status})`);
       setMemberStatus((await res.json()) as MemberStatus[]);
     } catch {
@@ -338,7 +338,7 @@ export default function AgentPage() {
     setCreating(true);
     setChannelsError(null);
     try {
-      const res = await fetch(`${API_URL}/channels`, {
+      const res = await apiFetch(`/channels`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -367,7 +367,7 @@ export default function AgentPage() {
       if (!window.confirm("Delete this channel? This cannot be undone.")) return;
       setChannelsError(null);
       try {
-        const res = await fetch(`${API_URL}/channels/${id}`, { method: "DELETE" });
+        const res = await apiFetch(`/channels/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(`Failed to delete channel (HTTP ${res.status})`);
         setChannels((prev) => prev.filter((c) => c.id !== id));
         if (selChannelId === id) {
@@ -388,7 +388,7 @@ export default function AgentPage() {
     setMemberBusy(true);
     setChannelsError(null);
     try {
-      const res = await fetch(`${API_URL}/channels/${selChannelId}/members`, {
+      const res = await apiFetch(`/channels/${selChannelId}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentName }),
@@ -414,8 +414,8 @@ export default function AgentPage() {
       if (!selChannelId) return;
       setChannelsError(null);
       try {
-        const res = await fetch(
-          `${API_URL}/channels/${selChannelId}/members/${encodeURIComponent(agentName)}`,
+        const res = await apiFetch(
+          `/channels/${selChannelId}/members/${encodeURIComponent(agentName)}`,
           { method: "DELETE" },
         );
         if (!res.ok) throw new Error(`Failed to remove member (HTTP ${res.status})`);
@@ -437,7 +437,7 @@ export default function AgentPage() {
    */
   const loadAvailableAgents = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/agent/workspaces`);
+      const res = await apiFetch(`/agent/workspaces`);
       if (!res.ok) return;
       const data = (await res.json()) as WorkspaceInfo;
       setAvailableAgents(data.agents ?? []);
@@ -467,7 +467,7 @@ export default function AgentPage() {
         );
         let id = existing?.id;
         if (!id) {
-          const res = await fetch(`${API_URL}/channels`, {
+          const res = await apiFetch(`/channels`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -499,7 +499,7 @@ export default function AgentPage() {
       stopPolling();
       jobPollRef.current = window.setInterval(async () => {
         try {
-          const res = await fetch(`${API_URL}/channels/${channelId}/jobs/${jobId}`);
+          const res = await apiFetch(`/channels/${channelId}/jobs/${jobId}`);
           if (!res.ok) throw new Error(`Poll failed (HTTP ${res.status})`);
           const data = (await res.json()) as ChannelJobResponse;
           setJobEvents(data.events);
@@ -530,7 +530,7 @@ export default function AgentPage() {
     setChBusy(true);
     setChannelsError(null);
     try {
-      const res = await fetch(`${API_URL}/channels/${selChannelId}/messages`, {
+      const res = await apiFetch(`/channels/${selChannelId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: "user", author: "you", text }),
@@ -573,7 +573,7 @@ export default function AgentPage() {
     if (!message || !agentName || !selChannelId) return;
     setChannelsError(null);
     try {
-      const res = await fetch(`${API_URL}/channels/${selChannelId}/jobs`, {
+      const res = await apiFetch(`/channels/${selChannelId}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentName, message, model: runModel || undefined }),
@@ -643,8 +643,8 @@ export default function AgentPage() {
     if (!text || !activeJob) return;
     setChannelsError(null);
     try {
-      const res = await fetch(
-        `${API_URL}/channels/${activeJob.channelId}/jobs/${activeJob.jobId}/interject`,
+      const res = await apiFetch(
+        `/channels/${activeJob.channelId}/jobs/${activeJob.jobId}/interject`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -662,8 +662,8 @@ export default function AgentPage() {
     if (!activeJob) return;
     setChannelsError(null);
     try {
-      const res = await fetch(
-        `${API_URL}/channels/${activeJob.channelId}/jobs/${activeJob.jobId}/stop`,
+      const res = await apiFetch(
+        `/channels/${activeJob.channelId}/jobs/${activeJob.jobId}/stop`,
         { method: "POST", headers: { "Content-Type": "application/json" } },
       );
       if (!res.ok) throw new Error(`Stop failed (HTTP ${res.status})`);
@@ -707,7 +707,7 @@ export default function AgentPage() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setInput("");
     try {
-      const res = await fetch(`${API_URL}/agent/turn`, {
+      const res = await apiFetch(`/agent/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history, model: model || undefined }),
@@ -762,7 +762,7 @@ export default function AgentPage() {
   const loadSessions = useCallback(async (): Promise<AgentSessionSummary[]> => {
     setSessionsError(null);
     try {
-      const res = await fetch(`${API_URL}/agent/sessions`);
+      const res = await apiFetch(`/agent/sessions`);
       if (!res.ok) throw new Error(`Failed to load sessions (HTTP ${res.status})`);
       const data = (await res.json()) as AgentSessionSummary[];
       const newestFirst = [...data].reverse();
@@ -780,7 +780,7 @@ export default function AgentPage() {
     setSessionLoading(true);
     setSessionsError(null);
     try {
-      const res = await fetch(`${API_URL}/agent/sessions/${id}`);
+      const res = await apiFetch(`/agent/sessions/${id}`);
       if (!res.ok) throw new Error(`Failed to load session (HTTP ${res.status})`);
       const data = (await res.json()) as AgentSessionDetail;
       setModel((cur) => data.model || cur);
@@ -804,7 +804,7 @@ export default function AgentPage() {
     setCreatingSession(true);
     setSessionsError(null);
     try {
-      const res = await fetch(`${API_URL}/agent/sessions`, {
+      const res = await apiFetch(`/agent/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(model ? { model } : {}),
@@ -824,7 +824,7 @@ export default function AgentPage() {
     async (id: string) => {
       setSessionsError(null);
       try {
-        const res = await fetch(`${API_URL}/agent/sessions/${id}`, { method: "DELETE" });
+        const res = await apiFetch(`/agent/sessions/${id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(`Failed to delete session (HTTP ${res.status})`);
         setSessions((prev) => prev.filter((s) => s.id !== id));
         if (selSessionId === id) {
@@ -846,7 +846,7 @@ export default function AgentPage() {
     setSessionMsgs((prev) => [...prev, { role: "user", content: text }]);
     setSessionInput("");
     try {
-      const res = await fetch(`${API_URL}/agent/sessions/${selSessionId}/converse`, {
+      const res = await apiFetch(`/agent/sessions/${selSessionId}/converse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
@@ -880,7 +880,7 @@ export default function AgentPage() {
     }
     setWsError(null);
     try {
-      const res = await fetch(`${API_URL}/agent/workspaces`);
+      const res = await apiFetch(`/agent/workspaces`);
       if (!res.ok) throw new Error(`Failed to load workspace (HTTP ${res.status})`);
       const data = (await res.json()) as WorkspaceInfo;
       setWsInfo(data);
@@ -898,7 +898,7 @@ export default function AgentPage() {
       }
       setLoadingTree(name);
       try {
-        const res = await fetch(`${API_URL}/agent/workspaces/agents/${name}`);
+        const res = await apiFetch(`/agent/workspaces/agents/${name}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as DirNode | null;
         setAgentTrees((prev) => ({ ...prev, [name]: data }));
@@ -920,7 +920,7 @@ export default function AgentPage() {
       }
       setLoadingTree(name);
       try {
-        const res = await fetch(`${API_URL}/agent/workspaces/projects/${name}`);
+        const res = await apiFetch(`/agent/workspaces/projects/${name}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as DirNode | null;
         setProjectTrees((prev) => ({ ...prev, [name]: data }));

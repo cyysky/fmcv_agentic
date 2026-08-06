@@ -7,6 +7,9 @@ WORKDIR /app
 # browser (localhost inside the container/build points at the wrong machine).
 ARG NEXT_PUBLIC_API_URL=http://10.0.151.7:5555/api
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Optional bearer token set alongside the backend's API_TOKEN; empty by default.
+ARG NEXT_PUBLIC_API_TOKEN=
+ENV NEXT_PUBLIC_API_TOKEN=$NEXT_PUBLIC_API_TOKEN
 
 COPY package.json package-lock.json* ./
 RUN npm ci

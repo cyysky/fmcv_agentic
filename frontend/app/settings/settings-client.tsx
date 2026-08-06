@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import styles from "./settings.module.css";
+import { apiFetch } from "../../lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5555/api";
 
 interface Connection {
   id: string;
@@ -39,7 +39,7 @@ export default function SettingsPage() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/connections`);
+      const res = await apiFetch(`/connections`);
       if (!res.ok) throw new Error(`Failed to load (HTTP ${res.status})`);
       const data = (await res.json()) as Connection[];
       setConnections(data);
@@ -57,7 +57,7 @@ export default function SettingsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_URL}/connections`);
+        const res = await apiFetch(`/connections`);
         if (!res.ok) throw new Error(`Failed to load (HTTP ${res.status})`);
         const data = (await res.json()) as Connection[];
         if (!cancelled) {
@@ -116,9 +116,9 @@ export default function SettingsPage() {
         }
       }
 
-      const url = editingId
-        ? `${API_URL}/connections/${editingId}`
-        : `${API_URL}/connections`;
+      const path = editingId
+        ? `/connections/${editingId}`
+        : `/connections`;
       // For PATCH we omit concurrentConnections when blank to preserve it.
       const method = editingId ? "PATCH" : "POST";
       let body: Record<string, unknown> = payload;
@@ -128,7 +128,7 @@ export default function SettingsPage() {
         body = rest;
       }
 
-      const res = await fetch(url, {
+      const res = await apiFetch(path, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -173,7 +173,7 @@ export default function SettingsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this connection?")) return;
     try {
-      const res = await fetch(`${API_URL}/connections/${id}`, {
+      const res = await apiFetch(`/connections/${id}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Delete failed");
