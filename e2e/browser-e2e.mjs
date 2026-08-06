@@ -14,7 +14,8 @@
 //   2. Each route renders its expected document.title (browser tab title)
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
-//   5. Channel deletion prunes the per-channel project folder (best-effort docker check)
+//   5. Channel deletion prunes the per-channel project folder (verified via the
+//      workspace API — no docker/container dependency)
 //   6. Sessions: create a persisted chat, converse, reload the page and re-open
 //      it from the sidebar (history survived), then delete the session
 // Exits non-zero when a main flow fails (quality gate for the round).
@@ -113,9 +114,13 @@ async function openTab(url) {
 
 async function closeCreatedTabs() {
   for (const id of createdTabs.splice(0)) {
-    await httpJson(`/json/close/${id}`).catch((e) => {
-      log(`  warn: could not close tab ${id}: ${e.message}`);
-    });
+    // /json/close returns the plain text "Target is closing" (200), not JSON,
+    // so httpJson would choke on it. Only a real failure (non-2xx or fetch
+    // error) is worth a warning.
+    const ok = await fetch(`${BASE}/json/close/${id}`, { method: "GET" })
+      .then((r) => r.ok)
+      .catch(() => false);
+    if (!ok) log(`  warn: could not close tab ${id}`);
   }
 }
 
@@ -419,20 +424,21 @@ async function agentChannelFlow() {
   }
 }
 
-/** Optional diagnostic: after channel delete, confirm the per-channel project
- *  folder is gone from the backend workspace (best-effort; needs docker). */
+/** After channel delete, confirm the per-channel project folder is gone from
+ *  the backend workspace. Docker-free: the backend's `GET /api/agent/workspaces`
+ *  snapshots the actual projects directory on disk, so it proves the prune
+ *  without requiring a container/exec (skipped cleanly when the API is down). */
 async function projectFolderPruneCheck(channelPrefix) {
   try {
-    const { execSync } = await import("node:child_process");
-    const out = execSync("docker exec fmcv-backend sh -c 'ls /data/workspaces/projects'", {
-      encoding: "utf8",
-      timeout: 10000,
-    });
-    const projects = out.trim().split(/\s+/).filter(Boolean);
-    const leftovers = projects.filter((n) => n.startsWith(channelPrefix));
-    return { ok: leftovers.length === 0, leftovers, projects };
+    const res = await fetch(`${API}/agent/workspaces`);
+    if (!res.ok) throw new Error(`workspaces -> HTTP ${res.status}`);
+    const body = await res.json();
+    const projects = Array.isArray(body.projects) ? body.projects : [];
+    const names = projects.map((p) => String(p.name ?? p));
+    const leftovers = names.filter((n) => n.startsWith(channelPrefix));
+    return { ok: leftovers.length === 0, leftovers, projects: names };
   } catch (err) {
-    return { ok: null, error: String(err.message ?? err).slice(0, 200), note: "docker unavailable; skipped" };
+    return { ok: null, error: String(err.message ?? err).slice(0, 200), note: "workspace API unavailable; skipped" };
   }
 }
 
