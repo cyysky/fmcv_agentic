@@ -539,6 +539,19 @@ async function agentSessionsFlow() {
     await delay(500);
     await screenshot(c, "agent-sessions-done.png");
     flow.steps.push("reply-rendered");
+
+    // 2a. The backend auto-titles a default session from its first user
+    //     message; the sidebar must show the derived title (refreshed by the
+    //     frontend right after the reply lands).
+    const autoTitle = await waitFor(
+      c,
+      `[...document.querySelectorAll('[class*="sessionTitle"]')].some((el) => el.textContent.trim() === ${JSON.stringify(msg)})`,
+      15000,
+      400,
+      "auto-derived session title",
+    );
+    flow.autoTitleSeen = !!autoTitle;
+    if (!autoTitle) throw new Error("sessions flow: auto-derived title not shown in sidebar");
     flow.timings.elapsedMs = Date.now() - started;
     log(`  sessions reply rendered in ${flow.timings.elapsedMs}ms (user text seen: ${flow.answerSeen})`);
 
