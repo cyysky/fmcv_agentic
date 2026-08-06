@@ -28,6 +28,8 @@ services:
       - AGENT_API_KEY=${AGENT_API_KEY:-}
       - AGENT_WORKSPACE_ROOT=${AGENT_WORKSPACE_ROOT:-/data/workspaces}
       - API_TOKEN=${API_TOKEN:-}
+      - RATE_LIMIT_TTL_MS=${RATE_LIMIT_TTL_MS:-60000}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
     volumes:
       - workspace_data:/data/workspaces
     depends_on:
