@@ -38,8 +38,8 @@ Environment overrides:
 
 ## What it checks
 
-1. **Routes load cleanly**: `/`, `/settings`, `/agent` render their expected
-   content with **no console errors, no uncaught exceptions, no failed
+1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files` render their
+   expected content with **no console errors, no uncaught exceptions, no failed
    network requests, and no HTTP >= 400 responses** (measured over CDP events,
    including polling fetches the SPA makes after first paint).
 2. **Document titles**: each route must expose its expected browser tab
@@ -48,8 +48,13 @@ Environment overrides:
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state
    (`[answer]`, `[stopped]`, or `[error]`).
-4. **Screenshots**: key screens (home, settings, agent, channel running,
-   channel done) are captured to `e2e/screenshots/`.
+4. **Files journey**: on `/files`, the script creates a nested file and a
+   dotfile through the UI (agent scope), verifies the root listing shows both,
+   navigates into the folder, reads the file content back, deletes the file +
+   folder + dotfile through the UI, and then confirms server-side removal via
+   the files API (no leftovers).
+5. **Screenshots**: key screens (home, settings, agent, channel running,
+   channel done, files before/after) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate
 

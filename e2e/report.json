@@ -1,19 +1,20 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-06T03:14:04.413Z",
+  "ranAt": "2026-08-06T04:19:07.500Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "02DA4D1FBF2F35F5E66DE79AFDFDE9E2",
+        "id": "34E3E7C7679D0EFCFCE50956B7A1AFD4",
         "created": true
       },
       "checks": {
         "title": true,
         "linkAgent": true,
+        "linkFiles": true,
         "linkSettings": true,
         "docTitle": true
       },
@@ -30,7 +31,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "29AF18B465C36838BA62923013055B60",
+        "id": "D71C4F1DB67E361766B18761AB0F0DDD",
         "created": true
       },
       "checks": {
@@ -51,7 +52,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "D67E7BCD324E89C04CADE5B986A6DD14",
+        "id": "E180ECBA61D5B25F08E22F812C0D5388",
         "created": true
       },
       "checks": {
@@ -67,15 +68,38 @@
         "exceptions": [],
         "logErrors": []
       }
+    },
+    {
+      "route": "files",
+      "url": "http://localhost:3333/files",
+      "docTitle": "Files - FMCV Agentic",
+      "tabInfo": {
+        "id": "F0D0D849545C1D970088BF23836323E7",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newFile": true,
+        "refresh": true,
+        "scopeSelect": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
     }
   ],
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "7567BEE2E6A975B5719A219EBDD26854",
+      "id": "84123D61DD9EE9C2ED73D809104AABF4",
       "created": true
     },
-    "channelName": "browser-e2e-msgxzc82",
+    "channelName": "browser-e2e-msh0b0uw",
     "flow": {
       "steps": [
         "created-channel",
@@ -83,9 +107,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-06T03:14:11.302Z",
-        "finishedAt": "2026-08-06T03:14:13.977Z",
-        "elapsedMs": 1343
+        "postedAt": "2026-08-06T04:19:15.672Z",
+        "finishedAt": "2026-08-06T04:19:18.355Z",
+        "elapsedMs": 1342
       },
       "result": {
         "answer": true,
@@ -93,8 +117,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msgxzc82",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T03:14:10.696Z\nAgent coder joined #browser-e2e-msgxzc82.\nsystem\n[SYSTEM]\n2026-08-06T03:14:10.732Z\nChannel #browser-e2e-msgxzc82 created.\nyou\n[USER]\n2026-08-06T03:14:11.313Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T03:14:13.372Z\nHello! I've written `round2.md` into my own agent folder (agents/coder) as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \""
+      "channelName": "browser-e2e-msh0b0uw",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T04:19:14.963Z\nAgent coder joined #browser-e2e-msh0b0uw.\nsystem\n[SYSTEM]\n2026-08-06T04:19:14.982Z\nChannel #browser-e2e-msh0b0uw created.\nyou\n[USER]\n2026-08-06T04:19:15.671Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T04:19:17.137Z\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
     },
     "errors": {
       "netFailures": [],
@@ -122,7 +146,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "AE9DD6404E288303CF0CA6D4E5733267",
+      "id": "FF62E70EB8BE1A42F9F497345C1BB1CD",
       "created": true
     },
     "flow": {
@@ -135,20 +159,20 @@
         "history-rendered"
       ],
       "timings": {
-        "postedAt": "2026-08-06T03:14:16.514Z",
-        "finishedAt": "2026-08-06T03:14:18.121Z",
-        "elapsedMs": 2166
+        "postedAt": "2026-08-06T04:19:20.860Z",
+        "finishedAt": "2026-08-06T04:19:22.466Z",
+        "elapsedMs": 2139
       },
       "result": {
         "persisted": true,
         "renamed": true
       },
-      "createdAt": "2026-08-06T03:14:15.791Z",
-      "sentText": "Hello from sessions E2E (msgxzgsy)",
+      "createdAt": "2026-08-06T04:19:20.134Z",
+      "sentText": "Hello from sessions E2E (msh0b5ev)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (msgxzgsy)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. I see you're testing from sessions E2E (msgxzgsy).\n\nWhat would you like me to do? I can:\n- Browse files in my workspace or shared projects\n- Read file contents\n- Write files to my own folder\n\nLet me know how I can assist!",
+      "threadSnippet": "YOU\nHello from sessions E2E (msh0b5ev)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help.\n\nI see you're from a sessions E2E test (msh0b5ev). What would you like me to do? I can:\n- Browse files in my workspace or shared projects\n- Read or write files\n- Help with coding or analysis tasks\n\nLet me know what you need!",
       "autoTitleSeen": true,
-      "renamedTitle": "Renamed msgxzik8",
+      "renamedTitle": "Renamed msh0b75j",
       "historySeen": true,
       "titleAfterReload": true
     },
@@ -160,5 +184,47 @@
       "logErrors": []
     },
     "cleanup": null
+  },
+  "filesFlow": {
+    "url": "http://localhost:3333/files",
+    "tabInfo": {
+      "id": "1D4F8B5E4AAE462E0448AF5189B2FEB7",
+      "created": true
+    },
+    "flow": {
+      "steps": [
+        "created browser-e2e-files-msh0ba1z/hello.txt",
+        "created .dot-msh0ba1z",
+        "root-lists-folder-and-dotfile",
+        "navigated-into-folder",
+        "deleted-hello.txt",
+        "deleted browser-e2e-files-msh0ba1z",
+        "deleted .dot-msh0ba1z"
+      ],
+      "timings": {
+        "elapsedMs": 4637
+      },
+      "result": {
+        "created": true,
+        "read": true,
+        "deleted": true
+      },
+      "scope": "agent:coder",
+      "createdAt": "2026-08-06T04:19:26.358Z",
+      "folder": "browser-e2e-files-msh0ba1z",
+      "dotfile": ".dot-msh0ba1z",
+      "file": "browser-e2e-files-msh0ba1z/hello.txt",
+      "content": "hello from files e2e msh0ba1z",
+      "contentSeen": true,
+      "deletedFileViaUi": true
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    },
+    "cleanup": "clean"
   }
 }

@@ -18,6 +18,8 @@
 //      workspace API — no docker/container dependency)
 //   6. Sessions: create a persisted chat, converse, reload the page and re-open
 //      it from the sidebar (history survived), then delete the session
+//   7. Files: create a file + dotfile through the /files UI, read the content
+//      back, delete both through the UI and verify server-side removal
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -159,6 +161,16 @@ const jsSetInput = (selector, value) => `(() => {
   Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
   el.dispatchEvent(new Event("input", { bubbles: true }));
   return el.value;
+})()`;
+
+/** Click a button (by exact text) inside a specific listing row. */
+const rowBtnExpr = (name, text) => `(() => {
+  const row = document.querySelector(${JSON.stringify(`[data-name="${name}"]`)});
+  if (!row) return false;
+  const b = [...row.querySelectorAll("button")].find((x) => x.textContent.trim() === ${JSON.stringify(text)});
+  if (!b) return false;
+  b.click();
+  return true;
 })()`;
 
 /** Build a page expression that calls document.querySelector safely. */
@@ -716,6 +728,218 @@ async function cleanupSessions(flow) {
   }
 }
 
+/** Files flow: create a file + a dotfile through the /files UI, read the
+ *  content back, delete both through the UI, and prove the removal really
+ *  happened (server-side) via the backend API. */
+async function filesFlow() {
+  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/files`;
+  log(`flow files -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "files ready");
+    if (!ready) throw new Error("files flow: page never loaded");
+    const flow = { steps: [], timings: {}, result: null };
+    const started = Date.now();
+
+    // The scope picker must settle on an agent scope before we drive it.
+    const scoped = await waitFor(
+      c,
+      `(() => { const s = document.querySelector('select[aria-label="Scope"]'); return !!s && !s.disabled && s.value.startsWith("agent:"); })()`,
+      30000,
+      600,
+      "files scope",
+    );
+    if (!scoped) throw new Error("files flow: no agent scope selected");
+    flow.scope = await evalJs(c, `document.querySelector('select[aria-label="Scope"]')?.value`);
+    flow.createdAt = new Date().toISOString();
+    await delay(400);
+
+    const stamp = Date.now().toString(36);
+    const folder = `browser-e2e-files-${stamp}`;
+    const dotfile = `.dot-${stamp}`;
+    const file = `${folder}/hello.txt`;
+    const content = `hello from files e2e ${stamp}`;
+    flow.folder = folder;
+    flow.dotfile = dotfile;
+    flow.file = file;
+    flow.content = content;
+
+    // Create the nested file and the dotfile from the root listing.
+    for (const [name, body] of [[file, content], [dotfile, `dot ${stamp}`]]) {
+      const opened = await evalJs(c, jsClick("New file", true));
+      if (!opened) throw new Error("files flow: New file button missing");
+      const panelReady = await waitFor(
+        c,
+        `!!document.querySelector('input[aria-label="File name"]')`,
+        10000,
+        400,
+        "new file panel",
+      );
+      if (!panelReady) throw new Error("files flow: new-file panel never appeared");
+      await evalJs(c, jsSetInput('input[aria-label="File name"]', name));
+      await evalJs(c, jsSetInput('textarea[aria-label="File content"]', body));
+      await delay(100);
+      const created = await evalJs(c, jsClick("Create", true));
+      if (!created) throw new Error("files flow: Create button missing");
+      const closed = await waitFor(
+        c,
+        `!document.querySelector('input[aria-label="File name"]')`,
+        15000,
+        400,
+        "create finished",
+      );
+      if (!closed) throw new Error(`files flow: create did not complete for ${name}`);
+      flow.steps.push(`created ${name}`);
+    }
+
+    // Root must list the new folder AND the dotfile (dotfiles are not hidden).
+    const folderRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)})`,
+      15000,
+      500,
+      "folder row",
+    );
+    const dotRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${dotfile}"]`)})`,
+      15000,
+      500,
+      "dotfile row",
+    );
+    if (!folderRow || !dotRow) throw new Error(
+      `files flow: root listing missing folder/dotfile (folder=${!!folderRow} dot=${!!dotRow})`,
+    );
+    flow.steps.push("root-lists-folder-and-dotfile");
+    await screenshot(c, "files-created.png");
+
+    // Navigate into the folder and read the file back.
+    const navInto = await evalJs(
+      c,
+      `(() => { const b = document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)}).querySelector("button"); if (!b) return false; b.click(); return true; })()`,
+    );
+    if (!navInto) throw new Error("files flow: folder row not clickable");
+    const fileRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="hello.txt"]`)})`,
+      15000,
+      500,
+      "files list inside folder",
+    );
+    if (!fileRow) throw new Error("files flow: hello.txt not listed inside folder");
+    flow.steps.push("navigated-into-folder");
+
+    const viewClicked = await evalJs(c, rowBtnExpr("hello.txt", "View"));
+    if (!viewClicked) throw new Error("files flow: View button missing");
+    const seen = await waitFor(
+      c,
+      `document.body.innerText.includes(${JSON.stringify(content)})`,
+      15000,
+      500,
+      "file content in viewer",
+    );
+    if (!seen) throw new Error("files flow: file content never rendered");
+    flow.contentSeen = true;
+    await delay(300);
+    await screenshot(c, "files-view.png");
+    await evalJs(c, jsClick("Close", true));
+    await delay(200);
+
+    // Delete the file through the UI and wait for the row to disappear.
+    const delClicked = await evalJs(c, rowBtnExpr("hello.txt", "Delete"));
+    if (!delClicked) throw new Error("files flow: Delete button missing");
+    const gone = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-name="hello.txt"]`)})`,
+      15000,
+      500,
+      "file deleted from list",
+    );
+    if (!gone) throw new Error("files flow: hello.txt still listed after delete");
+    flow.deletedFileViaUi = true;
+    flow.steps.push("deleted-hello.txt");
+
+    // Back to root through the breadcrumb, then delete folder + dotfile.
+    const back = await evalJs(c, `(() => {
+      const btns = [...document.querySelectorAll('button[class*="crumbLink"]')];
+      const b = btns.find((x) => x.textContent.trim() === "root");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!back) throw new Error("files flow: breadcrumb root missing");
+    const rootAgain = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)})`,
+      15000,
+      500,
+      "back at root",
+    );
+    if (!rootAgain) throw new Error("files flow: folder not listed at root");
+
+    for (const name of [folder, dotfile]) {
+      const d = await evalJs(c, rowBtnExpr(name, "Delete"));
+      if (!d) throw new Error(`files flow: Delete missing for ${name}`);
+      const g = await waitFor(
+        c,
+        `!document.querySelector(${JSON.stringify(`[data-name="${name}"]`)})`,
+        15000,
+        500,
+        `${name} deleted`,
+      );
+      if (!g) throw new Error(`files flow: ${name} still listed`);
+      flow.steps.push(`deleted ${name}`);
+    }
+    await screenshot(c, "files-clean.png");
+
+    flow.result = { created: true, read: true, deleted: true };
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  files journey done in ${flow.timings.elapsedMs}ms`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Best-effort server-side cleanup + verification for the files journey. */
+async function filesCleanup(flow) {
+  if (!flow?.scope || !flow?.folder) return "none";
+  const scope = flow.scope;
+  const file = flow.file || `${flow.folder}/hello.txt`;
+  const dotfile = flow.dotfile;
+  const del = async (rel) => {
+    const r = await fetch(
+      `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(rel)}`,
+      { method: "DELETE" },
+    );
+    if (r.status >= 400 && r.status !== 404) {
+      throw new Error(`delete ${rel} -> HTTP ${r.status}`);
+    }
+  };
+  try {
+    await del(file);
+    await del(flow.folder);
+    if (dotfile) await del(dotfile);
+    const res = await fetch(`${API}/files/list?scope=${encodeURIComponent(scope)}&path=`);
+    if (!res.ok) throw new Error(`list -> HTTP ${res.status}`);
+    const body = await res.json();
+    const names = (body.entries ?? []).map((e) => e.name);
+    const leftovers = names.filter((n) => n === flow.folder || n === dotfile);
+    if (leftovers.length) {
+      log(`  cleanup: leftover(s) [${leftovers.join(", ")}]`);
+      return `error: leftover ${leftovers.join(", ")}`;
+    }
+    log("  cleanup: files removed, verified clean");
+    return "clean";
+  } catch (err) {
+    log(`  cleanup FAILED: ${err.message}`);
+    return `error: ${err.message}`;
+  }
+}
+
 /* --------------------------------- main --------------------------------- */
 
 async function main() {
@@ -725,7 +949,7 @@ async function main() {
       url: `${APP}/`,
       title: "FMCV Agentic",
       waitText: "Open Agent",
-      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkSettings: "Open Settings" },
+      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkSettings: "Open Settings" },
     },
     {
       route: "settings",
@@ -742,6 +966,14 @@ async function main() {
       bodyText: { title: "Agent", channelsTab: "Channels" },
       jsChecks: { composerPresent: "!!document.querySelector('textarea')" },
     },
+    {
+      route: "files",
+      url: `${APP}/files`,
+      title: "Files - FMCV Agentic",
+      waitText: "New file",
+      bodyText: { title: "Files", newFile: "New file", refresh: "Refresh" },
+      jsChecks: { scopeSelect: "!!document.querySelector('select[aria-label=\"Scope\"]')" },
+    },
   ];
 
   const version = await httpJson("/json/version");
@@ -757,6 +989,8 @@ async function main() {
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
     report.sessionsFlow = await agentSessionsFlow();
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow);
+    report.filesFlow = await filesFlow();
+    report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
     log("browser E2E flows done");
   } finally {
     // Never leave check tabs behind, even when a route failed midway.
@@ -791,6 +1025,16 @@ async function main() {
   }
   const sessErrs = errorCount(sf ? sf.errors : {});
   if (sessErrs > 0) failures.push(`sessions flow: ${sessErrs} console/network error(s)`);
+
+  const ffl = report.filesFlow;
+  if (!ffl || !ffl.flow.result?.created || !ffl.flow.contentSeen || !ffl.flow.deletedFileViaUi) {
+    failures.push(`files flow: create/read/delete not verified (${JSON.stringify(ffl && ffl.flow)})`);
+  }
+  if (ffl && ffl.cleanup !== "clean") {
+    failures.push(`files flow: cleanup not verified (${ffl.cleanup})`);
+  }
+  const filesErrs = errorCount(ffl ? ffl.errors : {});
+  if (filesErrs > 0) failures.push(`files flow: ${filesErrs} console/network error(s)`);
 
   writeFileSync(REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
