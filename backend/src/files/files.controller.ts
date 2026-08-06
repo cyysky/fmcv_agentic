@@ -6,7 +6,9 @@ import {
   Post,
   Put,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileScopeQueryDto, WriteFileDto } from './files.dto';
 import { FilesService } from './files.service';
 
@@ -15,6 +17,7 @@ import { FilesService } from './files.service';
  *
  *   GET    /api/files/list?scope=agent:coder&path=notes
  *   GET    /api/files/read?scope=agent:coder&path=notes/hello.txt
+ *   GET    /api/files/download?scope=agent:coder&path=notes/hello.txt
  *   PUT    /api/files/write?scope=agent:coder&path=notes/hello.txt
  *   POST   /api/files/mkdir?scope=agent:coder&path=notes/newdir
  *   DELETE /api/files/delete?scope=agent:coder&path=notes/hello.txt
@@ -34,6 +37,21 @@ export class FilesController {
   @Get('read')
   read(@Query() query: FileScopeQueryDto) {
     return this.files.read(query.scope, query.path);
+  }
+
+  @Get('download')
+  async download(@Query() query: FileScopeQueryDto, @Res() res: Response) {
+    const { target, fileName, size } = await this.files.download(
+      query.scope,
+      query.path,
+    );
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName.replace(/["\r\n]/g, '_')}"`,
+    );
+    res.setHeader('Content-Length', String(size));
+    res.sendFile(target);
   }
 
   @Put('write')

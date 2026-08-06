@@ -148,6 +148,22 @@ export class FilesService {
     return { scope: scopeStr, path: rel, size: stat.size, content };
   }
 
+  /** Resolve a file for a binary-safe download stream (no size cap — the
+   *  whole file is streamed to the client, unlike the capped JSON viewer). */
+  async download(scopeStr: string, relPath?: string): Promise<{
+    target: string;
+    fileName: string;
+    size: number;
+  }> {
+    const scope = this.resolveScope(scopeStr);
+    const rel = normalizeRel(relPath);
+    if (rel === '') throw new BadRequestException('Path must name a file');
+    const target = await this.resolveOrThrow(scope, rel);
+    const stat = await this.statOrThrow(target);
+    if (!stat.isFile()) throw new BadRequestException('Path is not a file');
+    return { target, fileName: path.basename(target), size: stat.size };
+  }
+
   /** Create or overwrite a text file inside a writable scope. */
   async write(
     scopeStr: string,
