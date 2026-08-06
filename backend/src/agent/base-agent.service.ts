@@ -104,6 +104,7 @@ export class BaseAgentService implements OnModuleInit {
   private readonly baseUrl: string;
   private readonly defaultModelId: string;
   private readonly llmTimeoutMs: number;
+  private readonly llmStub: boolean;
   private readonly workspaces: WorkspaceService;
   private readonly prisma: PrismaService;
   private readonly envApiKey: string;
@@ -123,10 +124,15 @@ export class BaseAgentService implements OnModuleInit {
     this.envApiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
     this.defaultModelId = config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
     this.llmTimeoutMs = Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
+    this.llmStub = ['1', 'true', 'yes', 'on'].includes(
+      (config.get<string>('AGENT_LLM_STUB', '') ?? '').toLowerCase(),
+    );
     this.workspaces = workspaces;
     this.prisma = prisma;
     this.registerTools(buildWorkspaceTools(workspaces));
-    this.logger.log(`Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId}`);
+    this.logger.log(
+      `Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId} stub=${this.llmStub}`,
+    );
   }
 
   /**
@@ -699,6 +705,9 @@ export class BaseAgentService implements OnModuleInit {
     spec: ModelSpec,
     signal?: AbortSignal,
   ): Promise<{ content: string | null; tool_calls?: ToolCallRequest[] }> {
+    if (this.llmStub) {
+      return this.stubCompletion(messages);
+    }
     const body: Record<string, unknown> = {
       model: spec.provider_model,
       messages,
@@ -762,6 +771,16 @@ export class BaseAgentService implements OnModuleInit {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** Deterministic offline mode (`AGENT_LLM_STUB=1`): short-circuits the LLM
+   *  transport so API/channel E2E can run without the external gateway. The
+   *  answer is a stable echo of the last user message — a plain-text reply,
+   *  so the agent loop terminates after zero tool steps. */
+  private stubCompletion(messages: ChatMessage[]): { content: string } {
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    const text = String(lastUser?.content ?? 'ok').replace(/\s+/g, ' ').trim();
+    return { content: `[stub] ${text.slice(0, 160)}` };
   }
 
   private async executeTool(call: ToolCallRequest): Promise<string> {

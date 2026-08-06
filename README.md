@@ -173,6 +173,18 @@ Then open:
 
 Stop everything with `docker compose down`.
 
+### Agent environment
+
+- `AGENT_BASE_URL` — OpenAI-compatible LLM gateway (default
+  `http://60.51.17.97:9999/v1`).
+- `AGENT_DEFAULT_MODEL` — default model id (default `ds4-flash`).
+- `AGENT_API_KEY` — optional; when unset the backend reads the key from the
+  matching `connections` DB row.
+- `AGENT_LLM_STUB=1` — deterministic offline mode: the agent answers with a
+  stable `[stub]` echo instead of calling the gateway. The API E2E suite
+  defaults to this so it runs hermetically; the browser E2E still uses the
+  live model.
+
 ### Database & migrations (Prisma)
 
 ```bash

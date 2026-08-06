@@ -53,6 +53,17 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(texts.some((m) => m.role === 'user' && m.content === 'remember this turn for me')).toBe(true);
   });
 
+  it('converse returns a deterministic stub answer (hermetic, no gateway)', async () => {
+    const res = await http()
+      .post(`/api/agent/sessions/${sessionId}/converse`)
+      .send({ message: 'ping pong', maxSteps: 2 })
+      .ok((r) => r.status === 201 || r.status === 200);
+    expect([200, 201]).toContain(res.status);
+    expect(res.body.answer).toMatch(/^\[stub\] /);
+    expect(res.body.answer).toContain('ping pong');
+    expect(res.body.steps).toBe(0);
+  });
+
   it('converse validates maxSteps and unknown props without calling the LLM', async () => {
     const tooBig = await http()
       .post(`/api/agent/sessions/${sessionId}/converse`)

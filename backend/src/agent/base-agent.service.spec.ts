@@ -5,13 +5,14 @@ import { BaseAgentService, ChatMessage, DEFAULT_SYSTEM_PROMPT } from './base-age
 import { WorkspaceService } from './workspace.service';
 import type { ToolCallRequest } from './base-agent.service';
 
-function configMock(root: string) {
+function configMock(root: string, opts: { llmStub?: boolean } = {}) {
   return {
     get: (k: string, d?: string) => {
       if (k === 'AGENT_WORKSPACE_ROOT') return root;
       if (k === 'AGENT_BASE_URL') return 'http://vrs.test/v1';
       if (k === 'AGENT_DEFAULT_MODEL') return 'ds4-flash';
       if (k === 'AGENT_API_KEY') return '';
+      if (k === 'AGENT_LLM_STUB') return opts.llmStub ? '1' : '';
       return d;
     },
   } as never;
@@ -96,6 +97,29 @@ describe('BaseAgentService sessions', () => {
 });
 
 describe('BaseAgentService loop', () => {
+  it('stub mode answers deterministically without the network', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-stub-'));
+    try {
+      const ws = new WorkspaceService(configMock(root, { llmStub: true }));
+      const agent = new BaseAgentService(
+        configMock(root, { llmStub: true }),
+        ws,
+        prismaDouble(),
+      );
+      const res = await agent.runTurn({ message: 'echo this for me' });
+      expect(res.answer).toBe('[stub] echo this for me');
+      expect(res.steps).toBe(0);
+      expect(res.model).toBe('ds4-flash');
+
+      const s = agent.createSession('stub chat');
+      const conv = await agent.converse(s.id, 'persist this stub turn');
+      expect(conv.answer).toBe('[stub] persist this stub turn');
+      expect(conv.steps).toBe(0);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('returns a plain-text answer in one step and records the model', async () => {
     const { agent, root } = await makeAgent();
     try {

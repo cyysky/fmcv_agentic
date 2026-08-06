@@ -11,3 +11,6 @@ process.env.DATABASE_URL ??=
 process.env.AGENT_BASE_URL ??= 'http://60.51.17.97:9999/v1';
 process.env.AGENT_DEFAULT_MODEL ??= 'ds4-flash';
 process.env.AGENT_API_KEY ??= '';
+// Hermetic default: deterministic stub answers instead of the live LLM
+// gateway (the browser E2E keeps exercising the real model).
+process.env.AGENT_LLM_STUB ??= '1';
