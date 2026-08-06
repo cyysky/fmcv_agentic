@@ -27,9 +27,12 @@ and coordinate multi-agent teams in Slack-style channels.
   `/files`, `/settings`) with active-route highlighting, keyboard
   focus-visible outlines, and client-side transitions; the home page keeps
   its quick-launch CTAs.
-- **Dark mode** — settings, agent, and files add `@media
+- **Dark mode** — settings, agent, files, and the home page add `@media
   (prefers-color-scheme: dark)` palettes (panels, inputs, bubbles, viewers,
-  channel UI) that follow the OS theme with no toggle needed.
+  channel UI, landing card) that follow the OS theme with no toggle needed.
+- **Responsive layout** — the app is usable down to 320px-wide screens: the
+  nav compacts (brand shortens to "FMCV"), header control rows wrap, files
+  rows truncate names with ellipsis, and the agent composer stays on-screen.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
   connections, optional key).
@@ -155,6 +158,9 @@ cd e2e && node browser-e2e.mjs
   correct active link), re-runs `/settings`, `/agent`, and `/files` with CDP
   `prefers-color-scheme: dark` emulation and asserts the dark computed styles
   (card/input/select backgrounds, primary button still blue, body background),
+  re-probes all four routes at 360×640 device metrics asserting no horizontal
+  overflow, fit nav links, a visible agent composer, and the files responsive
+  row grid,
   and drives a nav journey that clicks through every route
   verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the

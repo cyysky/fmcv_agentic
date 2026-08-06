@@ -1,3 +1,26 @@
+## Round 2026-08-06 — Round 16 · autonomous iteration round 14
+
+### Added
+- Responsive mobile layout: the site nav compacts at ≤640px and shortens the
+  brand to "FMCV" at ≤380px; settings, agent, and files pages no longer
+  overflow at 320–360px (containers shrink, header action rows wrap, files
+  rows use a three-column grid with ellipsized names, agent composer and Send
+  button stay on-screen).
+- Home-page dark card: the landing panel gets a `#111827` surface with a
+  border in dark mode (previously pure black on black), and CTA rows now wrap
+  on narrow screens.
+- Browser E2E mobile probes: all four routes re-probed at 360×640 with device
+  metrics, asserting no horizontal overflow, all nav links fit, the agent
+  composer is visible, files rows use the responsive grid, and the dark home
+  card holds its color on mobile.
+
+### Changed
+- Counts unchanged (unit 59/10, API E2E 44/7); frontend `tsc --noEmit` +
+  `eslint` clean (`next build` clean in Docker); backend `nest build` clean;
+  browser E2E all green (exit 0, zero console/network errors) including the
+  four mobile probes and dark checks; new `*-mobile.png` screenshots and
+  refreshed `e2e/report.json`.
+
 ## Round 2026-08-06 — Round 15 · autonomous iteration round 13
 
 ### Added

@@ -1,27 +1,32 @@
-# ROUND 13 — 2026-08-06 (autonomous iteration round 13)
+# ROUND 14 — 2026-08-06 (autonomous iteration round 14)
 
-User instruction: **improve UI/UX** — dark-mode support across the settings,
-agent, and files pages, verified through emulated-media browser probes.
+User instruction: **improve UI/UX** — mobile/responsive polish across every
+page, verified through device-emulated browser probes.
 
 ## What changed this round
 
-- **Dark-mode palettes** — `@media (prefers-color-scheme: dark)` blocks added
-  to `frontend/app/settings/settings.module.css` (cards, inputs, buttons,
-  banners), `frontend/app/agent/agent.module.css` (thread, bubbles, composer,
-  workspace/tree, trace, channel sidebar/conversation/feed, member chips,
-  session rows, live event rows, mode buttons, field inputs, DM modal), and
-  `frontend/app/files/files.module.css` (panels, list, breadcrumb, scope
-  select, inputs, viewers, banners, badges). Palettes follow the OS theme
-  with no toggle needed.
-- **Nav keyboard focus** — `frontend/app/components/site-nav.module.css`
-  adds `.brand:focus-visible, .link:focus-visible` blue outline rules for
-  keyboard users.
-- **Browser E2E dark probes** (`e2e/browser-e2e.mjs`) — `probeRoute` now
-  calls `Emulation.setEmulatedMedia` with `prefers-color-scheme: dark` when
-  `route.emulate === "dark"`; four dark routes (`home-dark`, `settings-dark`,
-  `agent-dark`, `files-dark`) assert computed styles (card `#111827`, inputs
-  `#1f2937`, files scope select dark, primary button stays blue) plus a
-  shared body-background check. New dark screenshots; report refreshed.
+- **Site nav on small screens** — at ≤640px the nav gutters, gaps, and link
+  padding compact; at ≤380px the brand shortens to "FMCV" so all five nav
+  links fit a 320px-wide viewport (previously the Settings link was clipped
+  off-screen).
+- **Agent page** — `.container` now shrinks to the viewport (`min-width: 0`),
+  header action rows (Chat/Sessions/Channels/Workspace/model/Clear) wrap, and
+  the composer with the Send button stays fully on-screen at 320px (previously
+  a 657px-wide row pushed the content off-center and clipped Send).
+- **Settings page** — container, field rows, action rows, and connection-list
+  items wrap at small widths so no control extends past the viewport.
+- **Files page** — container shrink, header scope select/refresh wrap, and
+  file rows switch to a three-column grid (icon, ellipsized name, actions)
+  with size/mtime hidden on phones; long names truncate instead of wrapping
+  or overflowing.
+- **Home page** — dark mode now renders the landing card as a `#111827`
+  surface with a border (previously an invisible black-on-black panel); CTA
+  rows wrap and the layout compacts on narrow screens.
+- **Browser E2E** — new mobile probes for all four routes at 360×640
+  (`Emulation.setDeviceMetricsOverride`): no horizontal overflow, nav links
+  fit, agent composer visible, files rows use the responsive grid; the home
+  dark probe now also asserts the card color. New `*-mobile.png` screenshots;
+  report refreshed.
 
 ## Test status
 
@@ -29,16 +34,18 @@ agent, and files pages, verified through emulated-media browser probes.
 - API E2E: **44 passed / 7 suites**.
 - Backend build: `nest build` clean.
 - Frontend: `tsc --noEmit` + `eslint` clean (`next build` clean in Docker).
-- Browser E2E: all green, exit 0 — zero console/network errors on all route
-  probes (light + dark) and flows; dark computed-style assertions all pass.
+- Browser E2E: all green, exit 0 — zero console/network errors on every
+  probe (light, dark, mobile) and all live flows; mobile + dark checks pass.
 
 ## Known issues / open tickets
 
-- None. No TODO/FIXME/XXX/HACK markers introduced; worktree clean end of
+- None. 320px is the verified floor; real phones below that (rare legacy
+  devices) would need a hamburger menu, which is not worth the complexity for
+  this tool. No TODO/FIXME/XXX/HACK markers introduced; worktree clean end of
   round.
 
 ## Next round focus
 
-- (empty) — dark-mode shipped with green suites and accurate docs; no open
+- (empty) — mobile polish shipped with green suites and accurate docs; no open
   tickets and no obviously valuable follow-up without a new user instruction.
   Loop closed per exit condition C.
