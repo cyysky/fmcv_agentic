@@ -33,6 +33,22 @@ interface ChatMsg {
   trace?: ToolTraceStep[];
 }
 
+interface AgentSessionSummary {
+  id: string;
+  title: string;
+  model: string;
+  createdAt: string;
+}
+
+interface AgentSessionMessage {
+  role: string;
+  content: string;
+}
+
+interface AgentSessionDetail extends AgentSessionSummary {
+  messages: AgentSessionMessage[];
+}
+
 type ChannelJobEvent =
   | { type: "tool_call"; ts: string; name?: string; arguments?: string;
       result?: string; step?: number }
@@ -145,8 +161,18 @@ export default function AgentPage() {
   const [projectTrees, setProjectTrees] = useState<Record<string, DirNode | null>>({});
   const [loadingTree, setLoadingTree] = useState<string | null>(null);
 
+  // sessions view state
+  const [view, setView] = useState<"chat" | "sessions" | "channels">("chat");
+  const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
+  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [selSessionId, setSelSessionId] = useState<string | null>(null);
+  const [sessionMsgs, setSessionMsgs] = useState<ChatMsg[]>([]);
+  const [sessionInput, setSessionInput] = useState("");
+  const [sessionBusy, setSessionBusy] = useState(false);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+
   // channels view state
-  const [view, setView] = useState<"chat" | "channels">("chat");
   const [channels, setChannels] = useState<ChannelSummary[]>([]);
   const [channelsError, setChannelsError] = useState<string | null>(null);
   const [selChannelId, setSelChannelId] = useState<string | null>(null);
@@ -205,7 +231,7 @@ export default function AgentPage() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, busy]);
+  }, [messages, busy, sessionMsgs, sessionBusy, selSessionId]);
 
   useEffect(() => {
     
@@ -725,10 +751,125 @@ export default function AgentPage() {
     setError(null);
   };
 
-  const toggleTab = (next: "chat" | "channels") => {
+  const toggleTab = (next: "chat" | "sessions" | "channels") => {
     setView(next);
     if (next === "channels") loadChannels();
+    if (next === "sessions") void loadSessions();
   };
+
+  /* ----------------------- session helpers --------------------------- */
+
+  const loadSessions = useCallback(async (): Promise<AgentSessionSummary[]> => {
+    setSessionsError(null);
+    try {
+      const res = await fetch(`${API_URL}/agent/sessions`);
+      if (!res.ok) throw new Error(`Failed to load sessions (HTTP ${res.status})`);
+      const data = (await res.json()) as AgentSessionSummary[];
+      const newestFirst = [...data].reverse();
+      setSessions(newestFirst);
+      return newestFirst;
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : "Failed to load sessions");
+      return [];
+    }
+  }, []);
+
+  const openSession = useCallback(async (id: string) => {
+    setSelSessionId(id);
+    setSessionMsgs([]);
+    setSessionLoading(true);
+    setSessionsError(null);
+    try {
+      const res = await fetch(`${API_URL}/agent/sessions/${id}`);
+      if (!res.ok) throw new Error(`Failed to load session (HTTP ${res.status})`);
+      const data = (await res.json()) as AgentSessionDetail;
+      setModel((cur) => data.model || cur);
+      setSessionMsgs(
+        data.messages
+          .filter((m) => m.role !== "system")
+          .map((m) => ({
+            role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+            content: m.content,
+          })),
+      );
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : "Failed to load session");
+    } finally {
+      setSessionLoading(false);
+    }
+  }, []);
+
+  const createSession = useCallback(async () => {
+    if (creatingSession) return;
+    setCreatingSession(true);
+    setSessionsError(null);
+    try {
+      const res = await fetch(`${API_URL}/agent/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(model ? { model } : {}),
+      });
+      if (!res.ok) throw new Error(`Failed to create session (HTTP ${res.status})`);
+      const data = (await res.json()) as AgentSessionDetail;
+      await loadSessions();
+      await openSession(data.id);
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : "Failed to create session");
+    } finally {
+      setCreatingSession(false);
+    }
+  }, [creatingSession, model, loadSessions, openSession]);
+
+  const deleteSession = useCallback(
+    async (id: string) => {
+      setSessionsError(null);
+      try {
+        const res = await fetch(`${API_URL}/agent/sessions/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(`Failed to delete session (HTTP ${res.status})`);
+        setSessions((prev) => prev.filter((s) => s.id !== id));
+        if (selSessionId === id) {
+          setSelSessionId(null);
+          setSessionMsgs([]);
+        }
+      } catch (e) {
+        setSessionsError(e instanceof Error ? e.message : "Failed to delete session");
+      }
+    },
+    [selSessionId],
+  );
+
+  const sendSession = useCallback(async () => {
+    const text = sessionInput.trim();
+    if (!text || sessionBusy || !selSessionId) return;
+    setSessionBusy(true);
+    setSessionsError(null);
+    setSessionMsgs((prev) => [...prev, { role: "user", content: text }]);
+    setSessionInput("");
+    try {
+      const res = await fetch(`${API_URL}/agent/sessions/${selSessionId}/converse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
+      });
+      const data = (await res.json().catch(() => null)) as TurnResponse | null;
+      if (!res.ok) {
+        const errData = data as { message?: string | string[] } | null;
+        let msg = `Request failed (HTTP ${res.status})`;
+        if (errData && Array.isArray(errData.message)) msg = errData.message.join(", ");
+        else if (errData && typeof errData.message === "string") msg = errData.message;
+        setSessionMsgs((prev) => [...prev, { role: "assistant", content: msg, error: true }]);
+      } else {
+        setSessionMsgs((prev) => [
+          ...prev,
+          { role: "assistant", content: data?.answer ?? "(no answer)" },
+        ]);
+      }
+    } catch (e) {
+      setSessionsError(e instanceof Error ? e.message : "Request failed");
+    } finally {
+      setSessionBusy(false);
+    }
+  }, [sessionInput, sessionBusy, selSessionId, model]);
 
   /* ----------------------- workspace viewer helpers ---------------------- */
 
@@ -815,6 +956,12 @@ export default function AgentPage() {
             Chat
           </button>
           <button
+            className={view === "sessions" ? styles.btnPrimary : styles.btnGhost}
+            onClick={() => toggleTab("sessions")}
+          >
+            Sessions
+          </button>
+          <button
             className={view === "channels" ? styles.btnPrimary : styles.btnGhost}
             onClick={() => toggleTab("channels")}
           >
@@ -831,7 +978,7 @@ export default function AgentPage() {
             className={styles.modelSelect}
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            disabled={models.length === 0 || view !== "chat"}
+            disabled={models.length === 0 || view === "channels"}
           >
             {models.length === 0 ? (
               <option value="">Loading models…</option>
@@ -996,6 +1143,148 @@ export default function AgentPage() {
               {busy ? "…" : "Send"}
             </button>
           </form>
+        </>
+      )}
+
+      {view === "sessions" && (
+        <>
+          {sessionsError && (
+            <div className={styles.bannerError} onClick={() => setSessionsError(null)}>
+              {sessionsError}
+            </div>
+          )}
+          <div className={styles.sessionPane}>
+            <div className={styles.sessionSidebar}>
+              <div className={styles.sessionSidebarHeader}>
+                <div className={styles.wsBlockTitle}>
+                  Sessions ({sessions.length})
+                </div>
+                <button
+                  className={styles.btnPrimary}
+                  onClick={() => void createSession()}
+                  disabled={creatingSession}
+                >
+                  {creatingSession ? "Creating…" : "New chat"}
+                </button>
+              </div>
+              <div className={styles.sessionList}>
+                {sessions.length === 0 && !creatingSession ? (
+                  <div className={styles.muted}>
+                    No saved sessions yet — start a new chat.
+                  </div>
+                ) : (
+                  sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      className={`${styles.sessionItem} ${
+                        selSessionId === s.id ? styles.sessionItemActive : ""
+                      }`}
+                    >
+                      <button
+                        className={styles.sessionOpen}
+                        onClick={() => void openSession(s.id)}
+                      >
+                        <span className={styles.sessionTitle}>
+                          {s.title || "Untitled"}
+                        </span>
+                        <span className={styles.sessionMeta}>
+                          {new Date(s.createdAt).toLocaleString()}
+                        </span>
+                      </button>
+                      <button
+                        className={styles.sessionDelete}
+                        title="Delete session"
+                        aria-label={`Delete session ${s.title || "Untitled"}`}
+                        onClick={() => {
+                          if (window.confirm("Delete this session? This cannot be undone.")) {
+                            void deleteSession(s.id);
+                          }
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className={styles.sessionChat}>
+              {!selSessionId ? (
+                <div className={styles.empty}>
+                  <p className={styles.muted}>
+                    Pick a saved session or start a new chat to continue.
+                    Sessions are saved to the backend and survive a restart.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className={styles.thread}>
+                    {sessionLoading ? (
+                      <div className={styles.empty}>
+                        <p className={styles.muted}>Loading session…</p>
+                      </div>
+                    ) : sessionMsgs.length === 0 ? (
+                      <div className={styles.empty}>
+                        <p className={styles.muted}>
+                          This session has no messages yet — say hello.
+                        </p>
+                      </div>
+                    ) : (
+                      sessionMsgs.map((m, i) => (
+                        <div
+                          key={i}
+                          className={`${styles.bubble} ${
+                            m.role === "user" ? styles.bubbleUser : styles.bubbleAgent
+                          } ${m.error ? styles.bubbleError : ""}`}
+                        >
+                          <div className={styles.bubbleLabel}>
+                            {m.role === "user" ? "You" : "Agent"}
+                          </div>
+                          <div className={styles.bubbleText}>{m.content}</div>
+                        </div>
+                      ))
+                    )}
+                    {sessionBusy && (
+                      <div className={`${styles.bubble} ${styles.bubbleAgent}`}>
+                        <div className={styles.bubbleLabel}>Agent</div>
+                        <div className={styles.typing}>Typing…</div>
+                      </div>
+                    )}
+                    <div ref={endRef} />
+                  </div>
+                  <form
+                    className={styles.composer}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      sendSession();
+                    }}
+                  >
+                    <textarea
+                      className={styles.input}
+                      value={sessionInput}
+                      onChange={(e) => setSessionInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendSession();
+                        }
+                      }}
+                      placeholder="Message this session…  (Enter to send, Shift+Enter for newline)"
+                      rows={1}
+                      disabled={sessionBusy || sessionLoading}
+                    />
+                    <button
+                      type="submit"
+                      className={styles.btnPrimary}
+                      disabled={sessionBusy || sessionLoading || sessionInput.trim() === ""}
+                    >
+                      {sessionBusy ? "…" : "Send"}
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
         </>
       )}
 

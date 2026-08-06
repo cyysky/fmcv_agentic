@@ -273,6 +273,137 @@
   padding-left: 0.5rem;
 }
 
+/* ------------------------------ sessions ------------------------------- */
+
+.sessionPane {
+  display: flex;
+  gap: 1.5rem;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+}
+
+.sessionSidebar {
+  width: 300px;
+  min-width: 260px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 13rem);
+  overflow-y: auto;
+}
+
+.sessionSidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.sessionSidebarHeader .wsBlockTitle {
+  margin-bottom: 0;
+}
+
+.sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.sessionItem {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.25rem 0.3rem 0.25rem 0.6rem;
+}
+
+.sessionItem:hover {
+  border-color: #e5e7eb;
+  background: #fff;
+}
+
+.sessionItemActive {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.sessionOpen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  padding: 0.15rem 0;
+  min-width: 0;
+}
+
+.sessionTitle {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.sessionOpen:hover .sessionTitle {
+  color: #2563eb;
+}
+
+.sessionMeta {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.sessionDelete {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.sessionDelete:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.sessionChat {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 760px) {
+  .sessionPane {
+    flex-direction: column;
+  }
+
+  .sessionSidebar {
+    width: 100%;
+    min-width: 0;
+    max-height: 32vh;
+  }
+}
+
 .treeList {
   list-style: none;
   margin: 0;
