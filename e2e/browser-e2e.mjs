@@ -20,6 +20,8 @@
 //      it from the sidebar (history survived), then delete the session
 //   7. Files: create a file + dotfile through the /files UI, read the content
 //      back, delete both through the UI and verify server-side removal
+//   8. Global nav: active-route state per page + nav links drive real
+//      client-side navigation between all four routes
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -176,6 +178,17 @@ const rowBtnExpr = (name, text) => `(() => {
 /** Build a page expression that calls document.querySelector safely. */
 const selExpr = (selector) => `document.querySelector(${JSON.stringify(selector)})`;
 
+/** Global-nav assertions shared by every route probe. */
+const navChecks = {
+  present: `!!${selExpr('nav[aria-label="Main"]')}`,
+  links: `(() => {
+    const hrefs = [...document.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute("href"));
+    return ["/", "/agent", "/files", "/settings"].every((h) => hrefs.includes(h));
+  })()`,
+};
+const navActive = (href) =>
+  `document.querySelector('nav[aria-label="Main"] a[aria-current="page"]')?.getAttribute("href") === ${JSON.stringify(href)}`;
+
 async function waitFor(c, expression, timeoutMs, stepMs = 400, label = "") {
   const start = Date.now();
   let last = null;
@@ -291,6 +304,70 @@ async function probeRoute(route) {
       checks,
       errors: sink,
     };
+  } finally {
+    c.close();
+  }
+}
+
+/** Global-nav journey: active-route state on load, then use the nav links
+ *  to move between every route and confirm the URL, title and active state
+ *  follow along (proves the navigation actually works, not just renders). */
+async function navFlow() {
+  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/`;
+  log(`flow global nav -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "nav home ready");
+    if (!ready) throw new Error("nav flow: page never loaded");
+    const flow = { steps: [], result: null };
+
+    const active = await waitFor(
+      c,
+      `!!document.querySelector('nav[aria-label="Main"] a[aria-current="page"]')`,
+      30000,
+      500,
+      "nav active link",
+    );
+    if (!active) throw new Error("nav flow: active nav link never rendered");
+    flow.homeActive = await evalJs(c, navActive("/"));
+    flow.steps.push("active-home");
+
+    const clickAndVerify = async (href, pathname, titlePart, label) => {
+      const clicked = await evalJs(c, `(() => {
+        const a = [...document.querySelectorAll('nav[aria-label="Main"] a')]
+          .find((x) => x.getAttribute("href") === ${JSON.stringify(href)});
+        if (!a) return false;
+        a.click();
+        return true;
+      })()`);
+      if (!clicked) throw new Error(`nav flow: ${label} link missing`);
+      const atPath = await waitFor(c, `location.pathname === ${JSON.stringify(pathname)}`, 20000, 400, `nav ${label} path`);
+      if (!atPath) throw new Error(`nav flow: navigation to ${label} never committed`);
+      const titled = await waitFor(c, `document.title.includes(${JSON.stringify(titlePart)})`, 20000, 400, `nav ${label} title`);
+      if (!titled) throw new Error(`nav flow: ${label} document.title incorrect`);
+      const activeLink = await waitFor(
+        c,
+        `document.querySelector('nav[aria-label="Main"] a[aria-current="page"]')?.getAttribute("href") === ${JSON.stringify(href)}`,
+        10000,
+        300,
+        `nav ${label} active`,
+      );
+      if (!activeLink) throw new Error(`nav flow: active state did not move to ${label}`);
+      flow[`${label}Active`] = true;
+      flow.steps.push(`active-${label}`);
+    };
+
+    await clickAndVerify("/files", "/files", "Files - ", "files");
+    await clickAndVerify("/settings", "/settings", "Settings - ", "settings");
+    await clickAndVerify("/agent", "/agent", "Agent - ", "agent");
+    await clickAndVerify("/", "/", "FMCV Agentic", "home");
+    await delay(300);
+    await screenshot(c, "nav-journey.png");
+    flow.result = { active: true };
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
   } finally {
     c.close();
   }
@@ -792,6 +869,14 @@ async function filesFlow() {
         "create finished",
       );
       if (!closed) throw new Error(`files flow: create did not complete for ${name}`);
+      const noticeAfterCreate = await waitFor(
+        c,
+        `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Created ${name}`)}) ?? false`,
+        5000,
+        300,
+        "create success notice",
+      );
+      if (!noticeAfterCreate) throw new Error(`files flow: success notice missing after ${name}`);
       flow.steps.push(`created ${name}`);
     }
 
@@ -891,6 +976,14 @@ async function filesFlow() {
         `${name} deleted`,
       );
       if (!g) throw new Error(`files flow: ${name} still listed`);
+      const noticeAfterDelete = await waitFor(
+        c,
+        `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Deleted ${name}`)}) ?? false`,
+        5000,
+        300,
+        "delete success notice",
+      );
+      if (!noticeAfterDelete) throw new Error(`files flow: success notice missing after ${name}`);
       flow.steps.push(`deleted ${name}`);
     }
     await screenshot(c, "files-clean.png");
@@ -950,6 +1043,7 @@ async function main() {
       title: "FMCV Agentic",
       waitText: "Open Agent",
       bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkSettings: "Open Settings" },
+      jsChecks: { navPresent: navChecks.present, navLinks: navChecks.links, activeHome: navActive("/") },
     },
     {
       route: "settings",
@@ -957,6 +1051,7 @@ async function main() {
       title: "Settings - FMCV Agentic",
       waitText: "Connections (",
       bodyText: { title: "Settings", connections: "Connections (" },
+      jsChecks: { navPresent: navChecks.present, navLinks: navChecks.links, activeSettings: navActive("/settings") },
     },
     {
       route: "agent",
@@ -964,7 +1059,12 @@ async function main() {
       title: "Agent - FMCV Agentic",
       waitText: "Channels",
       bodyText: { title: "Agent", channelsTab: "Channels" },
-      jsChecks: { composerPresent: "!!document.querySelector('textarea')" },
+      jsChecks: {
+        navPresent: navChecks.present,
+        navLinks: navChecks.links,
+        activeAgent: navActive("/agent"),
+        composerPresent: "!!document.querySelector('textarea')",
+      },
     },
     {
       route: "files",
@@ -972,7 +1072,12 @@ async function main() {
       title: "Files - FMCV Agentic",
       waitText: "New file",
       bodyText: { title: "Files", newFile: "New file", refresh: "Refresh" },
-      jsChecks: { scopeSelect: "!!document.querySelector('select[aria-label=\"Scope\"]')" },
+      jsChecks: {
+        navPresent: navChecks.present,
+        navLinks: navChecks.links,
+        activeFiles: navActive("/files"),
+        scopeSelect: "!!document.querySelector('select[aria-label=\"Scope\"]')",
+      },
     },
   ];
 
@@ -984,6 +1089,7 @@ async function main() {
     for (const r of routes) {
       report.routes.push(await probeRoute(r));
     }
+    report.navFlow = await navFlow();
     report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
@@ -1004,6 +1110,13 @@ async function main() {
     const errs = errorCount(r.errors);
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
+  const nf = report.navFlow;
+  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 4 || !nf.flow.homeActive) {
+    failures.push(`nav flow: journey not verified (${JSON.stringify(nf && nf.flow)})`);
+  }
+  const navErrs = errorCount(nf ? nf.errors : {});
+  if (navErrs > 0) failures.push(`nav flow: ${navErrs} console/network error(s)`);
+
   const f = report.flow;
   if (!terminalOk(f.flow.result)) {
     failures.push(`agent flow: terminal state not achieved (${JSON.stringify(f.flow.result)})`);
