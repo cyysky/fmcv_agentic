@@ -1,3 +1,20 @@
+## Round 2026-08-06 — Round 4 · autonomous iteration round 2
+
+### Added
+- `agent_sessions` Postgres table: agent chats persist on create, after every
+  completed `converse` loop, and are removed on delete; `OnModuleInit` reloads
+  them after a restart (same recovery pattern as `channel_runs`).
+- Unit + API E2E coverage for session persistence/recovery/delete (unit
+  40 → 41; API E2E 44 → 45).
+
+### Changed
+- Browser E2E journey writes its artifact into the agent's own folder
+  (`write_own_file` → `round2.md`) instead of the channel project, so channel
+  delete fully prunes the channel workspace; the harness now fails on leftover
+  `browser-e2e-*` project folders (best-effort docker check).
+- Removed the last Round-1 leftover channel project folder; session persistence
+  live-proven across a backend container restart.
+
 ## Round 2026-08-06 — Round 3 (autonomous iteration round 1)
 
 ### Added

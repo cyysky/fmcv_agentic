@@ -1,63 +1,59 @@
-# ROUND 1 — 2026-08-06 (autonomous iteration round 1)
+# ROUND 2 — 2026-08-06 (autonomous iteration round 2)
 
 ## What changed this round
 
-- **job history persistence** — streaming channel jobs now persist to a new
-  `channel_runs` Postgres table (create + every terminal state); job polling
-  and member-status read live memory first and fall back to the persisted
-  history, so debug panes survive backend restarts.
-- **restart recovery** — runs still `running` when the process died are marked
-  `stopped` on boot with one explicit "Backend restarted; run interrupted."
-  event instead of spinning forever or 404-ing.
-- **channel delete race closed** — `DELETE /api/channels/:id` now reserves the
-  channel tree (begin/end guard) before stopping jobs; new jobs for a channel
-  mid-delete are rejected with 400 instead of slipping between stop and row
-  removal.
-- **browser E2E self-cleanup** — the CDP flow deletes the channel it creates
-  after the journey and verifies the row is gone (repeat runs no longer litter
-  the database).
-- **browser E2E gate** — a real terminal `[error]` (agent tool-loop failed) is
-  no longer a hard browser failure; must-reach-terminal, console/network
-  errors, and HTTP>=400 still hard-fail the run.
-- `.gitignore` — `vision_test.png` (generated vision snapshot) is ignored;
-  removed the 11 leftover `browser-e2e-msg*` channels + folders from prior
-  runs of the live workspace.
+- **agent session persistence** — chats (`/api/agent/sessions/*`) now persist to a
+  new `agent_sessions` Postgres table. Create, every completed `converse` loop, and
+  delete are mirrored to the DB (best-effort; failures logged and swallowed so the
+  in-memory flow never breaks). `OnModuleInit` reloads persisted sessions into the
+  session map, so history survives backend restarts.
+- **tests for persistence** — unit 40 → 41 (create upsert, fresh service recovers
+  via `onModuleInit`, delete removes the row); API E2E 44 → 45 (a real converse
+  turn stores its user message in the DB row and delete drops it).
+- **E2E artifact story** — the browser journey now asks the agent to write
+  `round2.md` into its OWN agent folder via `write_own_file` instead of into the
+  channel project, so channel delete fully prunes the channel workspace. The
+  harness runs a best-effort `projectPrune` docker check and hard-fails on any
+  leftover `browser-e2e-*` project folder.
+- **workspace hygiene** — removed the last Round-1 leftover
+  (`browser-e2e-msgw1h1r` project folder); a browser run now leaves zero channel
+  project residue.
+- **live proof** — rebuilt the backend container, created a session, ran a real
+  LLM converse, restarted the container, and re-read the session: history intact.
+  Live delete then removed the DB row (verified via psql).
 
 ## Test status
 
-- Unit: 40 passed / 7 suites (was 37) — added delete-guard, restart-recovery,
-  and persistence-upsert tests.
-- API E2E: 44 passed / 4 suites (was 43) — new test drives a real streaming
-  job to terminal, asserts the DB row matches, and that channel delete
-  cascade-prunes `channel_runs`.
+- Unit: **41 passed / 7 suites** (was 40).
+- API E2E: **45 passed / 4 suites** (was 44).
 - Frontend: `tsc --noEmit` clean, `eslint` clean (0 errors).
 - Backend: `npm run build` clean.
-- Browser E2E (real Chrome over CDP): all route checks + channel journey pass,
-  zero console/network errors, cleanup reported `deleted`. Chrome itself was
-  started fresh for this round (the user's CDP instance was not running);
-  headless Chrome remains attached on 9222.
+- Browser E2E (real Chrome over CDP): all route checks + channel journey pass
+  (`answer` terminal), zero console/network errors, cleanup `deleted`,
+  `projectPrune.ok: true`.
 
 ## Known issues / open tickets
 
-1. **E2E-created artifact folders linger by design** — the journey agent writes
-   `hello_round.md` into the channel project, so delete leaves the non-empty
-   folder (`removeProjectIfEmpty` intentionally preserves artifacts). The
-   channel row is gone; the folder remains. Decide whether to change the
-   journey to write into the agent's own folder so delete fully prunes.
-2. **In-memory sessions** — agent sessions are still process-only; a backend
-   restart loses chat sessions (ticketed in earlier rounds, not yet fixed).
-3. **Workflow gating** — channel runs invoke the real LLM; there is no dry-run /
-   mock provider mode for repeatable agent behavior tests (only unit-level
-   mocks).
-4. **No auth** — the API is open (no API key / login). Fine for local dev, but
-   it is a known gap before this is deployed anywhere.
+1. **No deterministic LLM stub** — API/channel E2E agent turns still call the live
+   gateway (`http://60.51.17.97:9999/v1`); a stub mode would make the suites
+   hermetic and runnable offline.
+2. **Sessions not surfaced in the UI** — `/api/agent/sessions*` is solid, but the
+   `/agent` UI is channels-only; persisted chats have no frontend entry point yet.
+3. **No auth** — the API is open (no API key / login). Fine for local dev; known
+   gap before any deployment.
+4. **Fire-and-forget session writes** — the very last turn of a conversation can be
+   lost if the process hard-crashes mid-loop (matches the `channel_runs` pattern;
+   acceptable and noted in tests).
+5. **E2E harness env-dependency** — `projectPrune` needs `docker` + the
+   `fmcv-backend` container (skipped cleanly when absent); CDP tab-close
+   occasionally logs a non-fatal `Target is closing` warning; the journey leaves
+   `round2.md` in the coder agent folder (overwritten every run, by design).
 
 ## Next round focus (ordered by value)
 
-1. Persist agent sessions (chats) to Postgres with the same restart-recovery
-   pattern used for `channel_runs` in this round.
-2. Make the workspace/artifact story explicit: decide whether E2E should write
-   into the agent's own folder (so channel delete fully prunes) or keep the
-   preserved-artifact behavior and surface it in the E2E report.
-3. Add a deterministic LLM stub mode (env var) so channel/API E2E can run
-   without the external model gateway.
+1. Deterministic LLM stub mode (env var) so API/channel E2E runs without the
+   external model gateway.
+2. Surface persisted sessions in the frontend agent UI (sidebar list, open /
+   continue a chat via `POST /api/agent/sessions/:id/converse`).
+3. API hardening: a request token / restricted unauthenticated mutations before
+   any deployment.

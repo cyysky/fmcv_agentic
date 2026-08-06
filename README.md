@@ -103,10 +103,10 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 40 tests / 7 suites** — model catalog, workspace service + tools,
+- **Unit: 41 tests / 7 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`).
-- **API E2E: 44 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 45 tests / 4 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root): app health, connections,
   agent sessions/turns, channel lifecycle + streaming jobs (including that
   deleting a channel stops its running jobs, job history persists to
