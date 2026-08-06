@@ -897,13 +897,16 @@ export default function AgentPage() {
           ...prev,
           { role: "assistant", content: data?.answer ?? "(no answer)" },
         ]);
+        // The backend auto-titles a default-titled session from its first
+        // user message; refresh the sidebar so the new title shows up.
+        void loadSessions();
       }
     } catch (e) {
       setSessionsError(e instanceof Error ? e.message : "Request failed");
     } finally {
       setSessionBusy(false);
     }
-  }, [sessionInput, sessionBusy, selSessionId, model]);
+  }, [sessionInput, sessionBusy, selSessionId, model, loadSessions]);
 
   /* ----------------------- workspace viewer helpers ---------------------- */
 

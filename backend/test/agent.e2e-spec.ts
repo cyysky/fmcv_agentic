@@ -118,6 +118,28 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(res.body.message).toContain('not found');
   });
 
+  it('auto-titles a session from its first user message', async () => {
+    const created = await http().post('/api/agent/sessions').send({}).expect(201);
+    const id = created.body.id;
+    try {
+      await http()
+        .post(`/api/agent/sessions/${id}/converse`)
+        .send({ message: 'auto-title me please', maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+      const fetched = await http().get(`/api/agent/sessions/${id}`).expect(200);
+      expect(fetched.body.title).toBe('auto-title me please');
+
+      // A later message must not change the derived title.
+      await http()
+        .post(`/api/agent/sessions/${id}/converse`)
+        .send({ message: 'second message', maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+      const after = await http().get(`/api/agent/sessions/${id}`).expect(200);
+      expect(after.body.title).toBe('auto-title me please');
+    } finally {
+      await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+    }
+  });
   it('renames a session and persists the new title', async () => {
     const created = await http()
       .post('/api/agent/sessions')

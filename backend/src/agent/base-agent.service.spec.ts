@@ -77,6 +77,40 @@ describe('BaseAgentService sessions', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+  it('auto-titles a default session from its first user message', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-autotitle-'));
+    try {
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root, { llmStub: true }), ws, prismaDouble());
+
+      const s = agent.createSession();
+      expect(s.title).toBe('New session');
+      await agent.converse(s.id, '  Fix the parser   please now  ');
+      expect(agent.getSession(s.id).title).toBe('Fix the parser please now');
+
+      // A later message must not re-title.
+      await agent.converse(s.id, 'second message');
+      expect(agent.getSession(s.id).title).toBe('Fix the parser please now');
+
+      // Long first messages are truncated to a 40-char snippet.
+      const long = agent.createSession();
+      await agent.converse(long.id, 'x'.repeat(60));
+      expect(agent.getSession(long.id).title).toBe(`${'x'.repeat(40)}…`);
+
+      // Manually renamed sessions keep their custom title.
+      const named = agent.createSession();
+      agent.renameSession(named.id, 'My title');
+      await agent.converse(named.id, 'hello');
+      expect(agent.getSession(named.id).title).toBe('My title');
+
+      // Blank first messages leave the default title.
+      const blank = agent.createSession();
+      await agent.converse(blank.id, '   ');
+      expect(agent.getSession(blank.id).title).toBe('New session');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it('renames a session, persists the new title, and rejects blank input', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-rename-'));
     try {

@@ -93,6 +93,16 @@ export interface Session {
   messages: ChatMessage[];
 }
 
+/** Default session title until the first user message can auto-title it. */
+export const DEFAULT_SESSION_TITLE = 'New session';
+
+/** Derive a short, single-line sidebar title from a user message. */
+function deriveSessionTitle(message: string): string {
+  const flat = message.trim().replace(/\s+/g, ' ');
+  if (!flat) return DEFAULT_SESSION_TITLE;
+  return flat.length > 40 ? `${flat.slice(0, 40)}…` : flat;
+}
+
 export const DEFAULT_SYSTEM_PROMPT = `You are FMCC Base Agent, a helpful, tool-using AI assistant.
 You have access to a set of tools. Reason about the user's request, call the
 right tools when they help, and give a clear, correct final answer. Be concise.`;
@@ -179,7 +189,7 @@ export class BaseAgentService implements OnModuleInit {
    * Sessions
    * ------------------------------------------------------------------ */
 
-  createSession(title = 'New session', model?: string): Session {
+  createSession(title = DEFAULT_SESSION_TITLE, model?: string): Session {
     const spec = resolveModel(model ?? this.defaultModelId);
     const session: Session = {
       id: randomUUID(),
@@ -304,7 +314,14 @@ export class BaseAgentService implements OnModuleInit {
     const session = this.getSession(sessionId);
     const spec = resolveModel(model ?? session.model);
     session.model = spec.id;
+    const userMsgCount = session.messages.filter((m) => m.role === 'user').length;
     session.messages.push({ role: 'user', content: message });
+    // Auto-title: the first user message names a default-titled session, so
+    // the sidebar is useful without a manual rename. Later messages and
+    // manually renamed sessions are left alone.
+    if (session.title === DEFAULT_SESSION_TITLE && userMsgCount === 0) {
+      session.title = deriveSessionTitle(message);
+    }
     const maxRunSteps = maxSteps && maxSteps > 0 ? maxSteps : 10;
     const { answer, steps, messages } = await this.runLoop(session.messages, spec, maxRunSteps);
     session.messages = messages;
