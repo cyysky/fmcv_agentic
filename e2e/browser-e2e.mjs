@@ -14,6 +14,7 @@
 //   2. Each route renders its expected document.title (browser tab title)
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
+//   5. Channel deletion prunes the per-channel project folder (best-effort docker check)
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -363,7 +364,9 @@ async function agentChannelFlow() {
       "channel composer",
     );
     if (!composerReady) throw new Error("agent flow: channel composer never appeared");
-    const msg = "Follow the channel brief: write hello_round.md into the channel project with channel_write, then reply hello.";
+    const msg =
+      'Follow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file ' +
+      '(args: { path: "round2.md", content: "# Round 2 own-folder E2E artifact." }), then reply hello.';
     await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
     await delay(100);
     // Submit the channel composer specifically (the mode-toggle button is also
@@ -411,6 +414,23 @@ async function agentChannelFlow() {
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
     c.close();
+  }
+}
+
+/** Optional diagnostic: after channel delete, confirm the per-channel project
+ *  folder is gone from the backend workspace (best-effort; needs docker). */
+async function projectFolderPruneCheck(channelPrefix) {
+  try {
+    const { execSync } = await import("node:child_process");
+    const out = execSync("docker exec fmcv-backend sh -c 'ls /data/workspaces/projects'", {
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    const projects = out.trim().split(/\s+/).filter(Boolean);
+    const leftovers = projects.filter((n) => n.startsWith(channelPrefix));
+    return { ok: leftovers.length === 0, leftovers, projects };
+  } catch (err) {
+    return { ok: null, error: String(err.message ?? err).slice(0, 200), note: "docker unavailable; skipped" };
   }
 }
 
@@ -462,6 +482,7 @@ async function main() {
     }
     report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
+    report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
     log("browser E2E flows done");
   } finally {
     // Never leave check tabs behind, even when a route failed midway.
@@ -483,6 +504,9 @@ async function main() {
     // render, not a browser breakage. Note it, but only console/network
     // issues are hard failures for the page-quality gate.
     log(`note: agent run reached [error] terminal (${JSON.stringify(f.flow.result)})`);
+  }
+  if (f.projectPrune && f.projectPrune.ok === false) {
+    failures.push(`agent flow: leftover channel project folder(s) [${f.projectPrune.leftovers.join(", ")}]`);
   }
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
