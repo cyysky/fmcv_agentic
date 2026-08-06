@@ -110,6 +110,7 @@ export default function FilesPanel() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftBusy, setDraftBusy] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const readOnly = scope.startsWith("project:");
 
@@ -165,12 +166,14 @@ export default function FilesPanel() {
     setPath("");
     setViewer(null);
     setDraft(null);
+    setNotice(null);
   };
 
   const navigate = (nextPath: string) => {
     setPath(nextPath);
     setViewer(null);
     setDraft(null);
+    setNotice(null);
   };
 
   const crumbs = path ? ["", ...path.split("/")] : [""];
@@ -179,6 +182,7 @@ export default function FilesPanel() {
     const target = joinPath(path, entry.name);
     setViewer({ target, entry, content: null, loading: true });
     setError(null);
+    setNotice(null);
     try {
       const res = await apiFetch(`/files/read?${query({ scope, path: target })}`);
       if (!res.ok) throw new Error(await apiError(res));
@@ -198,6 +202,7 @@ export default function FilesPanel() {
   const startEdit = async (entry: FileEntry) => {
     const target = joinPath(path, entry.name);
     setError(null);
+    setNotice(null);
     try {
       const res = await apiFetch(`/files/read?${query({ scope, path: target })}`);
       if (!res.ok) throw new Error(await apiError(res));
@@ -218,12 +223,15 @@ export default function FilesPanel() {
       content: viewer.content ?? "",
     });
     setViewer(null);
+    setNotice(null);
   };
 
   const saveDraft = async () => {
     if (!draft) return;
     setDraftBusy(true);
     setError(null);
+    setNotice(null);
+    let successText = "";
     try {
       if (draft.kind === "new-file" || draft.kind === "edit") {
         const name = draft.name.trim();
@@ -241,6 +249,8 @@ export default function FilesPanel() {
           },
         );
         if (!res.ok) throw new Error(await apiError(res));
+        successText =
+          draft.kind === "edit" ? `Saved ${target}` : `Created ${target}`;
       } else {
         const name = draft.name.trim();
         if (!name) throw new Error("Folder name is required");
@@ -249,10 +259,12 @@ export default function FilesPanel() {
           { method: "POST" },
         );
         if (!res.ok) throw new Error(await apiError(res));
+        successText = `Created folder ${joinPath(path, name)}`;
       }
       setDraft(null);
       setViewer(null);
       setReloadKey((k) => k + 1);
+      setNotice(successText);
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -263,6 +275,7 @@ export default function FilesPanel() {
   const deleteEntry = async (entry: FileEntry) => {
     const target = joinPath(path, entry.name);
     setError(null);
+    setNotice(null);
     try {
       const res = await apiFetch(
         `/files/delete?${query({ scope, path: target })}`,
@@ -272,6 +285,7 @@ export default function FilesPanel() {
       if (entry.type === "directory" && target === path) setPath("");
       if (viewer?.target === target) setViewer(null);
       if (draft?.kind === "edit" && draft.target === target) setDraft(null);
+      setNotice(`Deleted ${target}`);
       setReloadKey((k) => k + 1);
     } catch (e) {
       setError(errText(e));
@@ -331,9 +345,20 @@ export default function FilesPanel() {
           onClick={() => {
             setError(null);
             setWorkspaceError(null);
+            setNotice(null);
           }}
         >
           {error ?? workspaceError}
+        </button>
+      )}
+
+      {notice && (
+        <button
+          className={styles.successBanner}
+          title="Dismiss"
+          onClick={() => setNotice(null)}
+        >
+          {notice}
         </button>
       )}
 
@@ -372,6 +397,7 @@ export default function FilesPanel() {
             onClick={() => {
               setViewer(null);
               setDraft({ kind: "new-file", name: "", content: "" });
+              setNotice(null);
             }}
           >
             New file
@@ -381,6 +407,7 @@ export default function FilesPanel() {
             onClick={() => {
               setViewer(null);
               setDraft({ kind: "new-folder", name: "" });
+              setNotice(null);
             }}
           >
             New folder
@@ -389,7 +416,13 @@ export default function FilesPanel() {
       )}
 
       {draft && !readOnly && (
-        <div className={styles.panel}>
+        <form
+          className={styles.panel}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void saveDraft();
+          }}
+        >
           <div className={styles.panelTitle}>
             {draft.kind === "new-file"
               ? "New file"
@@ -430,13 +463,14 @@ export default function FilesPanel() {
           )}
           <div className={styles.panelActions}>
             <button
+              type="submit"
               className={styles.btnPrimary}
-              onClick={saveDraft}
               disabled={draftBusy}
             >
               {draft.kind === "edit" ? "Save" : "Create"}
             </button>
             <button
+              type="button"
               className={styles.btnGhost}
               onClick={() => {
                 setDraft(null);
@@ -446,7 +480,7 @@ export default function FilesPanel() {
               Cancel
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {loading && entries.length === 0 ? (

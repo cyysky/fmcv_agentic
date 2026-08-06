@@ -4,7 +4,8 @@
   margin: 0 auto;
   padding: 2rem 1.5rem;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
-  min-height: 100vh;
+  flex: 1;
+  min-height: calc(100dvh - var(--site-nav-height));
 }
 
 .header {
@@ -95,6 +96,21 @@
   background: #fde8e8;
   color: #b91c1c;
   border: 1px solid #fecaca;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.successBanner {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #e8f7ee;
+  color: #166534;
+  border: 1px solid #bbf7d0;
   padding: 0.75rem 1rem;
   border-radius: 8px;
   margin-bottom: 1rem;
