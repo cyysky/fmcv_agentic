@@ -1,3 +1,20 @@
+## Round 2026-08-06 — Round 10 · autonomous iteration round 8
+
+### Added
+- Session auto-titles: the backend derives a title from a default-titled
+  session's first user message (whitespace collapsed, 40-char snippet with
+  `…`), persisted through the same Postgres upsert; later messages do not
+  re-title and manual renames win. The frontend refreshes the sidebar list
+  after a reply so the derived title appears immediately.
+- Unit + API E2E coverage for auto-titling (unit 46 → 47; agent e2e 11 → 12).
+
+### Changed
+- Browser E2E sessions journey now gates on the auto-derived title in the
+  sidebar after the first reply, in addition to the rename + reload
+  persistence gates.
+- README refresh: unit 47/8, API E2E 36/5 (agent 12), browser E2E description
+  covers the auto-title step.
+
 ## Round 2026-08-06 — Round 9 · autonomous iteration round 7
 
 ### Added

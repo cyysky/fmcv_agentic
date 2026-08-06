@@ -104,23 +104,25 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 46 tests / 8 suites** — model catalog, workspace service + tools,
+- **Unit: 47 tests / 8 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
-  rename.
-- **API E2E: 35 tests / 5 suites** (`backend/test/*.e2e-spec.ts`) — real
+  rename + auto-title.
+- **API E2E: 36 tests / 5 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD (4), agent
-  sessions/turns/rename (11), channel lifecycle + streaming jobs (12), and
-  the API token gate (3). Deleting a channel stops its running jobs, job
-  history persists to `channel_runs`, and channel delete cascade-prunes run
-  history. Each suite's count equals its declared tests (verified per file).
+  sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
+  (12), and the API token gate (3). Deleting a channel stops its running
+  jobs, job history persists to `channel_runs`, and channel delete
+  cascade-prunes run history. Each suite's count equals its declared tests
+  (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent` render their content and document titles with no console/network
   errors, then drives live journeys: a channel create → post → agent answer →
-  delete, and a sessions create → live converse → rename via the UI → page
-  reload → reopen → history-and-new-title-survive → delete. The sessions step waits for the CDP navigation
+  delete, and a sessions create → live converse → auto-title in the sidebar →
+  rename via the UI → page reload → reopen → history-and-new-title-survive →
+  delete. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
