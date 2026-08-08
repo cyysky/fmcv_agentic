@@ -1,56 +1,554 @@
 {
   "mode": "enabled",
   "journeys": [
-    "agent"
+    "routes",
+    "nav",
+    "mobile",
+    "html",
+    "settings",
+    "skills"
   ],
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-08T17:39:41.038Z",
-  "routes": [],
-  "flow": {
-    "url": "http://localhost:3333/agent",
-    "tabInfo": {
-      "id": "46FB6F2A1441BCD674F55B43F087BAFE",
-      "created": true
+  "ranAt": "2026-08-08T17:44:26.212Z",
+  "routes": [
+    {
+      "route": "home",
+      "url": "http://localhost:3333/",
+      "docTitle": "FMCV Agentic",
+      "tabInfo": {
+        "id": "B34ACFC129CC06DCEC2A2E163DA7A128",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "linkAgent": true,
+        "linkFiles": true,
+        "linkBuckets": true,
+        "linkCron": true,
+        "linkSkills": true,
+        "linkSettings": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeHome": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
     },
-    "channelName": "browser-e2e-mskns5bu",
-    "flow": {
-      "steps": [
-        "created-channel",
-        "posted-message",
-        "terminal-state"
-      ],
-      "timings": {
-        "postedAt": "2026-08-08T17:39:44.315Z",
-        "finishedAt": "2026-08-08T17:39:46.988Z",
-        "elapsedMs": 1365
+    {
+      "route": "settings",
+      "url": "http://localhost:3333/settings",
+      "docTitle": "Settings - FMCV Agentic",
+      "tabInfo": {
+        "id": "441DDA9DC52B8EB59B8C78BE5D2E4EE0",
+        "created": true
       },
-      "result": {
-        "answer": true,
-        "stopped": false,
-        "error": false
+      "checks": {
+        "title": true,
+        "connections": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeSettings": true,
+        "docTitle": true
       },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "agent",
+      "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-mskns5bu",
-      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 1:39:43 AM\nAgent coder joined #browser-e2e-mskns5bu.\nsystem\n[SYSTEM]\n8/9/2026, 1:39:43 AM\nChannel #browser-e2e-mskns5bu created.\nyou\n[USER]\n8/9/2026, 1:39:44 AM\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n8/9/2026, 1:39:46 AM\nHello! I've written `round2.md` into my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder"
+      "tabInfo": {
+        "id": "26A282830E617A3FCDFD5FA1AF4686B6",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "channelsTab": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeAgent": true,
+        "composerPresent": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
     },
-    "errors": {
-      "netFailures": [],
-      "httpErrors": [],
-      "expectedHttp": [],
-      "consoleErrors": [],
-      "exceptions": [],
-      "logErrors": []
+    {
+      "route": "files",
+      "url": "http://localhost:3333/files",
+      "docTitle": "Files - FMCV Agentic",
+      "tabInfo": {
+        "id": "117597424BD1A60020B25427A1C6A261",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newFile": true,
+        "refresh": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeFiles": true,
+        "scopeSelect": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
     },
-    "cleanup": "deleted+agent-fixture-clean",
-    "projectPrune": {
-      "ok": true,
-      "leftovers": [],
-      "projects": [
-        "fmcv"
-      ]
+    {
+      "route": "buckets",
+      "url": "http://localhost:3333/buckets",
+      "docTitle": "Buckets - FMCV Agentic",
+      "tabInfo": {
+        "id": "76F3EAD11F32D1ECAA39F4567AC24B04",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newBucket": true,
+        "readOnly": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeBuckets": true,
+        "newBucketBtn": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "buckets-dark",
+      "url": "http://localhost:3333/buckets",
+      "docTitle": "Buckets - FMCV Agentic",
+      "tabInfo": {
+        "id": "7B433D8EDDF11DE2E2B9443D4D2B3808",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newBucket": true,
+        "readOnly": true,
+        "bodyDark": true,
+        "badgeDark": true,
+        "primaryStaysBlue": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "buckets-mobile",
+      "url": "http://localhost:3333/buckets",
+      "docTitle": "Buckets - FMCV Agentic",
+      "tabInfo": {
+        "id": "85BAAFD0B14E4C19ABD8838088B9B9E8",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newBucket": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "cron",
+      "url": "http://localhost:3333/cron",
+      "docTitle": "Cron - FMCV Agentic",
+      "tabInfo": {
+        "id": "9D0C6F8852141FA5C0807F134ECE6C06",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newJob": true,
+        "empty": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeCron": true,
+        "newJobBtn": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "cron-dark",
+      "url": "http://localhost:3333/cron",
+      "docTitle": "Cron - FMCV Agentic",
+      "tabInfo": {
+        "id": "197DC2EF55B558075EF92E283DB70543",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newJob": true,
+        "bodyDark": true,
+        "panelDark": true,
+        "inputDark": true,
+        "primaryStaysBlue": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "cron-mobile",
+      "url": "http://localhost:3333/cron",
+      "docTitle": "Cron - FMCV Agentic",
+      "tabInfo": {
+        "id": "2BEE8EF7EA86F49C9824ACF3B2ECCB7C",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newJob": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "skills",
+      "url": "http://localhost:3333/skills",
+      "docTitle": "Skills - FMCV Agentic",
+      "tabInfo": {
+        "id": "1F10C1BC8C330C4D02B182CCE56FFE36",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newSkill": true,
+        "subtitle": true,
+        "navPresent": true,
+        "navLinks": true,
+        "activeSkills": true,
+        "newSkillBtn": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "skills-dark",
+      "url": "http://localhost:3333/skills",
+      "docTitle": "Skills - FMCV Agentic",
+      "tabInfo": {
+        "id": "EBF5B13FEE696663D1845A462B7F019B",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "formTitle": true,
+        "bodyDark": true,
+        "formDark": true,
+        "inputDark": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "skills-mobile",
+      "url": "http://localhost:3333/skills",
+      "docTitle": "Skills - FMCV Agentic",
+      "tabInfo": {
+        "id": "53E7184FC093189851AA7B20372F9CCF",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newSkill": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "home-dark",
+      "url": "http://localhost:3333/",
+      "docTitle": "FMCV Agentic",
+      "tabInfo": {
+        "id": "32D6694E7E4D586B05A4E4AFA933CC1F",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "bodyDark": true,
+        "cardDark": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "settings-dark",
+      "url": "http://localhost:3333/settings",
+      "docTitle": "Settings - FMCV Agentic",
+      "tabInfo": {
+        "id": "5E3C61E60BD75B567281375FA8A0D795",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "connections": true,
+        "bodyDark": true,
+        "cardDark": true,
+        "inputDark": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "agent-dark",
+      "url": "http://localhost:3333/agent",
+      "docTitle": "Agent - FMCV Agentic",
+      "tabInfo": {
+        "id": "A42F53F214F74E6665E61B2531C36ED6",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "channelsTab": true,
+        "bodyDark": true,
+        "modelSelectDark": true,
+        "inputDark": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "files-dark",
+      "url": "http://localhost:3333/files",
+      "docTitle": "Files - FMCV Agentic",
+      "tabInfo": {
+        "id": "77AC97E8F68A02969096F4F04A49B324",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newFile": true,
+        "refresh": true,
+        "bodyDark": true,
+        "selectDark": true,
+        "primaryStaysBlue": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "home-mobile",
+      "url": "http://localhost:3333/",
+      "docTitle": "FMCV Agentic",
+      "tabInfo": {
+        "id": "C172E90C34467FC188E1FC524A60FDD2",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "cardDark": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "ctasFit": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "settings-mobile",
+      "url": "http://localhost:3333/settings",
+      "docTitle": "Settings - FMCV Agentic",
+      "tabInfo": {
+        "id": "14E5D8536788D5C9E1E8502D00CC3C6B",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "agent-mobile",
+      "url": "http://localhost:3333/agent",
+      "docTitle": "Agent - FMCV Agentic",
+      "tabInfo": {
+        "id": "AB512C6B52D5C39E8A57CCCA5B71D803",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "channelsTab": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "composerVisible": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
+    },
+    {
+      "route": "files-mobile",
+      "url": "http://localhost:3333/files",
+      "docTitle": "Files - FMCV Agentic",
+      "tabInfo": {
+        "id": "F84F9EE9C5E46A44006AECC26477ADAC",
+        "created": true
+      },
+      "checks": {
+        "title": true,
+        "newFile": true,
+        "noHorizontalOverflow": true,
+        "navLinksFit": true,
+        "filesRowGrid": true,
+        "docTitle": true
+      },
+      "errors": {
+        "netFailures": [],
+        "httpErrors": [],
+        "expectedHttp": [],
+        "consoleErrors": [],
+        "exceptions": [],
+        "logErrors": []
+      }
     }
-  },
+  ],
+  "flow": null,
   "staleSweep": {
     "channels": [],
     "sessions": [],
@@ -62,5 +560,276 @@
     "files": [],
     "projectFolders": [],
     "errors": []
+  },
+  "navFlow": {
+    "url": "http://localhost:3333/",
+    "tabInfo": {
+      "id": "EBBCB6CA8A8A0C060CE069D39309C62C",
+      "created": true
+    },
+    "flow": {
+      "steps": [
+        "active-home",
+        "active-files",
+        "active-buckets",
+        "active-cron",
+        "active-skills",
+        "active-settings",
+        "active-agent",
+        "active-home"
+      ],
+      "result": {
+        "active": true
+      },
+      "homeActive": true,
+      "filesActive": true,
+      "bucketsActive": true,
+      "cronActive": true,
+      "skillsActive": true,
+      "settingsActive": true,
+      "agentActive": true
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    }
+  },
+  "mobileChannelFlow": {
+    "url": "http://localhost:3333/agent",
+    "tabInfo": {
+      "id": "50EF2A0EE2A010D892747E8482259782",
+      "created": true
+    },
+    "channelName": "browser-e2e-mobile-msknyv82",
+    "flow": {
+      "steps": [
+        "dashboard-layout",
+        "member-debug"
+      ],
+      "timings": {
+        "elapsedMs": 2134
+      },
+      "result": {
+        "layoutOk": true,
+        "memberDebugReachable": true,
+        "overflowAfterDebug": true
+      },
+      "channelName": "browser-e2e-mobile-msknyv82",
+      "layout": {
+        "noHorizontalOverflow": true,
+        "stacked": true,
+        "sidebarInView": true,
+        "conversationInView": true,
+        "rightColInView": true,
+        "widths": {
+          "sidebar": 339.71875,
+          "conversation": 339.71875,
+          "rightCol": 339.71875
+        }
+      }
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    },
+    "cleanup": "deleted+project-folder-clean"
+  },
+  "htmlFlow": {
+    "url": "http://localhost:3333/files",
+    "tabInfo": {
+      "id": "F9A9B5A54A235911CE3C45E874B6A1B5",
+      "created": true
+    },
+    "flow": {
+      "steps": [
+        "created-view.html",
+        "iframes-in-app-preview",
+        "opened-html-in-new-tab",
+        "deleted-view.html"
+      ],
+      "timings": {
+        "elapsedMs": 6504
+      },
+      "result": {
+        "createdViaUi": true,
+        "iframeVerified": true,
+        "newTabVerified": true,
+        "deletedViaUi": true
+      },
+      "scope": "agent:coder",
+      "folder": "browser-e2e-html-msknyxs8",
+      "file": "browser-e2e-html-msknyxs8/view.html",
+      "marker": "html-view-msknyxs8",
+      "content": "<!doctype html><html><head><meta charset=\"utf-8\"><title>HTML view E2E msknyxs8</title></head><body><h1 id=\"marker\">html-view-msknyxs8</h1><p>viewed-by-link</p></body></html>",
+      "viewHeaders": {
+        "contentType": "text/html; charset=utf-8",
+        "disposition": "inline; filename=\"view.html\"",
+        "csp": "sandbox"
+      },
+      "proxyHref": "http://localhost:3333/api/files/view?scope=agent%3Acoder&path=browser-e2e-html-msknyxs8%2Fview.html",
+      "newTabVerified": true
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    },
+    "cleanup": "clean"
+  },
+  "skillsFlow": {
+    "url": "http://localhost:3333/skills",
+    "tabInfo": {
+      "id": "4B215EF05ADCC3DD287D9F25094C1852",
+      "created": true
+    },
+    "flow": {
+      "steps": [
+        "created-installed",
+        "persisted-after-reload",
+        "edited-skill",
+        "uninstalled",
+        "reinstalled",
+        "deleted-skill"
+      ],
+      "timings": {
+        "elapsedMs": 3450
+      },
+      "result": {
+        "createdViaUi": true,
+        "installedViaUi": true,
+        "persistedAfterReload": true,
+        "editedViaUi": true,
+        "uninstalledViaUi": true,
+        "reinstalledViaUi": true,
+        "deletedViaUi": true
+      },
+      "skillId": "3591805c-05a5-466e-a57b-f120af36d608",
+      "skillName": "browser-e2e-skill-msknz2zt",
+      "createdViaUi": true,
+      "persistedAfterReload": true,
+      "editedViaUi": true,
+      "uninstalledViaUi": true,
+      "reinstalledViaUi": true,
+      "deletedViaUi": true
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    },
+    "cleanup": "clean"
+  },
+  "settingsFlow": {
+    "flow": {
+      "steps": [
+        "fixture-created",
+        "edit-mode-key-blank",
+        "form-test-before-save",
+        "form-test-cancel-preserves-url",
+        "edited-without-key",
+        "cleared-stored-key",
+        "test-result-rendered",
+        "auto-probe-on-save",
+        "auto-probe-replayed-in-edit",
+        "fetch-models-stored-key",
+        "fetch-models-draft",
+        "fetch-models-dead-graceful",
+        "probe-persisted-after-reload",
+        "failure-metrics-persisted"
+      ],
+      "result": {
+        "keyBlankOnEdit": true,
+        "keyNotSentOnPatch": true,
+        "formTestGracefulFailure": true,
+        "cancelPreservedUrl": true,
+        "clearKeySent": true,
+        "keyClearedServerSide": true,
+        "testGracefulFailure": true,
+        "autoProbeRowSeen": true,
+        "autoProbeBannerSeen": true,
+        "autoProbeUpstreamHit": true,
+        "autoProbeUpstreamAuthOk": true,
+        "autoProbeUpstreamModel": "ds4-flash",
+        "autoProbeUpstreamMaxTokens": 1,
+        "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 8 ms",
+        "autoEditReplaysProbe": true,
+        "modelsFetchStoredKeyOk": true,
+        "modelsFetchStoredKeyAuthOk": true,
+        "modelsFetchDraftOk": true,
+        "modelsFetchDraftAuthOk": true,
+        "modelsFetchDeadGraceful": true,
+        "autoProbePersistedServerSide": true,
+        "autoProbePersistedAfterReload": true,
+        "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 8 ms · probed 01:45 AM",
+        "failureWithStatusMetrics": true,
+        "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 3 ms",
+        "failurePersistedServerSide": true,
+        "failurePersistedAfterReload": true,
+        "statusCleanup": "clean",
+        "autoCleanup": "clean",
+        "cleanup": "clean"
+      },
+      "fixtureId": null,
+      "autoFixtureId": null,
+      "statusFixtureId": null,
+      "keyBlankOnEdit": true,
+      "formTestGracefulFailure": true,
+      "cancelPreservedUrl": true,
+      "patchBodies": [
+        "{\"displayName\":\"Renamed msknz76y\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000,\"models\":[]}"
+      ],
+      "keyNotSentOnPatch": true,
+      "keyDisabledBeforeCheck": false,
+      "keyDisabledAfterCheck": true,
+      "clearKeySent": true,
+      "keyClearedServerSide": true,
+      "testResultText": "Connection failed: fetch failed",
+      "testGracefulFailure": true,
+      "autoProbeRowSeen": true,
+      "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 8 ms",
+      "autoProbeBannerSeen": true,
+      "autoProbeUpstreamHit": true,
+      "autoProbeUpstreamAuthOk": true,
+      "autoProbeUpstreamModel": "ds4-flash",
+      "autoProbeUpstreamMaxTokens": 1,
+      "autoEditReplaysProbe": true,
+      "modelsFetchStoredKeyOk": true,
+      "modelsFetchStoredKeyAuthOk": true,
+      "modelsFetchDraftOk": true,
+      "modelsFetchDraftAuthOk": true,
+      "modelsFetchDeadGraceful": true,
+      "autoProbePersistedServerSide": true,
+      "autoProbePersistedAfterReload": true,
+      "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 8 ms · probed 01:45 AM",
+      "failureWithStatusMetrics": true,
+      "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 3 ms",
+      "failurePersistedServerSide": true,
+      "failurePersistedAfterReload": true,
+      "cleanup": "clean",
+      "autoCleanup": "clean",
+      "statusCleanup": "clean"
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    }
   }
 }
