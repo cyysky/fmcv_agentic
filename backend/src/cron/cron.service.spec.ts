@@ -9,9 +9,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CronService,
   MAX_RUN_HISTORY,
+  MAX_RUN_MESSAGE,
   OVERVIEW_EVENT_LIMIT_MAX,
   OVERVIEW_RECENT_EVENTS,
   nextCronRun,
+  truncate,
 } from './cron.service';
 
 /** Minimal Prisma double covering cronJob + connection lookups. */
@@ -815,5 +817,57 @@ describe('CronService', () => {
     const next = nextCronRun('*/5 * * * *', from);
     expect(next.toISOString()).toBe('2026-08-08T00:05:00.000Z');
     expect(() => nextCronRun('61 * * * *', from)).toThrow(BadRequestException);
+  });
+});
+
+describe('truncate', () => {
+  it('returns null for empty, whitespace-only, and missing messages', () => {
+    expect(truncate(undefined, MAX_RUN_MESSAGE)).toBeNull();
+    expect(truncate(null, MAX_RUN_MESSAGE)).toBeNull();
+    expect(truncate('', MAX_RUN_MESSAGE)).toBeNull();
+    expect(truncate('   \n\t ', MAX_RUN_MESSAGE)).toBeNull();
+  });
+
+  it('leaves messages at or under the cap unchanged', () => {
+    expect(truncate('short answer', 500)).toBe('short answer');
+    expect(truncate('x'.repeat(500), 500)).toBe('x'.repeat(500));
+  });
+
+  it('caps long text at max code units with the ellipsis inside the cap', () => {
+    const out = truncate('x'.repeat(501), 500);
+    expect(out).toBe('x'.repeat(499) + '…');
+    expect(out!.length).toBe(500);
+  });
+
+  it('collapses inner whitespace before capping', () => {
+    expect(truncate('a  \n b', 500)).toBe('a b');
+  });
+
+  it('drops an emoji cleanly when it starts at the cut boundary', () => {
+    // 499 'a' units, then 😀 (2 units at indexes 499-500) -> 501 units.
+    const msg = 'a'.repeat(499) + '😀';
+    expect(truncate(msg, 500)).toBe('a'.repeat(499) + '…');
+  });
+
+  it('backs the cut off when a surrogate pair straddles it', () => {
+    // High surrogate at index 498, low at 499; the 500-cap cut would split
+    // them, so both units are dropped and the ellipsis takes their place.
+    const straddle = 'a'.repeat(498) + '😀x';
+    expect(truncate(straddle, 500)).toBe('a'.repeat(498) + '…');
+  });
+
+  it('keeps a leading emoji intact when the cut lands later in the string', () => {
+    const msg = '😀' + 'x'.repeat(499);
+    const out = truncate(msg, 500);
+    expect(out).not.toBeNull();
+    expect(out!.length).toBe(500);
+    expect(out!.startsWith('😀')).toBe(true);
+    expect(out!.endsWith('…')).toBe(true);
+  });
+
+  it('handles degenerate caps without producing unpaired surrogates', () => {
+    expect(truncate('😀😀😀', 1)).toBe('…');
+    expect(truncate('abc', 0)).toBeNull();
+    expect(truncate('abc', -1)).toBeNull();
   });
 });

@@ -126,8 +126,9 @@ and coordinate multi-agent teams in Slack-style channels.
   10 transitions when a cluster has long failover history.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
-  and persists every run's terminal result (done/error, message, model,
-  duration) on the row plus a dedicated `CronRun` history row
+  and persists every run's terminal result (done/error, model, duration;
+  the message is capped at 500 valid-Unicode code units, never split
+  mid-emoji) on the row plus a dedicated `CronRun` history row
   (cascade-deleted with the job). The page also shows the local
   scheduler/lease status (active on this node vs standby, last tick/beat,
   lease expiry) refreshed every 5 s. Scheduling is multi-instance safe: a

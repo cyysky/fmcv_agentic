@@ -131,11 +131,32 @@ export function nextCronRun(
   }
 }
 
-function truncate(text: string | undefined | null, max: number): string | null {
+/**
+ * Flatten, trim, and cap a persisted message at `max` UTF-16 code units.
+ * The ellipsis lives inside the cap and the cut never splits a surrogate
+ * pair (e.g. an emoji straddling the boundary), so stored run messages stay
+ * valid Unicode after truncation (Round 77).
+ */
+export function truncate(
+  text: string | undefined | null,
+  max: number,
+): string | null {
   if (!text) return null;
   const flat = text.replace(/\s+/g, ' ').trim();
   if (!flat) return null;
-  return flat.length <= max ? flat : `${flat.slice(0, max)}…`;
+  if (flat.length <= max) return flat;
+  if (max < 1) return null;
+  if (max === 1) return '…';
+  let cut = max - 1; // reserve one code unit for the ellipsis
+  // Back off over a high surrogate whose low partner would be cut away.
+  if (
+    cut > 0 &&
+    (flat.charCodeAt(cut - 1) & 0xfc00) === 0xd800 &&
+    (flat.charCodeAt(cut) & 0xfc00) === 0xdc00
+  ) {
+    cut -= 1;
+  }
+  return `${flat.slice(0, cut)}…`;
 }
 
 /**
