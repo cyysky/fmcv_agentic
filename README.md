@@ -44,8 +44,13 @@ and coordinate multi-agent teams in Slack-style channels.
   NULL, never an empty string).
 - **Agent chat (`/agent`)** — stateless turns plus a persistent Sessions tab
   (sidebar, continue, delete) backed by Postgres; model picker (`ds4-flash`
-  default, `qwen3.6-35b`), conversation loop with a hard `maxSteps` cap,
-  tool-call trace and workspace viewer in the UI.
+  default, `qwen3.6-35b`) plus a **connection picker**: sessions and
+  stateless turns can pin a saved Connection from Settings, so that row's
+  base URL, model, stored API key, and default parameters drive the LLM
+  instead of the built-in gateway. Selecting a connection defers the model
+  picker to the connection's model; opening a pinned session restores its
+  connection and badges it in the sidebar. Conversation loop with a hard
+  `maxSteps` cap, tool-call trace and workspace viewer in the UI.
 - **Agent workspaces** — filesystem workspace under `AGENT_WORKSPACE_ROOT`
   (Docker default `/data/workspaces`): named agent folders (`coder`,
   `researcher`) and shared project folders; agents get file read/write/list
@@ -82,11 +87,11 @@ Agent:
 
 | Method | Path                                   | Purpose                                     |
 |--------|----------------------------------------|---------------------------------------------|
-| POST   | `/api/agent/turn`                      | stateless single-turn answer (`maxSteps`)   |
-| POST   | `/api/agent/sessions`                  | create a session                            |
+| POST   | `/api/agent/turn`                      | stateless single-turn answer (`maxSteps`, optional `connectionId`) |
+| POST   | `/api/agent/sessions`                  | create a session (optional `connectionId` pins the provider)       |
 | GET    | `/api/agent/sessions`                  | list sessions                               |
 | GET    | `/api/agent/sessions/:id`              | read one session                            |
-| POST   | `/api/agent/sessions/:id/converse`     | append message + run loop (`maxSteps` 1–20) |
+| POST   | `/api/agent/sessions/:id/converse`     | append message + run loop (`maxSteps` 1–20, optional `connectionId`) |
 | DELETE | `/api/agent/sessions/:id`              | drop a session                              |
 | GET    | `/api/agent/models`                    | model catalog for the picker                |
 | GET    | `/api/agent/defaults`                  | provider / default-model info               |
@@ -95,6 +100,16 @@ Agent:
 | POST   | `/api/agent/workspaces/agents`         | ensure agent folder exists                  |
 | GET    | `/api/agent/workspaces/projects/:name` | list project content                        |
 | GET    | `/api/agent/workspaces/agents/:name`   | list agent folder content                   |
+
+When an optional `connectionId` (UUID) is supplied, the saved Connection's
+base URL, model name, stored API key, and default parameters replace the
+built-in gateway + catalog for that call. The connection's model is used
+verbatim; neither the request `model` nor the row's default `model` /
+`messages` / `tools` entries can override it, and catalog fallback is
+disabled for custom endpoints. Unknown connection ids are 404s on
+create/turn/converse. On sessions the pin persists, so later turns keep
+using that provider; if the connection is later deleted, the session
+self-heals back to the default gateway.
 
 Files (file manager — `agent:<name>` scopes are read/write, `project:<name>`
 scopes are read-only; every path resolves through the workspace anti-traversal
@@ -145,7 +160,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 74 tests / 11 suites** — model catalog, workspace service + tools,
+- **Unit: 79 tests / 11 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -155,7 +170,12 @@ cd e2e && node browser-e2e.mjs
   files), and the connection-test probes (reachable 200, upstream 401,
   network failure, abort/timeout, unknown id 404; draft values tested without
   touching the DB, trailing-slash normalization, no-auth-header omission) plus
-  apiKey normalization (empty-string clears to NULL on create and update).
+  apiKey normalization (empty-string clears to NULL on create and update),
+  and connection-pinned agent calls (session pin persists through DB
+  persistence, unknown connection 404 on create/turn, converse resolves the
+  row's baseUrl/model/key/default-parameters, a deleted pinned connection
+  self-heals to the default endpoint, attaching a connection to an existing
+  session via converse).
 - **API E2E: 56 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (13:
@@ -164,7 +184,10 @@ cd e2e && node browser-e2e.mjs
   upstream that asserts the stored bearer key, 401 reporting, unreachable
   endpoint graceful failure, unknown id 404, draft endpoint success/401/
   unreachable/validation against entered values without persisting a row), agent
-  sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
+  sessions/turns/rename/auto-title + saved-connection pinning (12: pin
+  persists on create/converse, attach via converse, stateless turn with the
+  connection, unknown connection 404 on create/turn/converse, malformed id
+  400), channel lifecycle + streaming jobs
   (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
   delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
@@ -187,7 +210,16 @@ cd e2e && node browser-e2e.mjs
   verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the
   sidebar → rename via the UI → page reload → reopen →
-  history-and-new-title-survive → delete, a files journey that creates a
+  history-and-new-title-survive → delete, then a saved-connection journey
+  that starts a hermetic fake OpenAI-compatible upstream (ephemeral port),
+  creates a fixture Connection via the API, selects it in the agent header,
+  and proves the connection drives the chat: the model picker defers to the
+  connection's model, the wire converse POST carries `connectionId` and no
+  `model`, the fake upstream receives `/chat/completions` with the
+  connection's model + stored bearer key, its reply renders in the thread,
+  the sidebar badges the pinned session, and the server-side row records
+  `connectionId` — then the fixture + upstream are cleaned up, a files
+  journey that creates a
   nested file + dotfile through the `/files` UI, reads the content back,
   downloads the created file (asserts the attachment headers on the wire and
   saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
@@ -290,6 +322,29 @@ cd e2e && node browser-e2e.mjs
   `eslint` clean, browser E2E all green including the extended settings
   journey (form-test fail → cancel keeps URL → plain-edit PATCH carries no
   key → clear-key PATCH empties the stored secret server-side → row Test).
+
+### Round 19 — agent chat uses saved connections
+- `AgentSession.connectionId` (nullable FK, `onDelete: SetNull`) + migration;
+  `createSession`, `runTurn`/`POST /api/agent/turn`, and `converse` accept an
+  optional UUID `connectionId`. The pinned row's base URL / model / stored
+  key / default parameters replace the built-in gateway + catalog for the
+  call (the request `model` and the row's default `model`/`messages`/`tools`
+  cannot hijack the wire), catalog fallback is disabled for custom endpoints,
+  unknown ids are 404s, a session keeps its pin across turns, and a deleted
+  connection self-heals the session back to the default gateway.
+- Agent chat header gains a "Settings connection" picker (Default gateway or
+  `displayName · modelName`); selecting one disables the model picker with a
+  tooltip naming the connection's model, new sessions/turns are pinned, the
+  open session shows a "Using connection …" note, and the sidebar badges any
+  session pinned to a connection.
+- Browser E2E sessions journey now proves the full chain against a hermetic
+  fake upstream (fixture connection → picker → wire `connectionId` without
+  `model` → upstream model/key/message assertions → fixture reply rendered →
+  server-side pin → cleanup).
+- Unit 74 → 79, API E2E stays 56; backend `nest build` + `tsc --noEmit`
+  clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
+  (`e2e/report.json` + screenshots refreshed, including
+  `agent-sessions-picker.png` / `agent-sessions-connection.png`).
 
 ## Local development
 

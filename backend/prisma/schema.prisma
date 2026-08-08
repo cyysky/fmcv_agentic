@@ -18,6 +18,8 @@ model Connection {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  agentSessions AgentSession[]
+
   @@map("connections")
 }
 
@@ -102,12 +104,16 @@ model ChannelRun {
  * history survives backend restarts. Mirrors the ChannelRun restart pattern.
  */
 model AgentSession {
-  id        String    @id
-  title     String
-  model     String
-  messages  Json
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id           String    @id
+  title        String
+  model        String
+  messages     Json
+  connectionId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
+  connection Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId])
   @@map("agent_sessions")
 }

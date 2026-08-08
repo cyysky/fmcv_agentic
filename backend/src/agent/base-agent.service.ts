@@ -89,8 +89,21 @@ export interface Session {
   id: string;
   title: string;
   model: string;
+  connectionId?: string;
   createdAt: string;
   messages: ChatMessage[];
+}
+
+/**
+ * A resolved provider endpoint for one turn. When a saved Connection is
+ * chosen, its baseUrl/modelName/apiKey/defaultParameters replace the agent's
+ * built-in gateway + catalog model for that turn.
+ */
+export interface ModelEndpoint {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  defaultParameters?: Record<string, unknown>;
 }
 
 /** Default session title until the first user message can auto-title it. */
@@ -165,6 +178,36 @@ export class BaseAgentService implements OnModuleInit {
     return '';
   }
 
+  /**
+   * Resolve a saved Connection into the endpoint override used for a turn.
+   * `detachIfMissing` is for sessions whose stored connection was deleted:
+   * they fall back to the default endpoint (mirroring the FK SetNull).
+   * For explicit ids (create/turn/attach), a missing row is a 404.
+   */
+  private async resolveConnectionEndpoint(
+    connectionId: string | undefined,
+    detachIfMissing: boolean,
+  ): Promise<ModelEndpoint | null> {
+    if (!connectionId) return null;
+    const row = await this.prisma.connection.findUnique({
+      where: { id: connectionId },
+    });
+    if (!row) {
+      if (detachIfMissing) return null;
+      throw new NotFoundException(`Connection ${connectionId} not found`);
+    }
+    return {
+      baseUrl: row.baseUrl,
+      model: row.modelName,
+      ...(row.apiKey ? { apiKey: row.apiKey } : {}),
+      ...(row.defaultParameters
+        ? {
+            defaultParameters: row.defaultParameters as unknown as Record<string, unknown>,
+          }
+        : {}),
+    };
+  }
+
   /* ------------------------------------------------------------------ *
    * Tool registry
    * ------------------------------------------------------------------ */
@@ -189,7 +232,7 @@ export class BaseAgentService implements OnModuleInit {
    * Sessions
    * ------------------------------------------------------------------ */
 
-  createSession(title = DEFAULT_SESSION_TITLE, model?: string): Session {
+  async createSession(title = DEFAULT_SESSION_TITLE, model?: string, connectionId?: string): Promise<Session> {
     const spec = resolveModel(model ?? this.defaultModelId);
     const session: Session = {
       id: randomUUID(),
@@ -198,6 +241,12 @@ export class BaseAgentService implements OnModuleInit {
       createdAt: new Date().toISOString(),
       messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }],
     };
+    if (connectionId) {
+      session.connectionId = connectionId;
+      // Fail fast: never persist a session pinned to a connection that does
+      // not exist (checked explicitly, so a bad id is a 404 right here).
+      await this.resolveConnectionEndpoint(connectionId, false);
+    }
     this.sessions.set(session.id, session);
     this.safePersistSession(session);
     return session;
@@ -246,12 +295,16 @@ export class BaseAgentService implements OnModuleInit {
           id: session.id,
           title: session.title,
           model: session.model,
+          ...(session.connectionId ? { connectionId: session.connectionId } : {}),
           messages: session.messages as unknown as Prisma.InputJsonValue,
           createdAt: new Date(session.createdAt),
         },
         update: {
           title: session.title,
           model: session.model,
+          ...(session.connectionId
+            ? { connectionId: session.connectionId }
+            : { connectionId: null }),
           messages: session.messages as unknown as Prisma.InputJsonValue,
         },
       })
@@ -275,6 +328,7 @@ export class BaseAgentService implements OnModuleInit {
           id: row.id,
           title: row.title,
           model: row.model,
+          ...(row.connectionId ? { connectionId: row.connectionId } : {}),
           createdAt: row.createdAt.toISOString(),
           messages: (row.messages as unknown as ChatMessage[]) ?? [],
         });
@@ -293,25 +347,55 @@ export class BaseAgentService implements OnModuleInit {
    * ------------------------------------------------------------------ */
 
   /** Stateless single-turn answer (optionally with prior message history). */
-  async runTurn(opts: { message: string; history?: string[]; model?: string; maxSteps?: number }): Promise<{
+  async runTurn(opts: {
+    message: string;
+    history?: string[];
+    model?: string;
+    maxSteps?: number;
+    connectionId?: string;
+  }): Promise<{
     answer: string;
     model: string;
     steps: number;
     trace?: ToolTraceStep[];
   }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
+    // An explicit connection is required to exist (bad id => 404); sessions
+    // that lost their connection can self-heal, but a fresh turn cannot.
+    const endpoint = await this.resolveConnectionEndpoint(opts.connectionId, false);
     const messages: ChatMessage[] = [
       { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
       ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
       { role: 'user', content: opts.message },
     ];
-    const { answer, steps, trace } = await this.runLoop(messages, spec, opts.maxSteps ?? 10);
-    return { answer, model: spec.id, steps, trace };
+    const { answer, steps, trace } = await this.runLoop(messages, spec, opts.maxSteps ?? 10, endpoint ?? undefined);
+    return { answer, model: endpoint?.model ?? spec.id, steps, trace };
   }
 
-  /** Append a user message to a session, run the loop, return the final text. */
-  async converse(sessionId: string, message: string, model?: string, maxSteps?: number): Promise<{ answer: string; steps: number }> {
+  /**
+   * Append a user message to a session, run the loop, return the final text.
+   * `connectionId` optionally pins the session to a saved Connection; once
+   * pinned it persists, so later turns keep using that provider. If the
+   * pinned connection was deleted, the session self-heals back to the
+   * default endpoint (mirrors the DB `onDelete: SetNull`).
+   */
+  async converse(
+    sessionId: string,
+    message: string,
+    model?: string,
+    maxSteps?: number,
+    connectionId?: string,
+  ): Promise<{ answer: string; steps: number }> {
     const session = this.getSession(sessionId);
+    const explicitConnection = connectionId !== undefined;
+    if (explicitConnection) session.connectionId = connectionId;
+    const endpoint = await this.resolveConnectionEndpoint(session.connectionId, !explicitConnection);
+    if (endpoint === null && !explicitConnection && session.connectionId) {
+      this.logger.warn(
+        `Session ${sessionId}: stored connection ${session.connectionId} no longer exists; using the default endpoint`,
+      );
+      delete session.connectionId;
+    }
     const spec = resolveModel(model ?? session.model);
     session.model = spec.id;
     const userMsgCount = session.messages.filter((m) => m.role === 'user').length;
@@ -323,7 +407,12 @@ export class BaseAgentService implements OnModuleInit {
       session.title = deriveSessionTitle(message);
     }
     const maxRunSteps = maxSteps && maxSteps > 0 ? maxSteps : 10;
-    const { answer, steps, messages } = await this.runLoop(session.messages, spec, maxRunSteps);
+    const { answer, steps, messages } = await this.runLoop(
+      session.messages,
+      spec,
+      maxRunSteps,
+      endpoint ?? undefined,
+    );
     session.messages = messages;
     this.safePersistSession(session);
     return { answer, steps };
@@ -654,6 +743,7 @@ export class BaseAgentService implements OnModuleInit {
     messages: ChatMessage[],
     spec: ModelSpec,
     maxSteps: number,
+    endpoint?: ModelEndpoint,
   ): Promise<{ answer: string; steps: number; messages: ChatMessage[]; trace: ToolTraceStep[] }> {
     let steps = 0;
     let lastAnswer = '';
@@ -662,14 +752,16 @@ export class BaseAgentService implements OnModuleInit {
     for (; steps < maxSteps; steps++) {
       let completion;
       try {
-        completion = await this.callModel(messages, spec);
+        completion = await this.callModel(messages, spec, undefined, endpoint);
       } catch (err) {
-        const fb = fallbackFor(spec);
+        // A custom connection IS the user's explicit provider choice — a
+        // catalog fallback model almost certainly does not exist there.
+        const fb = endpoint ? null : fallbackFor(spec);
         if (!fb) throw err;
         this.logger.warn(
           `Primary model ${spec.id} failed (${(err as Error).message}); falling back to ${fb.id}`,
         );
-        completion = await this.callModel(messages, fb);
+        completion = await this.callModel(messages, fb, undefined, endpoint);
       }
 
       if (completion.tool_calls && completion.tool_calls.length > 0) {
@@ -732,16 +824,29 @@ export class BaseAgentService implements OnModuleInit {
     messages: ChatMessage[],
     spec: ModelSpec,
     signal?: AbortSignal,
+    endpoint?: ModelEndpoint,
   ): Promise<{ content: string | null; tool_calls?: ToolCallRequest[] }> {
     if (this.llmStub) {
       return this.stubCompletion(messages);
     }
     const body: Record<string, unknown> = {
-      model: spec.provider_model,
+      model: endpoint?.model ?? spec.provider_model,
       messages,
-      temperature: spec.reasoning ? undefined : 0.2,
-      max_tokens: 8192,
     };
+    if (spec.reasoning) {
+      delete body.temperature;
+    } else {
+      body.temperature = 0.2;
+    }
+    body.max_tokens = 8192;
+    // Saved connection default parameters override the loop's defaults, but
+    // can never hijack the wire model, messages, or tool definitions.
+    if (endpoint?.defaultParameters) {
+      for (const [k, v] of Object.entries(endpoint.defaultParameters)) {
+        if (k === 'model' || k === 'messages' || k === 'tools') continue;
+        body[k] = v;
+      }
+    }
     const apiTools = this.toApiTools();
     if (apiTools.length > 0) body.tools = apiTools;
     if (spec.reasoning) delete body.temperature;
@@ -756,8 +861,11 @@ export class BaseAgentService implements OnModuleInit {
       : controller.signal;
 
     try {
-      const key = await this.apiKey();
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      // A connection's stored key is used verbatim for ITS endpoint; the env
+      // key / DB-matched key only ever applies to the built-in gateway.
+      const key = endpoint ? (endpoint.apiKey ?? '') : await this.apiKey();
+      const baseUrl = endpoint?.baseUrl ?? this.baseUrl;
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

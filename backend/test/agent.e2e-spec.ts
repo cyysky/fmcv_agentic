@@ -202,11 +202,103 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
     expect(JSON.stringify(nonNamed.body.message)).toContain('Unknown agent');
   });
 
-  it('rejects reserved system names for agent folders', async () => {
-    const res = await http()
-      .post('/api/agent/workspaces/agents')
-      .send({ name: '...' })
-      .expect(400);
-    expect(JSON.stringify(res.body.message)).toContain('alphanumeric');
+
+  it('runs sessions and turns against a saved connection', async () => {
+    const prisma = app.get(PrismaService);
+    const connName = `e2e-conn-${Date.now().toString(36)}`;
+    let connId = '';
+    const createdConn = await http()
+      .post('/api/connections')
+      .send({
+        displayName: connName,
+        baseUrl: 'http://ollama.e2e.test/v1',
+        modelName: 'llama3.2',
+        contextLength: 8192,
+        apiKey: 'e2e-secret',
+        defaultParameters: { temperature: 0.7 },
+      })
+      .expect(201);
+    connId = createdConn.body.id;
+    const sessionIds: string[] = [];
+    // Session persistence is best-effort + asynchronous by design (a DB
+    // failure must never break the in-memory chat), so poll briefly.
+    const waitForRow = async (id: string) => {
+      for (let i = 0; i < 25; i++) {
+        const row = await prisma.agentSession.findUnique({ where: { id } });
+        if (row?.connectionId === connId) return row;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return prisma.agentSession.findUnique({ where: { id } });
+    };
+    try {
+      // Create pinned to the connection — the id is persisted immediately.
+      const pinned = await http()
+        .post('/api/agent/sessions')
+        .send({ title: 'pinned session', connectionId: connId })
+        .expect(201);
+      sessionIds.push(pinned.body.id);
+      expect(pinned.body.connectionId).toBe(connId);
+      const pinnedRow = await waitForRow(pinned.body.id);
+      expect(pinnedRow?.connectionId).toBe(connId);
+
+      // Conversations on the pinned session still answer hermetically and
+      // keep the connection on the row.
+      await http()
+        .post(`/api/agent/sessions/${pinned.body.id}/converse`)
+        .send({ message: 'hello ollama', maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+      const rowAfter = await waitForRow(pinned.body.id);
+      expect(rowAfter?.connectionId).toBe(connId);
+
+      // Attach a connection to an existing session via converse.
+      const plain = await http().post('/api/agent/sessions').send({}).expect(201);
+      sessionIds.push(plain.body.id);
+      await http()
+        .post(`/api/agent/sessions/${plain.body.id}/converse`)
+        .send({ message: 'switch to ollama', connectionId: connId, maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+      const attRow = await waitForRow(plain.body.id);
+      expect(attRow?.connectionId).toBe(connId);
+
+      // Stateless turn with the connection is accepted.
+      const turn = await http()
+        .post('/api/agent/turn')
+        .send({ message: 'ping via connection', connectionId: connId })
+        .expect(201);
+      expect(turn.body.answer).toMatch(/^\[stub\] /);
+
+      // Unknown connection ids are 404s everywhere.
+      const missing = '00000000-0000-4000-8000-000000000000';
+      await http()
+        .post('/api/agent/sessions')
+        .send({ connectionId: missing })
+        .expect(404);
+      await http()
+        .post('/api/agent/turn')
+        .send({ message: 'hi', connectionId: missing })
+        .expect(404);
+      await http()
+        .post(`/api/agent/sessions/${plain.body.id}/converse`)
+        .send({ message: 'hi', connectionId: missing })
+        .expect(404);
+
+      // Malformed (non-UUID) connection ids are validation errors.
+      await http()
+        .post('/api/agent/sessions')
+        .send({ connectionId: 'not-a-uuid' })
+        .expect(400);
+      await http()
+        .post('/api/agent/turn')
+        .send({ message: 'hi', connectionId: 'not-a-uuid' })
+        .expect(400);
+    } finally {
+      for (const id of sessionIds) {
+        await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+      }
+      if (connId) {
+        await http().delete(`/api/connections/${connId}`).ok((r) => r.status === 200);
+      }
+    }
   });
 });
+

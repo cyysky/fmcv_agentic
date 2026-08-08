@@ -50,6 +50,7 @@ export class AgentController {
       history: dto.history,
       model: dto.model,
       maxSteps: dto.maxSteps,
+      connectionId: dto.connectionId,
     });
   }
 
@@ -57,7 +58,7 @@ export class AgentController {
 
   @Post('sessions')
   createSession(@Body() dto: CreateSessionDto) {
-    return this.agent.createSession(dto.title, dto.model);
+    return this.agent.createSession(dto.title, dto.model, dto.connectionId);
   }
 
   @Get('sessions')
@@ -72,7 +73,7 @@ export class AgentController {
 
   @Post('sessions/:id/converse')
   converse(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ConverseDto) {
-    return this.agent.converse(id, dto.message, dto.model, dto.maxSteps);
+    return this.agent.converse(id, dto.message, dto.model, dto.maxSteps, dto.connectionId);
   }
 
   @Patch('sessions/:id')

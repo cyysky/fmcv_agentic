@@ -8,6 +8,8 @@
 // Usage:
 //   E2E_APP_BASE=http://localhost:3333 node e2e/browser-e2e.mjs
 //   CHROME_DEBUG_PORT=9222 E2E_APP_BASE=http://10.0.151.7:3333 node e2e/browser-e2e.mjs
+//   E2E_CONN_HOST=<host-ip>  # host IP the Dockerized backend can reach for the fake upstream
+//                            # (defaults to the APP hostname or `hostname -I`)
 //
 // Checks:
 //   1. /, /settings, /agent load without console errors / failed network requests
@@ -17,7 +19,9 @@
 //   5. Channel deletion prunes the per-channel project folder (verified via the
 //      workspace API — no docker/container dependency)
 //   6. Sessions: create a persisted chat, converse, reload the page and re-open
-//      it from the sidebar (history survived), then delete the session
+//      it from the sidebar (history survived), then prove a saved connection
+//      drives a real turn (picker -> connectionId -> the connection's own
+//      endpoint/model/key on a hermetic fake upstream), then delete everything
 //   7. Files: create a file + dotfile through the /files UI, read the content
 //      back, download it (wire headers/bytes + saved-to-disk when CDP allows),
 //      then delete both through the UI and verify server-side removal
@@ -36,6 +40,8 @@
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,6 +125,77 @@ async function httpJson(path, method = "GET") {
   const r = await fetch(`${BASE}${path}`, { method });
   if (!r.ok) throw new Error(`${path} -> HTTP ${r.status}`);
   return r.json();
+}
+
+/** Temporary OpenAI-compatible upstream for the hermetic connection fixture.
+ *  Serves /v1/chat/completions on an ephemeral port and records every request
+ *  (body + authorization header) so the E2E can prove the agent routed the
+ *  turn to the saved connection's endpoint/model/key without touching a real
+ *  LLM or any secret. */
+async function startFakeUpstream() {
+  const received = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      let body = null;
+      try {
+        body = JSON.parse(raw || "{}");
+      } catch {
+        body = null;
+      }
+      received.push({
+        url: req.url,
+        method: req.method,
+        authorization: req.headers.authorization ?? null,
+        body,
+      });
+      if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          id: "e2e-conn-completion",
+          object: "chat.completion",
+          created: 0,
+          model: body?.model ?? "e2e",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Connection fixture reply OK" },
+            finish_reason: "stop",
+          }],
+        }));
+        return;
+      }
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "0.0.0.0", resolve);
+  });
+  return { server, port: server.address().port, received };
+}
+
+/** IP a Dockerized backend can use to reach an upstream started on this host:
+ *  explicit override, else the APP hostname when non-loopback, else the first
+ *  non-loopback host address, else loopback. */
+function connectionHostIp() {
+  if (process.env.E2E_CONN_HOST) return process.env.E2E_CONN_HOST;
+  try {
+    const appHost = new URL(APP).hostname;
+    if (appHost && appHost !== "localhost" && appHost !== "127.0.0.1" && appHost !== "::1" && /^\d+\.\d+\.\d+\.\d+$/.test(appHost)) return appHost;
+  } catch {
+    // fall through to the address sniff
+  }
+  try {
+    const addrs = execFileSync("hostname", ["-I"], { encoding: "utf8", timeout: 5000 })
+      .trim().split(/\s+/).filter(Boolean);
+    const v4 = addrs.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a));
+    if (v4) return v4;
+  } catch {
+    // fall through to loopback
+  }
+  return "127.0.0.1";
 }
 
 /** Open a brand-new page tab (never silently reuse a busy/stale tab). */
@@ -591,12 +668,43 @@ async function agentSessionsFlow() {
   const url = `${APP}/agent`;
   log(`flow agent sessions -> ${url}`);
   const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, fixtureId: null, fixtureName: null, fixtureModel: null, fixtureLive: null };
+  let upstream = null;
+  let connKey = "";
   try {
     wireErrorCapture(c, sink);
+    // Hermetic fixture: a throwaway saved connection pointed at a local fake
+    // OpenAI-compatible upstream, so the picker can drive a REAL turn
+    // end-to-end (endpoint + model + key + reply) with no secrets and no
+    // dependence on the real gateway. The fake records the wire request, so
+    // route-through can be asserted at the upstream itself.
+    upstream = await startFakeUpstream();
+    connKey = `sk-e2e-session-${Date.now().toString(36)}`;
+    flow.fixtureLive = true;
+    const connModel = process.env.E2E_CONN_MODEL || "ds4-flash";
+    const connName = `e2e-session-${Date.now().toString(36)}`;
+    const createdConn = await fetch(`${API}/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        displayName: connName,
+        baseUrl: `http://${connectionHostIp()}:${upstream.port}/v1`,
+        modelName: connModel,
+        contextLength: 128000,
+        apiKey: connKey,
+      }),
+    });
+    if (!createdConn.ok) {
+      throw new Error(`sessions flow: could not create connection fixture (HTTP ${createdConn.status})`);
+    }
+    const conn = await createdConn.json();
+    flow.fixtureId = conn.id;
+    flow.fixtureName = conn.displayName;
+    flow.fixtureModel = connModel;
+    flow.steps.push("connection-fixture-created");
     await c.send("Page.navigate", { url });
     const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "sessions ready");
     if (!ready) throw new Error("sessions flow: page never loaded");
-    const flow = { steps: [], timings: {}, result: null };
 
     // 1. Open the Sessions tab and start a new chat.
     const clickable = await waitFor(
@@ -818,9 +926,234 @@ async function agentSessionsFlow() {
     if (!renamedAfterReload) throw new Error("sessions flow: renamed title lost after reload");
     await delay(400);
     await screenshot(c, "agent-sessions-reload.png");
-    flow.result = { persisted: true, renamed: true };
+
+    // 4. Connection picker: a saved connection must be selectable, the model
+    //    picker must defer to it, and the next turn must route through it.
+    const picker = await waitFor(
+      c,
+      `!!document.querySelector('select[aria-label="Settings connection"]')`,
+      15000,
+      500,
+      "connection picker",
+    );
+    if (!picker) throw new Error("sessions flow: connection picker missing");
+    const fixtureOption = await waitFor(
+      c,
+      `[...document.querySelectorAll('select[aria-label="Settings connection"] option')].some((o) => o.value === ${JSON.stringify(flow.fixtureId)})`,
+      15000,
+      500,
+      "connection fixture option",
+    );
+    if (!fixtureOption) throw new Error("sessions flow: fixture connection not listed in picker");
+    await screenshot(c, "agent-sessions-picker.png");
+
+    // Capture the outgoing converse request so the wiring can be asserted:
+    // `connectionId` must be sent and the catalog `model` must be omitted.
+    const conversePosts = [];
+    c.on("Network.requestWillBeSent", (p) => {
+      const req = p.request;
+      if (req.method !== "POST" || !req.url.includes("/api/agent/sessions/") || !req.url.includes("/converse")) return;
+      let body = null;
+      try {
+        body = JSON.parse(req.postData ?? "{}");
+      } catch {
+        body = null;
+      }
+      conversePosts.push({ url: req.url, body });
+    });
+
+    const picked = await evalJs(c, `(() => {
+      const sel = document.querySelector('select[aria-label="Settings connection"]');
+      if (!sel) return false;
+      const opt = [...sel.options].find((o) => o.value === ${JSON.stringify(flow.fixtureId)});
+      if (!opt) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, opt.value);
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    if (!picked) throw new Error("sessions flow: could not select fixture connection");
+    const pickerActive = await waitFor(
+      c,
+      `document.querySelector('select[aria-label="Settings connection"]')?.value === ${JSON.stringify(flow.fixtureId)}`,
+      10000,
+      300,
+      "picker selection",
+    );
+    if (!pickerActive) throw new Error("sessions flow: picker selection did not stick");
+    flow.connectionSelected = true;
+    flow.steps.push("connection-selected");
+
+    // The catalog model picker must now defer to the connection.
+    const modelDeferred = await waitFor(
+      c,
+      `(() => {
+        const modelSel = document.querySelectorAll('select[class*="modelSelect"]')[0];
+        const connSel = document.querySelectorAll('select[class*="modelSelect"]')[1];
+        return !!modelSel && !!connSel &&
+          connSel.value === ${JSON.stringify(flow.fixtureId)} &&
+          modelSel.disabled === true &&
+          (modelSel.title || "").includes(${JSON.stringify(flow.fixtureModel)});
+      })()`,
+      10000,
+      400,
+      "model picker deferred to connection",
+    );
+    flow.modelDeferredToConnection = !!modelDeferred;
+    if (!modelDeferred) throw new Error("sessions flow: model picker not deferred to selected connection");
+
+    // The session detail must announce the active connection.
+    const note = await waitFor(
+      c,
+      `document.querySelector('[class*="sessionNote"]')?.innerText.includes(${JSON.stringify(flow.fixtureName)}) ?? false`,
+      10000,
+      400,
+      "connection note",
+    );
+    flow.connectionNoteShown = !!note;
+    if (!note) throw new Error("sessions flow: connection note not rendered");
+
+    // 5. Send a turn while the connection is selected; the hermetic fake
+    //    upstream answers in milliseconds, and the request wiring, badge, and
+    //    server-side pin must all hold.
+    const connMsg = `Via saved connection (${Date.now().toString(36)})`;
+    flow.connectionMessage = connMsg;
+    await evalJs(c, jsSetInput('textarea[placeholder*="Message this session"]', connMsg));
+    await delay(100);
+    // Snapshot the bubble count BEFORE the click: the fake upstream answers in
+    // milliseconds, so counting after could already include the reply.
+    const bubblesBefore = await evalJs(c, `document.querySelectorAll('[class*="bubbleAgent"]').length`);
+    const submittedConn = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submittedConn) throw new Error("sessions flow: connection-driven submit not enabled");
+    flow.timings.connectionSentAt = new Date().toISOString();
+    const connAnswered = await waitFor(
+      c,
+      `(() => {
+        const els = [...document.querySelectorAll('[class*="bubbleAgent"]')];
+        return els.length > ${JSON.stringify(bubblesBefore)} &&
+          els.slice(${JSON.stringify(bubblesBefore)}).some((el) => el.innerText.trim().length > 0 && !el.innerText.includes("Typing"));
+      })()`,
+      180000,
+      800,
+      "connection-driven reply",
+    );
+    flow.timings.connectionFinishedAt = new Date().toISOString();
+    if (!connAnswered) throw new Error("sessions flow: no reply from connection-driven turn");
+    const connThread = await evalJs(c, `document.querySelector('[class*="thread"]')?.innerText ?? "NO THREAD"`);
+    flow.connectionReplyError = connThread.includes("Request failed") || connThread.includes("[error]");
+    flow.connectionThreadSnippet = connThread.slice(0, 300);
+    // The fake upstream must have been the one that answered: same endpoint
+    // URL, the fixture's model, the fixture's bearer key, and our message.
+    const upstreamHit = upstream.received.find(
+      (r) => r.method === "POST" && (r.url ?? "").endsWith("/chat/completions"),
+    );
+    flow.upstreamHit = !!upstreamHit;
+    flow.upstreamModel = upstreamHit?.body?.model ?? null;
+    flow.upstreamAuthOk = upstreamHit?.authorization === `Bearer ${connKey}`;
+    flow.upstreamMessageSeen = !!upstreamHit?.body?.messages?.some((m) => m.content === connMsg);
+    flow.connectionReplySeen = !!upstreamHit && connThread.includes("Connection fixture reply OK");
+    if (!upstreamHit) {
+      throw new Error("sessions flow: backend never reached the connection's upstream");
+    }
+    if (flow.upstreamModel !== flow.fixtureModel) {
+      throw new Error(`sessions flow: wrong model at upstream (${JSON.stringify(flow.upstreamModel)})`);
+    }
+    if (!flow.upstreamAuthOk) {
+      throw new Error("sessions flow: backend did not send the connection's API key");
+    }
+    if (!flow.upstreamMessageSeen || !flow.connectionReplySeen) {
+      throw new Error(`sessions flow: reply not from the connection's upstream (${JSON.stringify(flow.upstreamMessageSeen)}, ${JSON.stringify(flow.connectionReplySeen)})`);
+    }
+
+    const post = conversePosts.find((p) => p.body && p.body.connectionId === flow.fixtureId);
+    flow.connectionIdSent = !!post;
+    flow.modelOmittedFromConverse = !!post && !("model" in (post.body ?? {}));
+    flow.converseUrl = post?.url ?? null;
+    if (!post) {
+      throw new Error(`sessions flow: converse request missing connectionId (posts=${JSON.stringify(conversePosts)})`);
+    }
+    if ("model" in (post.body ?? {})) {
+      throw new Error(`sessions flow: catalog model sent alongside connectionId (${JSON.stringify(post.body)})`);
+    }
+    flow.steps.push("connection-request-verified");
+
+    // Sidebar badge + server-side persistence of the pinned connection.
+    const badge = await waitFor(
+      c,
+      `[...document.querySelectorAll('[class*="sessionBadge"]')].some((el) => el.textContent.trim().includes(${JSON.stringify(flow.fixtureName)}))`,
+      15000,
+      500,
+      "connection badge in sidebar",
+    );
+    flow.badgeShown = !!badge;
+    if (!badge) throw new Error("sessions flow: connection badge missing from sidebar");
+    const sessList = await fetch(`${API}/agent/sessions`).then((r) => r.json());
+    const pinned = sessList.find((s) => s.title === renameTitle);
+    flow.serverPinnedConnection = pinned?.connectionId === flow.fixtureId;
+    if (!flow.serverPinnedConnection) {
+      throw new Error(`sessions flow: connectionId not persisted server-side (${JSON.stringify(pinned)})`);
+    }
+    flow.steps.push("connection-pinned-server-side");
+    await delay(300);
+    await screenshot(c, "agent-sessions-connection.png");
+
+    // Restore the default gateway so the runner's other flows are unaffected,
+    // then drop the fixture (verified by a 404 on the second GET).
+    await evalJs(c, `(() => {
+      const sel = document.querySelector('select[aria-label="Settings connection"]');
+      if (!sel) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, "");
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" });
+    flow.fixtureId = null;
+    flow.connectionCleanup = await fetch(`${API}/connections/${conn.id}`, { method: "GET" })
+      .then((r) => (r.status === 404 ? "deleted" : "leftover"))
+      .catch(() => "unknown");
+    if (flow.connectionCleanup !== "deleted") {
+      throw new Error(`sessions flow: fixture connection not removed (${flow.connectionCleanup})`);
+    }
+    flow.steps.push("connection-fixture-deleted");
+
+    flow.result = {
+      persisted: true,
+      renamed: true,
+      connectionSelected: flow.connectionSelected,
+      modelDeferredToConnection: flow.modelDeferredToConnection,
+      connectionNoteShown: flow.connectionNoteShown,
+      connectionIdSent: flow.connectionIdSent,
+      modelOmittedFromConverse: flow.modelOmittedFromConverse,
+      badgeShown: flow.badgeShown,
+      serverPinnedConnection: flow.serverPinnedConnection,
+      fixtureLive: flow.fixtureLive,
+      fixtureModel: flow.fixtureModel,
+      connectionReplySeen: flow.connectionReplySeen,
+      connectionReplyError: flow.connectionReplyError,
+      upstreamHit: flow.upstreamHit,
+      upstreamModel: flow.upstreamModel,
+      upstreamAuthOk: flow.upstreamAuthOk,
+      upstreamMessageSeen: flow.upstreamMessageSeen,
+      connectionCleanup: flow.connectionCleanup,
+    };
     return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
   } finally {
+    if (flow.fixtureId) {
+      await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" }).catch(() => undefined);
+      flow.fixtureId = null;
+    }
+    if (upstream) {
+      try {
+        upstream.server.close();
+      } catch {
+        // socket already closed
+      }
+    }
     c.close();
   }
 }
@@ -1631,7 +1964,7 @@ async function main() {
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
     report.sessionsFlow = await agentSessionsFlow();
-    report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow);
+    report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow.flow);
     report.filesFlow = await filesFlow();
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
     report.settingsFlow = await settingsFlow();
@@ -1673,6 +2006,30 @@ async function main() {
   const sf = report.sessionsFlow;
   if (!sf || !sf.flow.answerSeen || !sf.flow.historySeen) {
     failures.push(`sessions flow: reply/persistence not verified (${JSON.stringify(sf && sf.flow)})`);
+  }
+  const sfr = sf ? sf.flow.result : null;
+  const connWiringOk =
+    sfr &&
+    sfr.connectionSelected &&
+    sfr.modelDeferredToConnection &&
+    sfr.connectionNoteShown &&
+    sfr.connectionIdSent &&
+    sfr.modelOmittedFromConverse &&
+    sfr.badgeShown &&
+    sfr.serverPinnedConnection &&
+    sfr.connectionCleanup === "deleted";
+  if (!connWiringOk) {
+    failures.push(`sessions flow: connection picker wiring not verified (${JSON.stringify(sfr)})`);
+  }
+  if (
+    sfr &&
+    (!sfr.connectionReplySeen ||
+      !sfr.upstreamHit ||
+      sfr.upstreamModel !== sfr.fixtureModel ||
+      !sfr.upstreamAuthOk ||
+      !sfr.upstreamMessageSeen)
+  ) {
+    failures.push(`sessions flow: saved connection did not drive the upstream turn (${JSON.stringify(sfr)})`);
   }
   const sessErrs = errorCount(sf ? sf.errors : {});
   if (sessErrs > 0) failures.push(`sessions flow: ${sessErrs} console/network error(s)`);

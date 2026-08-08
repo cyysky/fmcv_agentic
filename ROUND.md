@@ -1,64 +1,73 @@
-# ROUND 18 — 2026-08-08 (autonomous iteration round 18)
+# ROUND 19 — 2026-08-08 (autonomous iteration round 19)
 
-User instruction: **read on loop.md and do works** — the loop was re-opened
-after Round 17 closed it. This round shipped the two settings-journey
-frictions found during the "Use" walk: endpoints can now be probed before
-they are saved, and stored API keys can be explicitly cleared.
+User instruction: **read on loop.md and do works**. This round's focus was
+the biggest dead-end from Round 18: the agent chat now uses saved
+Connections — a session/turn can be pinned to a connection, and the
+connection's endpoint/model/key/default parameters drive the LLM.
 
 ## What changed this round
 
-- **Test-before-save** — `POST /api/connections/test` probes unsaved form
-  values (base URL, model, entered key) with the same one-token
-  `chat/completions` probe as the stored-row test; the settings form gained a
-  "Test Connection" button with an inline `aria-live` result that clears on
-  any form change. No connection row is created or touched.
-- **Explicit key clearing** — Edit now has a "Clear stored API key" checkbox;
-  arming it disables the key field ("Stored key will be removed on save.")
-  and PATCHes `apiKey: ""`. Backend create/update normalize empty strings to
-  NULL, so a cleared secret is never persisted or returned as `""`.
-- **BUG from browser E2E**: the first extended run proved the empty-string
-  artifact (PATCH `apiKey:""` stored `""` and responses showed `""`), and the
-  Credential field's invalid nested `<label>` could misroute checkbox clicks;
-  both fixed (NULL normalization + `<div>`/`htmlFor` label).
-- **Docs** — README (REST table, feature bullets, counts, Round 18 section),
-  e2e/README (settings journey + duplicate list-numbering fix), CHANGELOG.
+- **`AgentSession.connectionId`** (nullable FK, `onDelete: SetNull`,
+  indexed) + migration `20260808052707_add_agent_session_connection`;
+  `createSession`, `POST /api/agent/turn`, and `converse` accept an optional
+  UUID `connectionId` (unknown ids → 404, malformed ids → 400).
+- **Endpoint resolution** — a pinned connection replaces the built-in
+  gateway + catalog for that call (base URL, model name, stored key,
+  default parameters). The request `model` cannot override the connection's
+  model, the row's default `model`/`messages`/`tools` cannot hijack the
+  wire body, and catalog fallback is disabled for custom endpoints.
+- **Pin persistence + self-heal** — sessions keep `connectionId` across
+  turns (persisted to Postgres); if the connection is later deleted the
+  session falls back to the default endpoint (mirrors the `SetNull` FK).
+- **Agent UI connection picker** — a "Settings connection" select (Default
+  gateway / `displayName · modelName`) next to the model picker; selecting
+  one disables the model picker with a tooltip naming the connection's
+  model, new sessions/turns are pinned, opening a session restores its pin,
+  the sidebar badges pinned sessions, and the thread shows a "Using
+  connection …" note.
+- **Browser E2E** — the sessions journey now proves the full chain against a
+  hermetic fake OpenAI-compatible upstream (ephemeral Node `http` server):
+  fixture Connection via API → picker → wire converse POST carries
+  `connectionId` with no `model` → upstream sees the connection's model +
+  stored bearer key + message → fixture reply renders → server-side pin →
+  cleanup. Also fixed a pre-existing cleanup bug (sessions cleanup was
+  passed the wrapper instead of the flow object), so leftover E2E sessions
+  are actually removed (24 stale rows cleaned).
 
 ## Test status
 
-- Unit: **74 passed / 11 suites** (was 67: +4 draft-probe, +3 apiKey
-  normalization, including a null-prisma proof that draft probes never read
-  the DB).
-- API E2E: **56 passed / 7 suites** (was 51: +4 draft endpoint cases against
-  the hermetic fake upstream — entered-key success with bearer assertion,
-  401 reporting, unreachable graceful failure, invalid URL 400 — plus an
-  explicit key-clearing round-trip that asserts GET returns null).
-- Backend: `nest build` clean; `tsc --noEmit` clean.
-- Frontend: `tsc --noEmit` + `eslint` clean; Docker `next build` clean.
-- Browser E2E: all green, exit 0, zero console/network errors — all 12 route
-  probes (light/dark/mobile), nav/channel/sessions/files journeys, and the
-  extended settings journey: key-blank on edit → form Test fails gracefully
-  on a dead endpoint → Cancel preserves the stored URL → plain-edit PATCH
-  carries no `apiKey` → clear-key PATCH sends `apiKey:""` with a NULL
-  server-side result → row Test fails gracefully → fixture deleted.
-  `e2e/report.json` + screenshots refreshed.
+- Unit: **79 passed / 11 suites** (74 → +5: session pin persists through DB
+  persistence, unknown connection 404 on create/turn, converse
+  resolves baseUrl/model/key/default-parameters, self-heal on deleted
+  pinned connection, attach-a-connection-via-converse).
+- API E2E: **56 passed / 7 suites** — agent suite includes the
+  saved-connection journey (pin persists on create/converse, attach via
+  converse, stateless turn, 404 unknown, 400 malformed).
+- Backend: `nest build` + `tsc --noEmit` clean.
+- Frontend: `tsc --noEmit` + `eslint` clean.
+- Browser E2E: all green, exit 0, zero console/network errors — every route
+  probe, nav/channel/files/settings journeys, and the new connection-driven
+  sessions journey; `e2e/report.json` + screenshots refreshed
+  (`agent-sessions-picker.png`, `agent-sessions-connection.png`).
 
 ## Known issues / open tickets
 
-- None in this round's scope. No TODO/FIXME markers; worktree holds exactly
-  this round's changes (plus the committed E2E artifacts).
+- None in this round's scope. `AGENT_API_KEY` is empty in the running
+  backend container (the built-in gateway works via the saved `ds4-flash`
+  connection row) — environment-only, not a code issue; browser E2E uses a
+  hermetic fake upstream so it does not depend on container env.
+- Docs updated (README, CHANGELOG, e2e/README: connection picker, optional
+  `connectionId` API, counts, journey, `E2E_CONN_HOST`/`E2E_CONN_MODEL`).
 
 ## Next round focus
 
-1. **(Biggest dead-end in the main journey)** The agent chat ignores saved
-   connections: Sessions/turns only use the fixed `AGENT_BASE_URL` gateway +
-   the hardcoded model catalog, so a connection added in Settings (e.g. a
-   local Ollama or a custom provider) cannot be selected for chat. Make
-   sessions carry an optional `connectionId` (endpoint + model + key +
-   default parameters) and expose a connection picker in the agent chat UI,
-   so Settings really drives the agent.
-2. If #1 lands, keep the model picker working per connection: catalog models
-   remain, but any stored connection's modelName becomes selectable with its
-   row's baseUrl/key.
-3. Polish from the settings round: consider showing latency+status in the
-   edit form after a successful probe, or auto-running a probe on save when
+1. **Model picker per connection** — Round 18's #2: catalog models should
+   remain selectable with a chosen connection's baseUrl/key (the connection
+   currently supplies modelName exclusively; a fuller per-connection model
+   list/override would let users pick among that provider's models).
+2. **Settings probe polish** — Round 18's #3: show latency + status in the
+   edit form after a successful save-side probe, or auto-probe on save when
    the row has never been tested.
+3. **Round 20 housekeeping** — re-run the full suite (unit/API/browser),
+   audit remaining `TODO`/`FIXME` markers and stale sessions, and refresh
+   docs if anything shifts.

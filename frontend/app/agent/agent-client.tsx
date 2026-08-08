@@ -12,6 +12,14 @@ interface ModelOption {
   is_default: boolean;
 }
 
+interface ConnectionOption {
+  id: string;
+  displayName: string;
+  baseUrl: string;
+  modelName: string;
+  contextLength: number;
+}
+
 interface ToolTraceStep {
   type: "tool_call";
   name: string;
@@ -37,6 +45,7 @@ interface AgentSessionSummary {
   id: string;
   title: string;
   model: string;
+  connectionId?: string;
   createdAt: string;
 }
 
@@ -145,6 +154,8 @@ function isProjDir(v: unknown): boolean {
 export default function AgentPage() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string>("");
+  const [connections, setConnections] = useState<ConnectionOption[]>([]);
+  const [connectionId, setConnectionId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -230,6 +241,28 @@ export default function AgentPage() {
       cancelled = true;
     };
   }, []);
+
+  // Saved Connections (from Settings) can pin chat sessions/turns to a
+  // custom provider — endpoint, model, key, and default parameters all come
+  // from the chosen row instead of the built-in gateway.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch(`/connections`);
+        if (!res.ok) throw new Error(`Failed to load connections (HTTP ${res.status})`);
+        const data = (await res.json()) as ConnectionOption[];
+        if (!cancelled) setConnections(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load connections");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedConn = connections.find((c) => c.id === connectionId) ?? null;
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -712,7 +745,12 @@ export default function AgentPage() {
       const res = await apiFetch(`/agent/turn`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, model: model || undefined }),
+        body: JSON.stringify({
+          message: text,
+          history,
+          ...(!selectedConn && model ? { model } : {}),
+          ...(selectedConn ? { connectionId: selectedConn.id } : {}),
+        }),
       });
       const data = (await res.json().catch(() => null)) as TurnResponse | null;
       if (!res.ok) {
@@ -739,7 +777,7 @@ export default function AgentPage() {
     } finally {
       setBusy(false);
     }
-  }, [input, busy, model, messages]);
+  }, [input, busy, model, messages, selectedConn]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -758,6 +796,12 @@ export default function AgentPage() {
     if (next === "channels") loadChannels();
     if (next === "sessions") void loadSessions();
   };
+
+  const connLabel = useCallback(
+    (id: string | undefined): string | null =>
+      id ? (connections.find((c) => c.id === id)?.displayName ?? null) : null,
+    [connections],
+  );
 
   /* ----------------------- session helpers --------------------------- */
 
@@ -786,6 +830,9 @@ export default function AgentPage() {
       if (!res.ok) throw new Error(`Failed to load session (HTTP ${res.status})`);
       const data = (await res.json()) as AgentSessionDetail;
       setModel((cur) => data.model || cur);
+      if (data.connectionId && connections.some((c) => c.id === data.connectionId)) {
+        setConnectionId(data.connectionId);
+      }
       setSessionMsgs(
         data.messages
           .filter((m) => m.role !== "system")
@@ -799,7 +846,7 @@ export default function AgentPage() {
     } finally {
       setSessionLoading(false);
     }
-  }, []);
+  }, [connections]);
 
   const createSession = useCallback(async () => {
     if (creatingSession) return;
@@ -809,7 +856,10 @@ export default function AgentPage() {
       const res = await apiFetch(`/agent/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(model ? { model } : {}),
+        body: JSON.stringify({
+          ...(!selectedConn && model ? { model } : {}),
+          ...(selectedConn ? { connectionId: selectedConn.id } : {}),
+        }),
       });
       if (!res.ok) throw new Error(`Failed to create session (HTTP ${res.status})`);
       const data = (await res.json()) as AgentSessionDetail;
@@ -820,7 +870,7 @@ export default function AgentPage() {
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, model, loadSessions, openSession]);
+  }, [creatingSession, model, loadSessions, openSession, selectedConn]);
 
   const deleteSession = useCallback(
     async (id: string) => {
@@ -883,7 +933,11 @@ export default function AgentPage() {
       const res = await apiFetch(`/agent/sessions/${selSessionId}/converse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
+        body: JSON.stringify({
+          message: text,
+          ...(!selectedConn && model ? { model } : {}),
+          ...(selectedConn ? { connectionId: selectedConn.id } : {}),
+        }),
       });
       const data = (await res.json().catch(() => null)) as TurnResponse | null;
       if (!res.ok) {
@@ -906,7 +960,7 @@ export default function AgentPage() {
     } finally {
       setSessionBusy(false);
     }
-  }, [sessionInput, sessionBusy, selSessionId, model, loadSessions]);
+  }, [sessionInput, sessionBusy, selSessionId, model, loadSessions, selectedConn]);
 
   /* ----------------------- workspace viewer helpers ---------------------- */
 
@@ -1015,7 +1069,12 @@ export default function AgentPage() {
             className={styles.modelSelect}
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            disabled={models.length === 0 || view === "channels"}
+            disabled={models.length === 0 || view === "channels" || !!selectedConn}
+            title={
+              selectedConn
+                ? `Model comes from the selected connection (${selectedConn.modelName})`
+                : undefined
+            }
           >
             {models.length === 0 ? (
               <option value="">Loading models…</option>
@@ -1026,6 +1085,25 @@ export default function AgentPage() {
                 </option>
               ))
             )}
+          </select>
+          <select
+            className={styles.modelSelect}
+            value={connectionId}
+            onChange={(e) => setConnectionId(e.target.value)}
+            disabled={view === "channels"}
+            aria-label="Settings connection"
+            title={
+              selectedConn
+                ? `Chat uses ${selectedConn.modelName} at ${selectedConn.baseUrl}`
+                : "Chat uses the default gateway + catalog model"
+            }
+          >
+            <option value="">Default gateway</option>
+            {connections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.displayName} · {c.modelName}
+              </option>
+            ))}
           </select>
           <button
             className={styles.btnGhost}
@@ -1256,6 +1334,11 @@ export default function AgentPage() {
                         )}
                         <span className={styles.sessionMeta}>
                           {new Date(s.createdAt).toLocaleString()}
+                          {connLabel(s.connectionId) && (
+                            <span className={styles.sessionBadge}>
+                              {connLabel(s.connectionId)}
+                            </span>
+                          )}
                         </span>
                       </button>
                       <button
@@ -1293,6 +1376,12 @@ export default function AgentPage() {
                 </div>
               ) : (
                 <>
+                  {selectedConn && (
+                    <div className={styles.sessionNote}>
+                      Using connection {selectedConn.displayName} ·{" "}
+                      {selectedConn.modelName}
+                    </div>
+                  )}
                   <div className={styles.thread}>
                     {sessionLoading ? (
                       <div className={styles.empty}>

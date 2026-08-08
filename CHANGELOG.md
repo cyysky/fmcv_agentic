@@ -1,3 +1,50 @@
+## Round 2026-08-08 — autonomous iteration round 19 (tag `round-19`)
+
+### Added
+- `AgentSession.connectionId` — sessions and stateless turns accept an
+  optional UUID `connectionId`. When present, the saved Connection's base
+  URL, model name, stored API key, and default parameters replace the
+  built-in gateway + catalog for that call — and, on sessions, for every
+  later turn (the pin persists on the row). Unknown ids are 404s on
+  create/turn/converse; malformed ids are 400s; a deleted connection
+  self-heals the session back to the default gateway (`onDelete: SetNull`).
+- Agent chat connection picker: a "Settings connection" select next to the
+  model picker ("Default gateway" or `displayName · modelName`). Selecting a
+  connection disables the model picker (tooltip names the connection's
+  model), pins new sessions/turns, restores a session's pinned connection on
+  open, badges pinned sessions in the sidebar, and shows a "Using connection
+  …" note in the thread view.
+- Browser E2E coverage: the sessions journey now drives the full chain
+  through a hermetic fake OpenAI-compatible upstream — fixture connection
+  via the API, picker selection, wire `connectionId` with no `model`, fake
+  upstream model/bearer/message assertions, fixture reply in the thread,
+  server-side pin, then cleanup. `E2E_CONN_HOST` / `E2E_CONN_MODEL`
+  override the fixture endpoint/model.
+
+### Fixed
+- Catalog fallback no longer fires for custom endpoints: an explicit
+  connection choice fails loudly instead of silently retrying with a
+  catalog fallback model that almost certainly does not exist on the
+  user's provider.
+- Browser E2E session cleanup now receives the real flow object, so leftover
+  E2E sessions are actually deleted after each run (24 stale rows cleaned).
+
+### Test status
+- Unit **79 passed / 11 suites** (74 → +5: session pin persists through DB
+  persistence, unknown connection 404 on create/turn, converse resolves
+  baseUrl/model/key/default-parameters, self-heal on deleted pinned
+  connection, attach-a-connection-via-converse).
+- API E2E **56 passed / 7 suites** — the agent suite now includes a
+  saved-connection journey (pin persists on create/converse, attach via
+  converse, stateless turn with the connection, unknown connection 404,
+  malformed id 400).
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean.
+- Browser E2E all green (exit 0, zero console/network errors): every route
+  probe plus nav/channel/files/settings journeys and the new
+  connection-driven sessions journey. `e2e/report.json` + screenshots
+  refreshed (`agent-sessions-picker.png`, `agent-sessions-connection.png`).
+
 ## Round 2026-08-08 — autonomous iteration round 18 (tag `round-18`)
 
 ### Added

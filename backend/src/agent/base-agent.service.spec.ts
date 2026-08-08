@@ -26,7 +26,10 @@ function prismaDouble() {
     delete: jest.fn(async () => ({ id: 's' })),
   };
   return {
-    connection: { findFirst: jest.fn(async () => null) },
+    connection: {
+      findFirst: jest.fn(async () => null),
+      findUnique: jest.fn(async () => null),
+    },
     agentSession,
   } as never;
 }
@@ -48,7 +51,7 @@ describe('BaseAgentService sessions', () => {
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
 
-      const s = agent.createSession('persist me');
+      const s = await agent.createSession('persist me');
       // create + converse would both persist; here create alone does an upsert.
       expect(fake.agentSession.upsert).toHaveBeenCalledWith(
         expect.objectContaining({ create: expect.objectContaining({ id: s.id, title: 'persist me' }) }),
@@ -83,7 +86,7 @@ describe('BaseAgentService sessions', () => {
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root, { llmStub: true }), ws, prismaDouble());
 
-      const s = agent.createSession();
+      const s = await agent.createSession();
       expect(s.title).toBe('New session');
       await agent.converse(s.id, '  Fix the parser   please now  ');
       expect(agent.getSession(s.id).title).toBe('Fix the parser please now');
@@ -93,18 +96,18 @@ describe('BaseAgentService sessions', () => {
       expect(agent.getSession(s.id).title).toBe('Fix the parser please now');
 
       // Long first messages are truncated to a 40-char snippet.
-      const long = agent.createSession();
+      const long = await agent.createSession();
       await agent.converse(long.id, 'x'.repeat(60));
       expect(agent.getSession(long.id).title).toBe(`${'x'.repeat(40)}…`);
 
       // Manually renamed sessions keep their custom title.
-      const named = agent.createSession();
+      const named = await agent.createSession();
       agent.renameSession(named.id, 'My title');
       await agent.converse(named.id, 'hello');
       expect(agent.getSession(named.id).title).toBe('My title');
 
       // Blank first messages leave the default title.
-      const blank = agent.createSession();
+      const blank = await agent.createSession();
       await agent.converse(blank.id, '   ');
       expect(agent.getSession(blank.id).title).toBe('New session');
     } finally {
@@ -118,7 +121,7 @@ describe('BaseAgentService sessions', () => {
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
 
-      const s = agent.createSession('old title');
+      const s = await agent.createSession('old title');
       const renamed = agent.renameSession(s.id, '  new title  ');
       expect(renamed.title).toBe('new title');
       expect(agent.getSession(s.id).title).toBe('new title');
@@ -137,11 +140,11 @@ describe('BaseAgentService sessions', () => {
   it('creates sessions with the default model and resolves unknown models', async () => {
     const { agent, root } = await makeAgent();
     try {
-      const s = agent.createSession('t');
+      const s = await agent.createSession('t');
       expect(s.model).toBe('ds4-flash');
       expect(s.messages[0].role).toBe('system');
       expect(agent.getSession(s.id).id).toBe(s.id);
-      const s2 = agent.createSession('t2', 'not-a-model');
+      const s2 = await agent.createSession('t2', 'not-a-model');
       expect(s2.model).toBe('ds4-flash');
       expect(agent.listSessions()).toHaveLength(2);
       expect(agent.deleteSession(s.id)).toEqual({ deleted: true });
@@ -168,7 +171,7 @@ describe('BaseAgentService loop', () => {
       expect(res.steps).toBe(0);
       expect(res.model).toBe('ds4-flash');
 
-      const s = agent.createSession('stub chat');
+      const s = await agent.createSession('stub chat');
       const conv = await agent.converse(s.id, 'persist this stub turn');
       expect(conv.answer).toBe('[stub] persist this stub turn');
       expect(conv.steps).toBe(0);
@@ -255,7 +258,7 @@ describe('BaseAgentService loop', () => {
   it('converse appends to the session and caps model rounds at maxSteps', async () => {
     const { agent, root } = await makeAgent();
     try {
-      const s = agent.createSession('s');
+      const s = await agent.createSession('s');
       // The model never produces a plain answer, so the loop runs until the
       // step budget is exhausted — the only way to observe the cap.
       const calls = jest.fn(async () => ({
@@ -285,6 +288,146 @@ describe('BaseAgentService loop', () => {
       await agent.converse(s.id, 'q2', undefined, 1);
       expect(calls).toHaveBeenCalledTimes(3);
       expect(await fs.readFile(path.join(root, 'agents', 'coder', 'cap.txt'), 'utf8')).toBe('x');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('BaseAgentService connections', () => {
+  const CONN_ID = '22222222-2222-4222-8222-222222222222';
+  const BAD_CONN_ID = '99999999-9999-4999-8999-999999999999';
+
+  function withConn(overrides: Record<string, unknown> = {}) {
+    const fake = prismaDouble() as unknown as {
+      connection: { findUnique: jest.Mock };
+      agentSession: { upsert: jest.Mock };
+    };
+    fake.connection.findUnique.mockResolvedValue({
+      id: CONN_ID,
+      displayName: 'Local Ollama',
+      baseUrl: 'http://ollama.test/v1',
+      modelName: 'llama3.2',
+      apiKey: 'secret-key',
+      defaultParameters: { temperature: 0.7, top_p: 0.5 },
+      ...overrides,
+    });
+    return fake;
+  }
+
+  it('pins a session to a saved connection and persists connectionId', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-persist-'));
+    try {
+      const fake = withConn();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+
+      const s = await agent.createSession('ollama chat', undefined, CONN_ID);
+      expect(s.connectionId).toBe(CONN_ID);
+      expect(fake.agentSession.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ connectionId: CONN_ID }),
+        }),
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('404s on an unknown connection for create and turn', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-bad-'));
+    try {
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, prismaDouble());
+      await expect(agent.createSession('bad', undefined, BAD_CONN_ID)).rejects.toThrow(
+        `Connection ${BAD_CONN_ID} not found`,
+      );
+      await expect(
+        agent.runTurn({ message: 'hi', connectionId: BAD_CONN_ID }),
+      ).rejects.toThrow(`Connection ${BAD_CONN_ID} not found`);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves the pinned connection for converse turns (baseUrl/model/key/params)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-converse-'));
+    try {
+      const fake = withConn();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'via connection',
+        tool_calls: undefined,
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      const s = await agent.createSession('conn chat', undefined, CONN_ID);
+      const conv = await agent.converse(s.id, 'hello');
+      expect(conv.answer).toBe('via connection');
+      expect(calls.mock.calls[0][3]).toEqual({
+        baseUrl: 'http://ollama.test/v1',
+        model: 'llama3.2',
+        apiKey: 'secret-key',
+        defaultParameters: { temperature: 0.7, top_p: 0.5 },
+      });
+      // A stateless turn on the same connection reports its wire model.
+      const turn = await agent.runTurn({ message: 'hi', connectionId: CONN_ID });
+      expect(turn.model).toBe('llama3.2');
+      expect(calls.mock.calls[1][3]).toEqual(
+        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: 'llama3.2' }),
+      );
+      // Re-running the session keeps using the stored connection.
+      await agent.converse(s.id, 'again');
+      expect(calls.mock.calls[2][3]).toEqual(
+        expect.objectContaining({ baseUrl: 'http://ollama.test/v1' }),
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('self-heals a session whose pinned connection was deleted (falls back to default)', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-gone-'));
+    try {
+      const fake = prismaDouble() as unknown as { connection: { findUnique: jest.Mock } };
+      fake.connection.findUnique.mockResolvedValue(null);
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'default answer',
+        tool_calls: undefined,
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      // Simulate a session recovered from a prior run whose connection row
+      // has since been deleted.
+      const s = await agent.createSession('orphan');
+      (s as unknown as { connectionId?: string }).connectionId = BAD_CONN_ID;
+      const conv = await agent.converse(s.id, 'still works?');
+      expect(conv.answer).toBe('default answer');
+      expect(calls.mock.calls[0][3]).toBeUndefined();
+      expect(agent.getSession(s.id).connectionId).toBeUndefined();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('attaches a connection to an existing session via converse', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-attach-'));
+    try {
+      const fake = withConn();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({ content: 'ok', tool_calls: undefined }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      const s = await agent.createSession('attach later');
+      await agent.converse(s.id, 'hello', undefined, undefined, CONN_ID);
+      expect(agent.getSession(s.id).connectionId).toBe(CONN_ID);
+      expect(calls.mock.calls[0][3]).toEqual(
+        expect.objectContaining({ baseUrl: 'http://ollama.test/v1' }),
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

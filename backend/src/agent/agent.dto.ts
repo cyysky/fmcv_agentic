@@ -7,6 +7,7 @@ import {
   IsOptional,
   Matches,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -25,6 +26,10 @@ export class AskAgentDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
 
   @IsOptional()
   @IsInt()
@@ -63,6 +68,10 @@ export class CreateSessionDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
 }
 
 /** Append a user message to an existing session and run the loop. */
@@ -74,6 +83,10 @@ export class ConverseDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
 
   @IsOptional()
   @IsInt()
@@ -104,6 +117,10 @@ export class RunTurnDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @IsOptional()
+  @IsUUID()
+  connectionId?: string;
 
   @IsOptional()
   @IsInt()
