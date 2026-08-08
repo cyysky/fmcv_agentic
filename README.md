@@ -137,7 +137,8 @@ and coordinate multi-agent teams in Slack-style channels.
   mid-emoji) on the row plus a dedicated `CronRun` history row
   (cascade-deleted with the job). The page also shows the local
   scheduler/lease status (active on this node vs standby, last tick/beat,
-  lease expiry) refreshed every 5 s. Scheduling is multi-instance safe: a
+  lease expiry) refreshed every 5 s (an API-only node reports "Scheduler
+  disabled — API-only" instead). Scheduling is multi-instance safe: a
   distributed Postgres lease elects one replica as the ticker (a dead holder
   fails over in ~5 s), and each firing is an atomic row claim, so the same
   due job never runs twice even under a split-brain lease or an overlapping
@@ -233,7 +234,9 @@ duplicate names are 409s):
 
 Cron jobs (five-field schedules; `name` is unique, delete is rejected while
 a job is running, `POST /:id/run` executes immediately outside the schedule
-and awaits the agent turn):
+and awaits the agent turn; set `CRON_SCHEDULER_ENABLED=false` on any backend
+to run it API-only — no background lease/tick/boot-recovery sweep, while
+CRUD and `Run now` still work):
 
 | Method | Path                 | Purpose                                                   |
 |--------|----------------------|-----------------------------------------------------------|
@@ -289,15 +292,23 @@ agents are rejected with a message listing the valid names (`coder`,
 # Unit tests (backend, no external services)
 cd backend && npm test -- --runInBand
 
-# API E2E against real Postgres: stop the live backend first — its cron
-# scheduler shares the same database and can steal the suite's jobs and
-# persist real (non-stub) results, making the stub-based assertions flaky:
-#   docker compose stop backend
+# API E2E against real Postgres: keep the live backend up but put it in
+# API-only mode first — its cron scheduler shares the same database and can
+# steal the suite's jobs and persist real (non-stub) results, making the
+# stub-based assertions flaky. CRON_SCHEDULER_ENABLED=false disables the
+# background scheduler (lease, tick, boot recovery) without stopping the
+# server, so CRUD/Run now stay reachable:
+#   CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend
 cd backend && npm run test:e2e
-#   docker compose start backend
+#   docker compose up -d --force-recreate backend
+# (stopping the container entirely also works: `docker compose stop backend`
+# before the suite and `docker compose start backend` afterwards.)
 
 # Browser E2E via Chrome DevTools Protocol (Chrome must run with
-# --remote-debugging-port=9222; see e2e/README.md)
+# --remote-debugging-port=9222; see e2e/README.md) — after any API/UI
+# contract change, rebuild both containers together first so the live stack
+# serves the new code:
+#   docker compose up -d --build backend frontend
 cd e2e && node browser-e2e.mjs
 
 # REST docs drift guard: every controller route must appear in the README
@@ -305,7 +316,7 @@ cd e2e && node browser-e2e.mjs
 node scripts/verify-rest-docs.mjs
 ```
 
-- **Unit: 160 tests / 14 suites** — model catalog, workspace service + tools,
+- **Unit: 179 tests / 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -353,7 +364,7 @@ node scripts/verify-rest-docs.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 118 tests / 11 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 121 tests / 12 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears

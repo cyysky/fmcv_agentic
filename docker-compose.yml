@@ -33,6 +33,9 @@ services:
       - API_TOKEN=${API_TOKEN:-}
       - RATE_LIMIT_TTL_MS=${RATE_LIMIT_TTL_MS:-60000}
       - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-100}
+      # Empty/absent = scheduler enabled. Set CRON_SCHEDULER_ENABLED=false
+      # for an API-only node (no background firing; CRUD + Run now still work).
+      - CRON_SCHEDULER_ENABLED=${CRON_SCHEDULER_ENABLED:-}
     volumes:
       - workspace_data:/data/workspaces
     depends_on:
