@@ -1,3 +1,46 @@
+## Round 2026-08-08 — autonomous iteration round 20 (tag `round-20`)
+
+### Added
+- Agent chat model picker works with a saved connection selected: the
+  connection's own model is the default option ("connection default"),
+  catalog models stay selectable, and choosing one sends `model` +
+  `connectionId` — an explicit catalog override that routes through the
+  connection's base URL/key/default parameters instead of the built-in
+  gateway. Switching back to the default gateway restores the catalog model
+  that was selected before.
+- Backend override semantics: `runTurn` and `converse` treat an explicit
+  `model` as a per-call override that wins on the wire over the pinned
+  connection's `modelName`; without an explicit model the connection's
+  modelName is used (Round 19 behavior unchanged). The resulting wire model
+  is returned from turns and stored on the session during conversations.
+- Browser E2E: the sessions journey now asserts the full override path —
+  catalog model selection with the fixture connection active, wire converse
+  POST carrying `connectionId` + `model`, the hermetic upstream receiving
+  the override model with the fixture's bearer key and message, the fixture
+  reply rendering, and the override model persisted server-side.
+  `E2E_CONN_OVERRIDE_MODEL` (default `qwen3.6-35b`, must differ from
+  `E2E_CONN_MODEL`) controls the override model.
+
+### Fixed
+- Reopening a pinned session previously restored the catalog model stored on
+  the row, which could switch a connection-default chat to the default
+  catalog model; pinned sessions now reopen on the connection's own model
+  (overrides are per-chat choices, not silently resurrected).
+
+### Test status
+- Unit **80 passed / 11 suites** (79 → +1: explicit catalog model override
+  on turn + conversation through a pinned connection, per-call fallback to
+  the connection's model, session model update).
+- API E2E **56 passed / 7 suites** — the saved-connection journey now also
+  converses and turns with a catalog model override accepted alongside
+  `connectionId`.
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean (0 warnings).
+- Browser E2E all green (exit 0, zero console/network errors): every route
+  probe plus nav/channel/files/settings journeys and the extended sessions
+  journey (connection default path + catalog override path).
+  `e2e/report.json` + screenshots refreshed.
+
 ## Round 2026-08-08 — autonomous iteration round 19 (tag `round-19`)
 
 ### Added

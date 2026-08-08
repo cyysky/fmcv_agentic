@@ -387,6 +387,54 @@ describe('BaseAgentService connections', () => {
     }
   });
 
+  it('lets an explicit catalog model override the connection model on the wire', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-override-'));
+    try {
+      const fake = withConn();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'override answered',
+        tool_calls: undefined,
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      // Stateless turn: catalog model wins on the wire, but the endpoint's
+      // baseUrl/key/default-parameters still come from the connection.
+      const turn = await agent.runTurn({
+        message: 'hi',
+        connectionId: CONN_ID,
+        model: 'qwen3.6-35b',
+      });
+      expect(turn.model).toBe('qwen3.6-35b');
+      expect(calls.mock.calls[0][3]).toEqual({
+        baseUrl: 'http://ollama.test/v1',
+        model: 'qwen3.6-35b',
+        apiKey: 'secret-key',
+        defaultParameters: { temperature: 0.7, top_p: 0.5 },
+      });
+
+      // The override is per-call: without an explicit model the connection's
+      // stored modelName wins again.
+      const turn2 = await agent.runTurn({ message: 'hi again', connectionId: CONN_ID });
+      expect(turn2.model).toBe('llama3.2');
+      expect(calls.mock.calls[1][3]).toEqual(
+        expect.objectContaining({ model: 'llama3.2' }),
+      );
+
+      // The same semantics apply on an existing pinned session via converse
+      // (and the chosen catalog model is stored on the session).
+      const s = await agent.createSession('override chat', undefined, CONN_ID);
+      await agent.converse(s.id, 'hello', 'qwen3.6-35b');
+      expect(calls.mock.calls[2][3]).toEqual(
+        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: 'qwen3.6-35b' }),
+      );
+      expect(agent.getSession(s.id).model).toBe('qwen3.6-35b');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('self-heals a session whose pinned connection was deleted (falls back to default)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-gone-'));
     try {

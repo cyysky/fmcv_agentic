@@ -37,6 +37,7 @@ Environment overrides:
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
 | `E2E_CONN_HOST`      | auto-detected                 | host/IP the fixture connection points the backend at (override when the backend container cannot reach the auto-detected IP) |
 | `E2E_CONN_MODEL`     | `ds4-flash`                   | model name stored on the fixture connection in the sessions journey |
+| `E2E_CONN_OVERRIDE_MODEL` | `qwen3.6-35b`          | catalog model picked as an override during the sessions journey (must differ from `E2E_CONN_MODEL`) |
 
 ## What it checks
 
@@ -62,9 +63,15 @@ Environment overrides:
    `model` key, the upstream sees `POST /chat/completions` with the
    connection's model and `Bearer <stored key>`, its reply renders in the
    thread, the sidebar badges the pinned session, and GET sessions shows the
-   server-side `connectionId`. Finally it restores the default gateway,
-   deletes the fixture Connection + upstream, and asserts cleanup
-   (`E2E_CONN_HOST` / `E2E_CONN_MODEL` override the fixture endpoint/model).
+   server-side `connectionId`. With the connection still active it then
+   picks a catalog model and proves the override path: the wire POST carries
+   both `connectionId` and `model`, the same upstream receives the override
+   model with the fixture's bearer key, and the override model is persisted
+   server-side (`E2E_CONN_OVERRIDE_MODEL` controls which catalog model is
+   picked and must differ from `E2E_CONN_MODEL`). Finally it restores the
+   default gateway, deletes the fixture Connection + upstream, and asserts
+   cleanup (`E2E_CONN_HOST` / `E2E_CONN_MODEL` override the fixture
+   endpoint/model).
 5. **Files journey**: on `/files`, the script creates a nested file and a
    dotfile through the UI (agent scope), verifies the root listing shows both,
    navigates into the folder, reads the file content back, deletes the file +

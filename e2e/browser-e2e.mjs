@@ -983,7 +983,9 @@ async function agentSessionsFlow() {
     flow.connectionSelected = true;
     flow.steps.push("connection-selected");
 
-    // The catalog model picker must now defer to the connection.
+    // The catalog model picker stays usable with a connection active, but it
+    // must default to the connection's own model: value "" (a "connection
+    // default" option) and a title naming the connection's model.
     const modelDeferred = await waitFor(
       c,
       `(() => {
@@ -991,8 +993,10 @@ async function agentSessionsFlow() {
         const connSel = document.querySelectorAll('select[class*="modelSelect"]')[1];
         return !!modelSel && !!connSel &&
           connSel.value === ${JSON.stringify(flow.fixtureId)} &&
-          modelSel.disabled === true &&
-          (modelSel.title || "").includes(${JSON.stringify(flow.fixtureModel)});
+          modelSel.disabled === false &&
+          modelSel.value === "" &&
+          (modelSel.title || "").includes(${JSON.stringify(flow.fixtureModel)}) &&
+          [...modelSel.options].some((o) => o.value === "" && o.textContent.includes(${JSON.stringify(flow.fixtureModel)}));
       })()`,
       10000,
       400,
@@ -1082,6 +1086,109 @@ async function agentSessionsFlow() {
     }
     flow.steps.push("connection-request-verified");
 
+    // 5a. A catalog model override must stay on the SAME connection: pick a
+    // catalog model while the fixture connection is active and prove the
+    // upstream sees the override model with the fixture's bearer key.
+    const overrideModel = process.env.E2E_CONN_OVERRIDE_MODEL || "qwen3.6-35b";
+    if (overrideModel === flow.fixtureModel) {
+      throw new Error(`sessions flow: E2E_CONN_OVERRIDE_MODEL must differ from the fixture model (${flow.fixtureModel})`);
+    }
+    const overrideMsg = `Override via saved connection (${Date.now().toString(36)})`;
+    flow.overrideModel = overrideModel;
+    const overridePicked = await evalJs(c, `(() => {
+      const modelSel = document.querySelectorAll('select[class*="modelSelect"]')[0];
+      if (!modelSel || modelSel.disabled) return false;
+      const opt = [...modelSel.options].find((o) => o.value === ${JSON.stringify(overrideModel)});
+      if (!opt) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(modelSel, opt.value);
+      modelSel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    if (!overridePicked) {
+      throw new Error(`sessions flow: catalog model override option missing/disabled (${overrideModel})`);
+    }
+    const overrideActive = await waitFor(
+      c,
+      `document.querySelectorAll('select[class*="modelSelect"]')[0]?.value === ${JSON.stringify(overrideModel)}`,
+      10000,
+      300,
+      "override model selection",
+    );
+    if (!overrideActive) throw new Error("sessions flow: override model selection did not stick");
+    flow.steps.push("override-model-selected");
+    await evalJs(c, jsSetInput('textarea[placeholder*="Message this session"]', overrideMsg));
+    await delay(100);
+    const overrideBubblesBefore = await evalJs(c, `document.querySelectorAll('[class*="bubbleAgent"]').length`);
+    const overrideSubmitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!overrideSubmitted) throw new Error("sessions flow: override-driven submit not enabled");
+    flow.timings.overrideSentAt = new Date().toISOString();
+    const overrideAnswered = await waitFor(
+      c,
+      `(() => {
+        const els = [...document.querySelectorAll('[class*="bubbleAgent"]')];
+        return els.length > ${JSON.stringify(overrideBubblesBefore)} &&
+          els.slice(${JSON.stringify(overrideBubblesBefore)}).some((el) => el.innerText.trim().length > 0 && !el.innerText.includes("Typing"));
+      })()`,
+      180000,
+      800,
+      "override-driven reply",
+    );
+    flow.timings.overrideFinishedAt = new Date().toISOString();
+    if (!overrideAnswered) throw new Error("sessions flow: no reply from override-driven turn");
+    const overrideThread = await evalJs(c, `document.querySelector('[class*="thread"]')?.innerText ?? "NO THREAD"`);
+    const overrideHit = upstream.received.slice().reverse().find(
+      (r) => r.method === "POST" && (r.url ?? "").endsWith("/chat/completions") &&
+        r.body?.messages?.some((m) => m.content === overrideMsg),
+    );
+    flow.overrideUpstreamHit = !!overrideHit;
+    flow.overrideUpstreamModel = overrideHit?.body?.model ?? null;
+    flow.overrideUpstreamAuthOk = overrideHit?.authorization === `Bearer ${connKey}`;
+    flow.overrideReplySeen = !!overrideHit && overrideThread.includes("Connection fixture reply OK");
+    if (!overrideHit) {
+      throw new Error("sessions flow: override turn never reached the connection's upstream");
+    }
+    if (flow.overrideUpstreamModel !== overrideModel) {
+      throw new Error(`sessions flow: wrong model at upstream (${JSON.stringify(flow.overrideUpstreamModel)})`);
+    }
+    if (!flow.overrideUpstreamAuthOk) {
+      throw new Error("sessions flow: override turn lost the connection's API key");
+    }
+    if (!flow.overrideReplySeen) {
+      throw new Error("sessions flow: override reply not from the connection's upstream");
+    }
+    const overridePost = conversePosts.find(
+      (p) => p.body && p.body.connectionId === flow.fixtureId && p.body.model === overrideModel,
+    );
+    flow.overrideModelSentOnConverse = !!overridePost;
+    if (!overridePost) {
+      throw new Error(`sessions flow: converse override missing model+connectionId (posts=${JSON.stringify(conversePosts)})`);
+    }
+    flow.steps.push("override-request-verified");
+    // Reset the model picker to the connection default so the rest of the
+    // journey describes the default path.
+    await evalJs(c, `(() => {
+      const modelSel = document.querySelectorAll('select[class*="modelSelect"]')[0];
+      if (!modelSel) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(modelSel, "");
+      modelSel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    const modelReset = await waitFor(
+      c,
+      `document.querySelectorAll('select[class*="modelSelect"]')[0]?.value === ""`,
+      10000,
+      300,
+      "model reset to connection default",
+    );
+    if (!modelReset) throw new Error("sessions flow: model picker did not reset to connection default");
+    flow.steps.push("override-reset-to-default");
+
     // Sidebar badge + server-side persistence of the pinned connection.
     const badge = await waitFor(
       c,
@@ -1092,11 +1199,20 @@ async function agentSessionsFlow() {
     );
     flow.badgeShown = !!badge;
     if (!badge) throw new Error("sessions flow: connection badge missing from sidebar");
-    const sessList = await fetch(`${API}/agent/sessions`).then((r) => r.json());
-    const pinned = sessList.find((s) => s.title === renameTitle);
+    let pinned = null;
+    for (let i = 0; i < 20; i += 1) {
+      const sessList = await fetch(`${API}/agent/sessions`).then((r) => r.json());
+      pinned = sessList.find((s) => s.title === renameTitle);
+      if (pinned?.connectionId === flow.fixtureId && pinned?.model === flow.overrideModel) break;
+      await delay(300);
+    }
     flow.serverPinnedConnection = pinned?.connectionId === flow.fixtureId;
+    flow.overrideModelPersisted = pinned?.model === flow.overrideModel;
     if (!flow.serverPinnedConnection) {
       throw new Error(`sessions flow: connectionId not persisted server-side (${JSON.stringify(pinned)})`);
+    }
+    if (!flow.overrideModelPersisted) {
+      throw new Error(`sessions flow: override model not persisted server-side (${JSON.stringify(pinned)})`);
     }
     flow.steps.push("connection-pinned-server-side");
     await delay(300);
@@ -1139,6 +1255,13 @@ async function agentSessionsFlow() {
       upstreamModel: flow.upstreamModel,
       upstreamAuthOk: flow.upstreamAuthOk,
       upstreamMessageSeen: flow.upstreamMessageSeen,
+      overrideModel: flow.overrideModel,
+      overrideModelSentOnConverse: flow.overrideModelSentOnConverse,
+      overrideUpstreamHit: flow.overrideUpstreamHit,
+      overrideUpstreamModel: flow.overrideUpstreamModel,
+      overrideUpstreamAuthOk: flow.overrideUpstreamAuthOk,
+      overrideReplySeen: flow.overrideReplySeen,
+      overrideModelPersisted: flow.overrideModelPersisted,
       connectionCleanup: flow.connectionCleanup,
     };
     return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
@@ -2017,6 +2140,12 @@ async function main() {
     sfr.modelOmittedFromConverse &&
     sfr.badgeShown &&
     sfr.serverPinnedConnection &&
+    sfr.overrideModelSentOnConverse &&
+    sfr.overrideUpstreamHit &&
+    sfr.overrideUpstreamModel !== undefined &&
+    sfr.overrideUpstreamAuthOk &&
+    sfr.overrideReplySeen &&
+    sfr.overrideModelPersisted &&
     sfr.connectionCleanup === "deleted";
   if (!connWiringOk) {
     failures.push(`sessions flow: connection picker wiring not verified (${JSON.stringify(sfr)})`);

@@ -48,9 +48,12 @@ and coordinate multi-agent teams in Slack-style channels.
   stateless turns can pin a saved Connection from Settings, so that row's
   base URL, model, stored API key, and default parameters drive the LLM
   instead of the built-in gateway. Selecting a connection defers the model
-  picker to the connection's model; opening a pinned session restores its
-  connection and badges it in the sidebar. Conversation loop with a hard
-  `maxSteps` cap, tool-call trace and workspace viewer in the UI.
+  picker to the connection's model by default, while catalog models remain
+  selectable as per-turn overrides that still route through the connection's
+  endpoint + key; opening a pinned session restores its connection (with the
+  connection default model) and badges it in the sidebar. Conversation loop
+  with a hard `maxSteps` cap, tool-call trace and workspace viewer in the
+  UI.
 - **Agent workspaces** — filesystem workspace under `AGENT_WORKSPACE_ROOT`
   (Docker default `/data/workspaces`): named agent folders (`coder`,
   `researcher`) and shared project folders; agents get file read/write/list
@@ -160,7 +163,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 79 tests / 11 suites** — model catalog, workspace service + tools,
+- **Unit: 80 tests / 11 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -175,7 +178,8 @@ cd e2e && node browser-e2e.mjs
   persistence, unknown connection 404 on create/turn, converse resolves the
   row's baseUrl/model/key/default-parameters, a deleted pinned connection
   self-heals to the default endpoint, attaching a connection to an existing
-  session via converse).
+  session via converse, and explicit catalog-model overrides through a
+  connection on both turns and sessions).
 - **API E2E: 56 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (13:
@@ -186,8 +190,9 @@ cd e2e && node browser-e2e.mjs
   unreachable/validation against entered values without persisting a row), agent
   sessions/turns/rename/auto-title + saved-connection pinning (12: pin
   persists on create/converse, attach via converse, stateless turn with the
-  connection, unknown connection 404 on create/turn/converse, malformed id
-  400), channel lifecycle + streaming jobs
+  connection, explicit catalog-model override via turn/converse, unknown
+  connection 404 on create/turn/converse, malformed id 400), channel
+  lifecycle + streaming jobs
   (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
   delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
@@ -218,8 +223,11 @@ cd e2e && node browser-e2e.mjs
   `model`, the fake upstream receives `/chat/completions` with the
   connection's model + stored bearer key, its reply renders in the thread,
   the sidebar badges the pinned session, and the server-side row records
-  `connectionId` — then the fixture + upstream are cleaned up, a files
-  journey that creates a
+  `connectionId`; the journey then picks a catalog model while the
+  connection stays active and proves the same upstream receives that override
+  model with the connection's key (wire POST carries both `connectionId` and
+  `model`, and the override is stored on the session server-side) — then the
+  fixture + upstream are cleaned up, a files journey that creates a
   nested file + dotfile through the `/files` UI, reads the content back,
   downloads the created file (asserts the attachment headers on the wire and
   saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
@@ -345,6 +353,26 @@ cd e2e && node browser-e2e.mjs
   clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
   (`e2e/report.json` + screenshots refreshed, including
   `agent-sessions-picker.png` / `agent-sessions-connection.png`).
+
+### Round 20 — catalog model overrides through saved connections
+- The agent chat model picker stays usable with a connection selected: its
+  default option is the connection's own model ("connection default"),
+  catalog models remain selectable, and a chosen catalog model is sent as an
+  explicit `model` override alongside `connectionId` — the backend uses that
+  model on the wire while still routing through the connection's
+  baseUrl/key/default parameters (per-call semantics).
+- Backend: `runTurn`/`converse` treat an explicit `model` as an override that
+  wins over the pinned connection's `modelName` (connection endpoint/key/
+  params unchanged); without an explicit model the connection's modelName is
+  the wire model, so Round 19 behavior is untouched.
+- Browser E2E: the sessions journey now also proves the override path —
+  pick a catalog model with the fixture connection active, assert the wire
+  converse POST carries `connectionId` + `model`, the hermetic upstream
+  receives the override model with the fixture's bearer key, and the
+  override model is persisted server-side (`E2E_CONN_OVERRIDE_MODEL`).
+- Unit 79 → 80, API E2E stays 56; backend `nest build` + `tsc --noEmit`
+  clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
+  (`e2e/report.json` + screenshots refreshed).
 
 ## Local development
 

@@ -161,6 +161,9 @@ export default function AgentPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  // Remember the catalog model chosen for the default gateway while a
+  // connection is active, so switching back restores it.
+  const lastGatewayModelRef = useRef<string>("");
 
   // workspace viewer state
   const [wsInfo, setWsInfo] = useState<WorkspaceInfo | null>(null);
@@ -263,6 +266,24 @@ export default function AgentPage() {
   }, []);
 
   const selectedConn = connections.find((c) => c.id === connectionId) ?? null;
+
+  // With a connection selected the model picker offers the connection's own
+  // model as the default (value "") plus catalog overrides. A catalog model
+  // is sent only when it differs from the connection's modelName, so the
+  // default path stays "model omitted, connection model wins".
+  const sendModel = !!model && (!selectedConn || model !== selectedConn.modelName);
+
+  const handleConnectionChange = (value: string) => {
+    if (value) {
+      lastGatewayModelRef.current = model;
+      setConnectionId(value);
+      // Defer to the connection's own model until the user picks an override.
+      setModel("");
+    } else {
+      setConnectionId("");
+      setModel(lastGatewayModelRef.current || "");
+    }
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -748,7 +769,7 @@ export default function AgentPage() {
         body: JSON.stringify({
           message: text,
           history,
-          ...(!selectedConn && model ? { model } : {}),
+          ...(sendModel ? { model } : {}),
           ...(selectedConn ? { connectionId: selectedConn.id } : {}),
         }),
       });
@@ -777,7 +798,7 @@ export default function AgentPage() {
     } finally {
       setBusy(false);
     }
-  }, [input, busy, model, messages, selectedConn]);
+  }, [input, busy, model, messages, selectedConn, sendModel]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -829,10 +850,12 @@ export default function AgentPage() {
       const res = await apiFetch(`/agent/sessions/${id}`);
       if (!res.ok) throw new Error(`Failed to load session (HTTP ${res.status})`);
       const data = (await res.json()) as AgentSessionDetail;
-      setModel((cur) => data.model || cur);
-      if (data.connectionId && connections.some((c) => c.id === data.connectionId)) {
-        setConnectionId(data.connectionId);
-      }
+      const pinned = !!data.connectionId && connections.some((c) => c.id === data.connectionId);
+      setConnectionId(pinned ? (data.connectionId as string) : "");
+      // A pinned session answers with its connection's model unless the user
+      // picks a catalog override again — per-chat overrides are not
+      // resurrected silently on reopen.
+      setModel((cur) => (pinned ? "" : data.model || cur));
       setSessionMsgs(
         data.messages
           .filter((m) => m.role !== "system")
@@ -857,7 +880,7 @@ export default function AgentPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(!selectedConn && model ? { model } : {}),
+          ...(sendModel ? { model } : {}),
           ...(selectedConn ? { connectionId: selectedConn.id } : {}),
         }),
       });
@@ -870,7 +893,7 @@ export default function AgentPage() {
     } finally {
       setCreatingSession(false);
     }
-  }, [creatingSession, model, loadSessions, openSession, selectedConn]);
+  }, [creatingSession, model, loadSessions, openSession, selectedConn, sendModel]);
 
   const deleteSession = useCallback(
     async (id: string) => {
@@ -935,7 +958,7 @@ export default function AgentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          ...(!selectedConn && model ? { model } : {}),
+          ...(sendModel ? { model } : {}),
           ...(selectedConn ? { connectionId: selectedConn.id } : {}),
         }),
       });
@@ -960,7 +983,7 @@ export default function AgentPage() {
     } finally {
       setSessionBusy(false);
     }
-  }, [sessionInput, sessionBusy, selSessionId, model, loadSessions, selectedConn]);
+  }, [sessionInput, sessionBusy, selSessionId, model, loadSessions, selectedConn, sendModel]);
 
   /* ----------------------- workspace viewer helpers ---------------------- */
 
@@ -1069,14 +1092,25 @@ export default function AgentPage() {
             className={styles.modelSelect}
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            disabled={models.length === 0 || view === "channels" || !!selectedConn}
+            disabled={view === "channels" || (models.length === 0 && !selectedConn)}
             title={
               selectedConn
-                ? `Model comes from the selected connection (${selectedConn.modelName})`
+                ? model
+                  ? `Using ${model} via ${selectedConn.displayName}`
+                  : `Using the connection's model (${selectedConn.modelName})`
                 : undefined
             }
           >
-            {models.length === 0 ? (
+            {selectedConn ? (
+              <>
+                <option value="">{selectedConn.modelName} (connection default)</option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </>
+            ) : models.length === 0 ? (
               <option value="">Loading models…</option>
             ) : (
               models.map((m) => (
@@ -1089,12 +1123,14 @@ export default function AgentPage() {
           <select
             className={styles.modelSelect}
             value={connectionId}
-            onChange={(e) => setConnectionId(e.target.value)}
+            onChange={(e) => handleConnectionChange(e.target.value)}
             disabled={view === "channels"}
             aria-label="Settings connection"
             title={
               selectedConn
-                ? `Chat uses ${selectedConn.modelName} at ${selectedConn.baseUrl}`
+                ? model
+                  ? `Chat uses ${model} at ${selectedConn.baseUrl}`
+                  : `Chat uses ${selectedConn.modelName} at ${selectedConn.baseUrl}`
                 : "Chat uses the default gateway + catalog model"
             }
           >

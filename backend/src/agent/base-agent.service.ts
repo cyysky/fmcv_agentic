@@ -360,16 +360,28 @@ export class BaseAgentService implements OnModuleInit {
     trace?: ToolTraceStep[];
   }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
+    // An explicit `model` is a catalog override: it wins over the pinned
+    // connection's stored modelName while still routing through the
+    // connection's baseUrl/key/default parameters. Without one, the
+    // connection's modelName is the wire model.
+    const modelOverride = opts.model !== undefined;
     // An explicit connection is required to exist (bad id => 404); sessions
     // that lost their connection can self-heal, but a fresh turn cannot.
     const endpoint = await this.resolveConnectionEndpoint(opts.connectionId, false);
+    const wireEndpoint =
+      endpoint && modelOverride ? { ...endpoint, model: spec.provider_model } : endpoint;
     const messages: ChatMessage[] = [
       { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
       ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
       { role: 'user', content: opts.message },
     ];
-    const { answer, steps, trace } = await this.runLoop(messages, spec, opts.maxSteps ?? 10, endpoint ?? undefined);
-    return { answer, model: endpoint?.model ?? spec.id, steps, trace };
+    const { answer, steps, trace } = await this.runLoop(
+      messages,
+      spec,
+      opts.maxSteps ?? 10,
+      wireEndpoint ?? undefined,
+    );
+    return { answer, model: wireEndpoint?.model ?? spec.id, steps, trace };
   }
 
   /**
@@ -396,7 +408,13 @@ export class BaseAgentService implements OnModuleInit {
       );
       delete session.connectionId;
     }
+    const explicitModel = model !== undefined;
     const spec = resolveModel(model ?? session.model);
+    // A catalog model chosen alongside the connection overrides the stored
+    // modelName on the wire for this turn (per-call choice; without one the
+    // connection's modelName is used).
+    const wireEndpoint =
+      endpoint && explicitModel ? { ...endpoint, model: spec.provider_model } : endpoint;
     session.model = spec.id;
     const userMsgCount = session.messages.filter((m) => m.role === 'user').length;
     session.messages.push({ role: 'user', content: message });
@@ -411,7 +429,7 @@ export class BaseAgentService implements OnModuleInit {
       session.messages,
       spec,
       maxRunSteps,
-      endpoint ?? undefined,
+      wireEndpoint ?? undefined,
     );
     session.messages = messages;
     this.safePersistSession(session);

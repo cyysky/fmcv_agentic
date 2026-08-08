@@ -250,6 +250,13 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       const rowAfter = await waitForRow(pinned.body.id);
       expect(rowAfter?.connectionId).toBe(connId);
 
+      // An explicit catalog model on a pinned session is accepted (the
+      // catalog model overrides the connection's stored model for the turn).
+      await http()
+        .post(`/api/agent/sessions/${pinned.body.id}/converse`)
+        .send({ message: 'qwen override', connectionId: connId, model: 'qwen3.6-35b', maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+
       // Attach a connection to an existing session via converse.
       const plain = await http().post('/api/agent/sessions').send({}).expect(201);
       sessionIds.push(plain.body.id);
@@ -266,6 +273,15 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
         .send({ message: 'ping via connection', connectionId: connId })
         .expect(201);
       expect(turn.body.answer).toMatch(/^\[stub\] /);
+
+      // An explicit catalog model overrides the connection's stored model
+      // on the wire for a stateless turn (baseUrl/key still from the row).
+      const overrideTurn = await http()
+        .post('/api/agent/turn')
+        .send({ message: 'ping qwen', connectionId: connId, model: 'qwen3.6-35b' })
+        .expect(201);
+      expect(overrideTurn.body.answer).toMatch(/^\[stub\] /);
+      expect(overrideTurn.body.model).toBe('qwen3.6-35b');
 
       // Unknown connection ids are 404s everywhere.
       const missing = '00000000-0000-4000-8000-000000000000';
