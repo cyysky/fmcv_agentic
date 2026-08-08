@@ -1,65 +1,42 @@
-# ROUND 74 — 2026-08-08 (autonomous iteration round 74)
+# ROUND 75 — 2026-08-08 (autonomous iteration round 75)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 73's two focus items: run-history jump-to-newest and
-per-group event-window clarity.
+round executed Round 74's top focus item: load-all for run histories.
 
 ## What changed this round
 
-- **Jump-to-newest pager** — when a cron run history is paged past page 0,
-  the pager now shows a one-click **Jump to newest** that returns to page 0
-  (Newer still pages back one step at a time). Browser proof pages to the
-  last 3-row page, jumps, and asserts page 0 / 20 rows / Older available.
-- **Per-group event-window clarity** — `GET /api/cron/overview` now returns
-  `eventStats` (per-lease-group transition totals from a `groupBy _count`),
-  the filter chips show `All (N)` / `{group} (N)` with `data-event-total`,
-  and the Transitions line labels its window as `newest N of M transitions`
-  (with ` for {group}` when filtered) — so "none recorded yet" for a group
-  whose newest event fell out of the newest-10 window is self-explanatory.
-- **Fixed run-history pager race** — the 5 s expanded-history auto-refresh
-  could overwrite a just-clicked Older/Newer/Jump navigation with a stale
-  re-fetch of the old page, leaving the list stuck on the wrong page; the
-  refresh now skips applying a response when the open list moved to another
-  page while the fetch was in flight.
-- **Fixed overview filter race** — an in-flight scheduler/overview poll
-  started before a filter click (or before a seeded event appeared in the
-  next poll) could arrive after the fresher response and clobber it (chips
-  flickered back to All, or the newest-N-of-M label read "newest 6 of 1");
-  responses now apply only if they are still the newest requested (per-
-  effect sequence guard), on top of the existing cross-instance cancel.
-- **Browser E2E fixes** — the new window label predicate embedded the e2e
-  group as a bare identifier (`label.includes(" for " + e2e-…)`), which
-  threw ReferenceError on every poll and was swallowed by `waitFor` as a
-  15 s timeout despite a correct DOM; the group is now embedded as a JSON
-  string literal. The group-chip click waits for the specific chip to exist
-  before clicking. The pre-run stale sweep now also prunes synthetic
-  `cron_scheduler_events` (`browser-e2e-event-%`) left by interrupted runs
-  and filters psql command tags out of its report — proven by planting a
-  leftover event before the final run and watching the sweep delete it.
-- **Serial API E2E** — `backend/test/jest-e2e.json` sets `maxWorkers: 1`
-  and `backend/README.md` explains why (shared Postgres + boot-time
-  interrupted-run sweep make parallel suites clobber each other).
-- **Docs** — README cron prose and the overview API row now describe
-  Jump to newest, chip totals, and the newest-N-of-M window label; the
-  browser-journey paragraph covers both new checks (API e2e count 115→118).
+- **Load-all run history view** — every open history list now offers a
+  **Load all runs** button (next to Older whenever more pages exist) that
+  replaces the pager with the whole history in one scroll: it loops 20-row
+  pages up to a 200-run safety cap (10 pages; the backend clamps `limit` to
+  100, so no API contract change), and the pager swaps to a **Paged view**
+  button plus an "All N runs" / "First N runs" label (the latter only when
+  the cap actually cut a pathological history short).
+- **View-aware refresh guard** — the 5 s expanded-history auto-refresh now
+  also tracks whether the open list is in the paged or load-all view, so an
+  in-flight refresh cannot clobber a just-clicked Load all runs / Paged view
+  switch (extended the Round 74 page-move guard instead of replacing it).
+- **Browser E2E proof** — the cron journey now clicks Load all runs after
+  Jump to newest and asserts the all view renders all 23 seeded runs with an
+  "All 23 runs" label and a Paged view button, then clicks Paged view and
+  asserts page 0 / 20 rows / Older + Load all runs return. Result flag
+  `runHistoryLoadAll` + step `history-load-all` + screenshot
+  `cron-history-load-all.png`.
+- **Docs** — README cron prose and the browser-journey paragraph now
+  describe Load all runs / Paged view and the 200-run cap.
 
 ## Test status
 
 - Backend unit: **166 passed / 14 suites**; `tsc --noEmit` + `eslint .` clean.
-- Backend API E2E: **118 passed / 11 suites** (run earlier this round with
-  the live backend stopped and restarted after; known Jest keep-alive
-  warning unchanged, exit code 0).
-- Frontend `npx tsc --noEmit` + `npx eslint app/cron` + `next build`
-  (Docker image rebuild) clean.
+- Backend API E2E: **118 passed / 11 suites** (known Jest keep-alive warning
+  unchanged, exit code 0).
+- Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; Docker image
+  rebuilt with `next build` clean (frontend container recreated).
 - Docs drift guard OK — routes 69 / docs rows 68.
-- Browser E2E: **all checks passed** — cron flow proves
-  `historyPaged`, `historyJumpToNewest`, `eventWindowClarity` (chip total 1,
-  window `1:1`, label "newest 1 of 1 for <group>"), `overviewFiltered`,
-  and the All-view label stays coherent ("newest N of M" matching the All
-  chip); zero console/network/HTTP errors; report + screenshots refreshed
-  (`cron-history-jump-to-newest.png`, `cron-overview-event-filter.png`).
-- Baseline afterwards: 0 cron jobs / 0 cron_runs / 0 synthetic events
-  (final run also confirmed the sweep removes a planted leftover event);
+- Browser E2E: **all checks passed** — cron flow now also proves
+  `runHistoryLoadAll` (23-row load-all view -> Paged view back to page 0);
+  zero console/network/HTTP errors; report + screenshots refreshed.
+- Baseline afterwards: 0 cron jobs / 0 cron_runs / 0 synthetic events;
   5 authentic `default`-group `acquired` events remain as demo failover
   history.
 
@@ -69,8 +46,9 @@ per-group event-window clarity.
   after the multi-replica suite closes; suites pass with exit code 0.
 - Startup acquisition in `onModuleInit` is deliberately not recorded as an
   event — only transitions observed inside `tick()` write audit rows.
-- Run history still pages 20 at a time; Jump to newest removes the
-  "click Newer many times" pain, but there is no load-all/infinite scroll.
+- Load-all is deliberately capped at 200 runs; a history deeper than that
+  shows "First 200 runs" (bounded UI memory) — an infinite scroll could
+  remove the cap at the cost of unbounded fetches.
 - Transitions still shows only the newest 10 events; per-group totals and
   the newest-N-of-M label clarify the window, but a group whose newest event
   is older than the 10th newest still reads "none recorded yet" when
@@ -78,19 +56,18 @@ per-group event-window clarity.
 
 ## Next round focus
 
-- **Load-all / infinite scroll for run histories** — replace repeated
-  paging with a "Load all runs" or infinite-scroll option while keeping the
-  current page-aware polling and Jump to newest.
 - **Per-group transition history depth** — let a selected group show more
   than the newest 10 of its events (e.g. last-N-per-group or a window
   selector), removing the last empty-filter surprise entirely.
+- **Depth-aware overview endpoint** — extend `GET /api/cron/overview` (or
+  add `?limit=`/`?group=`) so the UI can fetch a deeper transition window
+  without unbounded payloads, and assert it in API + browser tests.
 - Any DIRECTION.md instruction.
 
 ## Loop state
 
-Loop state: running — Round 74 delivered jump-to-newest, per-group
-eventStats + chip totals + newest-N-of-M window labels, and fixed two real
-poll/navigation races (run-history page clobber, overview stale-response
-overwrite) plus the new E2E predicate bug; backend 166 unit / 118 API e2e,
-frontend build/lint, docs guard, and the full browser journey all green.
-No exit condition fires; proceed to Round 75.
+Loop state: running — Round 75 delivered the load-all run-history view
+with a view-aware refresh guard plus its browser proof; all gates green
+(backend 166 unit / 118 API e2e, frontend build/lint, docs guard, full
+browser journey) and the baseline ended clean. No exit condition fires;
+proceed to Round 76.

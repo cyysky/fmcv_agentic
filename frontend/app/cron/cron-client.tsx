@@ -92,11 +92,16 @@ interface CronRunRow {
   createdAt: string;
 }
 
-/** One loaded page of run history (Round 72). */
+/** One loaded page of run history (Round 72). Round 75 adds the load-all
+ *  view, which replaces the pager with the full history. */
 interface CronRunPage {
   runs: CronRunRow[];
   page: number;
   hasMore: boolean;
+  /** true when this batch is the whole-history load-all view (Round 75). */
+  all?: boolean;
+  /** true when every run was loaded; false when the safety cap cut it short. */
+  allComplete?: boolean;
 }
 
 const EMPTY_DRAFT: CronDraft = {
@@ -112,6 +117,10 @@ const SCHEDULE_RE = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/;
 /** History page size (Round 72): the list pages through the API's Round 68
  *  limit/offset pagination with this many rows per page. */
 const RUNS_PAGE_SIZE = 20;
+/** Load-all page cap (Round 75): "Load all runs" fetches at most this many
+ *  20-row pages so a pathologically deep history stays bounded; when the cap
+ *  is hit the label says "First N runs" instead of "All N runs". */
+const RUNS_ALL_PAGE_CAP = 10;
 
 /* ------------------------------- helpers -------------------------------- */
 
@@ -256,6 +265,33 @@ export default function CronPanel() {
     [],
   );
 
+  // Load-all view (Round 75): fetch every page until a short page or the
+  // safety cap, so a deep history can be scanned in one scroll instead of
+  // clicking Newer back page by page. Page size stays inside the backend's
+  // limit clamp, so no API contract change is needed.
+  const fetchAllRuns = useCallback(
+    async (id: string): Promise<CronRunPage> => {
+      const collected: CronRunRow[] = [];
+      for (let page = 0; page < RUNS_ALL_PAGE_CAP; page++) {
+        const res = await apiFetch(
+          `/cron/${id}/runs?limit=${RUNS_PAGE_SIZE}&offset=${page * RUNS_PAGE_SIZE}`,
+        );
+        if (!res.ok) throw new Error(await apiError(res));
+        const rows = (await res.json()) as CronRunRow[];
+        collected.push(...rows);
+        if (rows.length < RUNS_PAGE_SIZE) break;
+      }
+      return {
+        runs: collected,
+        page: 0,
+        hasMore: false,
+        all: true,
+        allComplete: collected.length < RUNS_PAGE_SIZE * RUNS_ALL_PAGE_CAP,
+      };
+    },
+    [],
+  );
+
   // Auto-refresh expanded run histories (Round 70, page-aware in Round 72):
   // while a history list is open, re-fetch its current page every 5 s and
   // also refresh right after a manual run returns, so a freshly completed
@@ -267,17 +303,17 @@ export default function CronPanel() {
   const refreshExpandedRuns = useCallback(async () => {
     const expanded = Object.entries(runsByJobRef.current)
       .filter(([, page]) => page !== null)
-      .map(([id, page]) => [id, page!.page] as const);
+      .map(([id, page]) => [id, page!.page, page!.all === true] as const);
     await Promise.all(
-      expanded.map(async ([id, page]) => {
+      expanded.map(async ([id, page, all]) => {
         try {
-          const next = await fetchRunPage(id, page);
+          const next = all ? await fetchAllRuns(id) : await fetchRunPage(id, page);
           setRunsByJob((m) => {
             if (m[id] === null) return m;
             // A stale poll must not clobber a page the user just navigated
-            // to via Older/Newer/Jump to newest (Round 74); skip when the
-            // open list moved to a different page while the fetch flew.
-            if (m[id].page !== page) return m;
+            // to via Older/Newer/Jump to newest/load-all (Rounds 74-75);
+            // skip when the open list moved or changed view while fetching.
+            if (m[id].page !== page || (m[id].all === true) !== all) return m;
             return { ...m, [id]: next };
           });
         } catch {
@@ -286,7 +322,7 @@ export default function CronPanel() {
         }
       }),
     );
-  }, [fetchRunPage]);
+  }, [fetchRunPage, fetchAllRuns]);
   useEffect(() => {
     const timer = setInterval(() => void refreshExpandedRuns(), 5000);
     return () => clearInterval(timer);
@@ -460,6 +496,21 @@ export default function CronPanel() {
     setNotice(null);
     try {
       const next = await fetchRunPage(job.id, page);
+      setRunsByJob((m) => (m[job.id] === null ? m : { ...m, [job.id]: next }));
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setRunsLoading(null);
+    }
+  };
+
+  /** Switch an open history list to the load-all view (Round 75). */
+  const loadAllRuns = async (job: CronJobRow) => {
+    setRunsLoading(job.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const next = await fetchAllRuns(job.id);
       setRunsByJob((m) => (m[job.id] === null ? m : { ...m, [job.id]: next }));
     } catch (e) {
       setError(errText(e));
@@ -886,40 +937,66 @@ export default function CronPanel() {
                         </div>
                       ))
                     )}
-                    {(runPage.page > 0 || runPage.hasMore) && (
-                      <div className={styles.runPager}>
-                        {runPage.page > 0 && (
-                          <>
-                            <button
-                              className={styles.btnGhost}
-                              data-jump-newest="1"
-                              disabled={runsLoading === job.id}
-                              onClick={() => goRunPage(job, 0)}
-                            >
-                              Jump to newest
-                            </button>
-                            <button
-                              className={styles.btnGhost}
-                              disabled={runsLoading === job.id}
-                              onClick={() => goRunPage(job, runPage.page - 1)}
-                            >
-                              Newer
-                            </button>
-                          </>
-                        )}
+                    {runPage.all ? (
+                      <div className={styles.runPager} data-runs-all="1">
+                        <button
+                          className={styles.btnGhost}
+                          data-paged-view="1"
+                          disabled={runsLoading === job.id}
+                          onClick={() => goRunPage(job, 0)}
+                        >
+                          Paged view
+                        </button>
                         <span className={styles.runMeta}>
-                          Page {runPage.page + 1}
+                          {runPage.allComplete ? "All" : "First"} {runPage.runs.length} runs
                         </span>
-                        {runPage.hasMore && (
-                          <button
-                            className={styles.btnGhost}
-                            disabled={runsLoading === job.id}
-                            onClick={() => goRunPage(job, runPage.page + 1)}
-                          >
-                            Older
-                          </button>
-                        )}
                       </div>
+                    ) : (
+                      (runPage.page > 0 || runPage.hasMore) && (
+                        <div className={styles.runPager}>
+                          {runPage.page > 0 && (
+                            <>
+                              <button
+                                className={styles.btnGhost}
+                                data-jump-newest="1"
+                                disabled={runsLoading === job.id}
+                                onClick={() => goRunPage(job, 0)}
+                              >
+                                Jump to newest
+                              </button>
+                              <button
+                                className={styles.btnGhost}
+                                disabled={runsLoading === job.id}
+                                onClick={() => goRunPage(job, runPage.page - 1)}
+                              >
+                                Newer
+                              </button>
+                            </>
+                          )}
+                          <span className={styles.runMeta}>
+                            Page {runPage.page + 1}
+                          </span>
+                          {runPage.hasMore && (
+                            <button
+                              className={styles.btnGhost}
+                              data-load-all="1"
+                              disabled={runsLoading === job.id}
+                              onClick={() => loadAllRuns(job)}
+                            >
+                              Load all runs
+                            </button>
+                          )}
+                          {runPage.hasMore && (
+                            <button
+                              className={styles.btnGhost}
+                              disabled={runsLoading === job.id}
+                              onClick={() => goRunPage(job, runPage.page + 1)}
+                            >
+                              Older
+                            </button>
+                          )}
+                        </div>
+                      )
                     )}
                   </div>
                 )}

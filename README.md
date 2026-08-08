@@ -106,7 +106,10 @@ and coordinate multi-agent teams in Slack-style channels.
   run returns; histories deeper than 20 runs page through the API's
   limit/offset pagination with Newer/Older buttons keeping the current page,
   plus a one-click **Jump to newest** that returns to page 0 from any
-  deeper page).
+  deeper page and a **Load all runs** button that replaces the pager with
+  the whole history in one view (up to a 200-run safety cap; the label
+  reads "All N runs" or "First N runs" when the cap cut it short, and a
+  **Paged view** button switches back).
   The page also shows a cluster overview panel with every
   scheduler lease group, the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
@@ -460,7 +463,9 @@ node scripts/verify-rest-docs.mjs
   to prove histories deeper than one page work: reopen History, assert 20
   rows on page 1 with an Older button, page to the final 3-row page and back
   with Newer, return to the last page and jump to newest in one click
-  (page 0, 20 rows, Older still available), asserts the cluster overview
+  (page 0, 20 rows, Older still available), click **Load all runs** and
+  assert all 23 rows render in one history view with an "All 23 runs"
+  label, then switch back with **Paged view** (page 0, 20 rows), asserts the cluster overview
   panel shows an
   active lease group plus the job's run in the throughput stats, seeds a
   synthetic second-group transition event and proves the Transitions

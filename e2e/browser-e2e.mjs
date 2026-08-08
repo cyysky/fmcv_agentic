@@ -3144,6 +3144,74 @@ async function cronFlow() {
     flow.steps.push("history-jump-to-newest");
     await screenshot(c, "cron-history-jump-to-newest.png");
 
+    // 2dii. Load all runs (Round 75): from page 0 the pager offers a
+    //       one-click "Load all runs" that replaces the paged view with the
+    //       whole 23-run history in one scroll; assert the label, then
+    //       return to the paged view.
+    const loadAllClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"] [data-load-all]`)});
+        if (!b) return null;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!loadAllClicked) throw new Error("cron flow: Load all runs button missing");
+    const allRunsBox = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const text = box.innerText;
+        return box.querySelector('[data-runs-all]') !== null &&
+          rows === 23 &&
+          text.includes("All 23 runs") &&
+          box.querySelector('[data-paged-view]') !== null
+          ? { rows, all: true }
+          : null;
+      })()`,
+      15000,
+      500,
+      "load all runs",
+    );
+    if (!allRunsBox) throw new Error("cron flow: load-all view did not render all 23 runs");
+    const pagedViewClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"] [data-paged-view]`)});
+        if (!b) return null;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!pagedViewClicked) throw new Error("cron flow: Paged view button missing in load-all view");
+    const pagedBack = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return rows === 20 && page === "0" && hasMore === "1" &&
+          box.querySelector('[data-load-all]') !== null &&
+          box.innerText.includes("Page 1")
+          ? "paged"
+          : null;
+      })()`,
+      15000,
+      500,
+      "paged view after load all",
+    );
+    if (pagedBack !== "paged") {
+      throw new Error("cron flow: Paged view did not restore page 0");
+    }
+    flow.runHistoryLoadAll = true;
+    flow.steps.push("history-load-all");
+    await screenshot(c, "cron-history-load-all.png");
+
     const hideAgainClicked = await evalJs(c, rowBtnExpr(jobName, "Hide history"));
     if (!hideAgainClicked) throw new Error("cron flow: Hide history button missing after paging");
     const runsHiddenAgain = await waitFor(
@@ -3508,6 +3576,7 @@ async function cronFlow() {
       historyShown: true,
       historyPaged: true,
       historyJumpToNewest: true,
+      runHistoryLoadAll: true,
       overviewFiltered: true,
       editedViaUi: true,
       paused: true,
