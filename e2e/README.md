@@ -33,7 +33,7 @@ Environment overrides:
 | `CHROME_DEBUG_PORT` | `9222`                        | CDP port                            |
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
 | `E2E_API_ONLY`      | unset                          | run the cron flow against an API-only backend (`CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend`): asserts the "Scheduler disabled — API-only" chip, the "no lease · no background firing" meta, and the overview gauge's "disabled" lease chip |
-| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation |
+| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
 | `E2E_SHOT_DIR`      | `e2e/screenshots/<mode>`      | screenshot output dir (`enabled` or `api-only` subdir; an explicit value is used verbatim) |
 | `E2E_REPORT`        | `e2e/report.json` (+`report-<mode>.json`) | JSON report path; the mode archive `report-<mode>.json` is always written too (an explicit `E2E_REPORT` value is used verbatim as the latest mirror) |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |

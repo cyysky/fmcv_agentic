@@ -105,7 +105,21 @@ const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
 // "all"). Names: routes, nav, agent, mobile, sessions, files, html, buckets,
 // cron, skills, settings. Skipped flows are reported as null and their
 // validation blocks are skipped too, so a quick regression run stays green.
-const JOURNEY_SELECT = (process.env.E2E_JOURNEYS || "all").toLowerCase().split(",").map((x) => x.trim()).filter(Boolean);
+// Round 92: shorthand presets expand to explicit flow lists, so quick runs
+// stay one word: cron-only (routes+cron), ui-only (routes+nav+mobile+html+
+// settings+skills), core (routes+agent+cron). A preset can mix with plain
+// flow names ("core,skills").
+const JOURNEY_PRESETS = {
+  "cron-only": ["routes", "cron"],
+  "ui-only": ["routes", "nav", "mobile", "html", "settings", "skills"],
+  "core": ["routes", "agent", "cron"],
+};
+const JOURNEY_SELECT = (process.env.E2E_JOURNEYS || "all")
+  .toLowerCase()
+  .split(",")
+  .map((x) => x.trim())
+  .filter(Boolean)
+  .flatMap((x) => JOURNEY_PRESETS[x] || [x]);
 const want = (name) => JOURNEY_SELECT.includes("all") || JOURNEY_SELECT.includes(name);
 // Mode-suffixed artifacts (Round 85): each run also writes
 // report-<mode>.json + screenshots/<mode>/ so enabled and API-only evidence
