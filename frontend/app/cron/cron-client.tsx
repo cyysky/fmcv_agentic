@@ -9,6 +9,7 @@ import { apiFetch, apiError, errText } from "../../lib/api";
 interface CronJobRow {
   id: string;
   name: string;
+  schedulerGroup: string;
   schedule: string;
   taskType: string;
   prompt: string;
@@ -194,6 +195,9 @@ export default function CronPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Round 83: preview the job list to one lease group (null = all groups);
+  // the overview's "Jobs by group" row is the source of truth for options.
+  const [jobGroupFilter, setJobGroupFilter] = useState<string | null>(null);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [schedulerError, setSchedulerError] = useState(false);
   const [overview, setOverview] = useState<CronOverview | null>(null);
@@ -241,7 +245,9 @@ export default function CronPanel() {
     (async () => {
       setError(null);
       try {
-        const res = await apiFetch("/cron");
+        const res = await apiFetch(
+          jobGroupFilter ? `/cron?group=${encodeURIComponent(jobGroupFilter)}` : "/cron",
+        );
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as CronJobRow[];
         if (cancelled) return;
@@ -257,7 +263,7 @@ export default function CronPanel() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, jobGroupFilter]);
 
   // Scheduler/lease status (Round 66) + cluster overview (Round 69):
   // refresh every 5 s so lease failover and run throughput stay current
@@ -992,6 +998,26 @@ export default function CronPanel() {
       )}
 
       <div className={styles.toolbar}>
+        <label
+          className={styles.fieldLabel}
+          style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}
+        >
+          Group:
+          <select
+            className={styles.select}
+            aria-label="Cron job group filter"
+            data-testid="job-group-filter"
+            value={jobGroupFilter ?? ""}
+            onChange={(e) => setJobGroupFilter(e.target.value || null)}
+          >
+            <option value="">All groups</option>
+            {(overview?.jobGroups ?? []).map((owned) => (
+              <option key={owned.group} value={owned.group}>
+                {owned.group} · {owned.jobs} job{owned.jobs === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           className={styles.btnPrimary}
           onClick={() => {
@@ -1133,6 +1159,14 @@ export default function CronPanel() {
                       : STATUS_LABEL[job.lastRunStatus ?? "idle"] ?? "Idle"}
                   </span>
                   <code className={styles.scheduleTag}>{job.schedule}</code>
+                  <span
+                    className={`${styles.schedulerChip} ${styles.jobOwnershipChip}`}
+                    data-testid="job-group-badge"
+                    data-job-group={job.schedulerGroup}
+                    title={`Owned by lease group ${job.schedulerGroup}`}
+                  >
+                    {job.schedulerGroup}
+                  </span>
                 </div>
                 <div className={styles.rowMeta}>
                   Last run {formatTime(job.lastRunAt)} ·{" "}

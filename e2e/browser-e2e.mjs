@@ -3343,6 +3343,92 @@ async function cronFlow() {
     flow.steps.push("overview");
     await screenshot(c, "cron-overview.png");
 
+    // 2e2. Job-row group badge + per-group list filter (Round 83): every
+    //      row shows its schedulerGroup and the toolbar filter narrows
+    //      /api/cron to one lease group. Seed one foreign-group job straight
+    //      into Postgres so the filter has a second real option to select;
+    //      the seeded row is deleted in cronCleanup.
+    const groupBadge = await waitFor(
+      c,
+      `(() => {
+        const row = document.querySelector(${JSON.stringify(`[data-name="${jobName}"]`)});
+        const badge = row?.querySelector('[data-testid="job-group-badge"]');
+        return badge && badge.textContent.trim() === "default" ? "ok" : null;
+      })()`,
+      10000,
+      500,
+      "job group badge",
+    );
+    if (groupBadge !== "ok") throw new Error("cron flow: job group badge missing or not default");
+    const foreignName = `browser-e2e-cron-foreign-${Date.now().toString(36)}`;
+    const foreignGroup = `e2e-list-${Date.now().toString(36)}`;
+    const groupStamp = Date.now().toString(36);
+    execFileSync(
+      "docker",
+      ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c",
+        `INSERT INTO cron_jobs (id, name, schedule, prompt, "taskType", enabled, "schedulerGroup", "nextRunAt", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid(), '${foreignName}', '0 0 1 1 *', 'foreign lease group list filter', 'agent_turn', true,
+                 '${foreignGroup}', now() + interval '1 year', now(), now());`],
+      { encoding: "utf8", timeout: 15000 },
+    );
+    flow.foreignJobGroup = foreignGroup;
+    flow.foreignJobName = foreignName;
+    const groupFilterSeen = await waitFor(
+      c,
+      `(() => {
+        const sel = document.querySelector('[data-testid="job-group-filter"]');
+        if (!sel || sel.tagName !== "SELECT") return null;
+        const options = [...sel.options].map((o) => o.value);
+        return options.includes(${JSON.stringify(foreignGroup)}) ? "ok" : null;
+      })()`,
+      10000,
+      500,
+      "job group filter",
+    );
+    if (groupFilterSeen !== "ok") throw new Error("cron flow: job group filter missing foreign option");
+    const applied = await evalJs(c, `(() => {
+      const sel = document.querySelector('[data-testid="job-group-filter"]');
+      if (!sel) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, ${JSON.stringify(foreignGroup)});
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    if (!applied) throw new Error("cron flow: could not apply foreign group filter");
+    const filteredHidden = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-name="${jobName}"]`)})`,
+      10000,
+      500,
+      "job hidden under foreign group filter",
+    );
+    if (!filteredHidden) throw new Error("cron flow: foreign group filter did not hide the job");
+    const foreignShown = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${foreignName}"]`)})`,
+      10000,
+      500,
+      "foreign job shown under its group filter",
+    );
+    if (!foreignShown) throw new Error("cron flow: foreign group job did not appear under filter");
+    const resetFilter = await evalJs(c, `(() => {
+      const sel = document.querySelector('[data-testid="job-group-filter"]');
+      if (!sel) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, "");
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    if (!resetFilter) throw new Error("cron flow: could not reset group filter");
+    const restored = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${jobName}"]`)})`,
+      10000,
+      500,
+      "job restored after resetting group filter",
+    );
+    if (!restored) throw new Error("cron flow: job did not return after resetting group filter");
+    flow.groupFilterProven = true;
+    flow.steps.push("job-group-filter");
+
     // 2f. Per-group transition filter (Round 73): seed 13 synthetic events
     //     (Round 76) for a second lease group so the Transitions line gains a
     //     filter control and the depth selector can be proven against a
@@ -3854,6 +3940,30 @@ async function cronCleanup(flow) {
     if (!deleted) throw new Error("delete refused while running after retries");
     const check = await fetch(`${API}/cron/${flow.jobId}`);
     detail = check.status === 404 ? "clean" : `leftover (HTTP ${check.status})`;
+    // Round 83: remove the foreign-group cron job seeded for the list filter
+    // and prove it is gone (the main job was already deleted via the API, but
+    // this fixture lives outside the API create flow).
+    if (flow.foreignJobName) {
+      try {
+        execFileSync(
+          "docker",
+          ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c",
+            `DELETE FROM cron_jobs WHERE name = '${flow.foreignJobName}'`],
+          { encoding: "utf8", timeout: 15000 },
+        );
+        const left = execFileSync(
+          "docker",
+          ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+            `SELECT count(*) FROM cron_jobs WHERE name = '${flow.foreignJobName}'`],
+          { encoding: "utf8", timeout: 15000 },
+        ).trim();
+        if (left !== "0" && detail === "clean") {
+          detail = `error: foreign job remaining after cleanup (${left})`;
+        }
+      } catch (err) {
+        if (detail === "clean") detail = `error: foreign job cleanup: ${err.message}`;
+      }
+    }
     // Round 73: remove the synthetic second-group transition events (Round 76
     // seeds 13 rows whose ids share the fixture prefix) and prove none remain.
     if (flow.syntheticEventId) {

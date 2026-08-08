@@ -112,7 +112,7 @@ and coordinate multi-agent teams in Slack-style channels.
   **Paged view** button switches back).
   The page also shows a cluster overview panel with every
   scheduler lease group, per-group job ownership (jobs/enabled/running/due
-  chips under "Jobs by group"), the recent lease transition history
+  chips under "Jobs by group"), each job row also carries a small lease-group badge and the toolbar's Group filter narrows the job list to one scheduler group via `/api/cron?group=`, the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
   auditable after the fact), and aggregate run throughput; when more than
   one lease group has transition history, the Transitions line gains
@@ -246,7 +246,7 @@ while CRUD and `Run now` still work):
 | Method | Path                 | Purpose                                                   |
 |--------|----------------------|-----------------------------------------------------------|
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`); the job is stamped with the creating backend's `CRON_LEASE_GROUP` as its owner |
-| GET    | `/api/cron`          | list jobs (with last/next run info)                       |
+| GET    | `/api/cron`          | list jobs (with last/next run info; optional `?group=` filters by `schedulerGroup`) |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
 | GET    | `/api/cron/overview` | cluster-wide observability: every lease group + per-group job ownership counts (`jobGroups`: jobs/enabled/running/due per `schedulerGroup`) + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
 | GET    | `/api/cron/overview/events` | paginated lease transition events for the load-all history view: same 1–100 `limit` clamp as `/overview` (default 10) plus `offset`, optional `group=` scopes the page to one lease group, and the payload reports the scoped `total` so the UI can page through every event or say "first N of M" when a safety cap cuts the pass short |
@@ -491,7 +491,7 @@ node scripts/verify-rest-docs.mjs
   proves the row disappears (cleanup now runs through the new DELETE API),
   a cron journey that creates a job through the `/cron` UI
   (fixture name, yearly schedule so the scheduler never fires mid-flow),
-  verifies the row + success banner + `Next run:` line, clicks **Run now**
+  verifies the row + success banner + `Next run:` line, asserts the row's lease-group badge reads `default` and uses the toolbar Group filter to narrow the list to a foreign lease group (seeded server-side) and back to All groups, clicks **Run now**
   and waits for the status pill to reach `Done`/`Failed` (whichever the live
   LLM produces; the compose gateway is configured from the local provider
   key), expands the job's **History** list and asserts the terminal run row
