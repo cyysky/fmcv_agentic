@@ -1,36 +1,35 @@
-# Round 87 — API-E2E helper + verify flags (2026-08-09)
+# Round 88 — E2E journey selection for fast regression runs (2026-08-09)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 86's focus items ("browse for friction" + "verify-command
-extension"): the recurring API E2E mode-flip dance is now one command, and the
-fast verify can cover builds.
+round executed Round 87's first focus item (E2E speed pass): the full browser
+journey can now be narrowed to the flows a change actually touches.
 
 ## What changed this round
 
-- **`scripts/api-e2e.mjs` — one-command API E2E with safe mode flip** —
-  disables the backend scheduler (`CRON_SCHEDULER_ENABLED=false` +
-  recreate), waits until `/api/cron/scheduler` reports `enabled:false`, runs
-  `cd backend && npm run test:e2e`, restores the backend to enabled mode and
-  waits for `enabled:true`. The restore runs even when the suite or a flip
-  fails; exit 0 only when the whole pipeline is green. This removes the
-  hand-remembered 3-step flip/run/restore dance from every round.
-- **`verify.mjs` flags** — `--build` adds `nest build` + `next build`;
-  `--api-e2e` adds the API E2E step (via the helper above), so a round that
-  touches frontend or backend can self-check in one command.
-- **Docs** — README Testing gains the api-e2e helper (shell block + bullet)
-  and the verify flags; both proved live before commit.
+- **`E2E_JOURNEYS` flow selection in the browser E2E** — a comma-separated
+  env var (`routes`, `nav`, `agent`, `mobile`, `sessions`, `files`, `html`,
+  `buckets`, `cron`, `skills`, `settings`; default `all`) gates both the
+  execution and the validation of every flow. Skipped flows stay `null` in
+  the report instead of failing the gate, and a `journeys` field records what
+  ran. Proven live with `E2E_JOURNEYS=routes,cron` (green, ~45 s, only
+  routes + cron in the report) and with the full default run (all flows
+  green, ~110 s).
+- **Docs** — `e2e/README.md` gains the `E2E_JOURNEYS` env row;
+  `README.md`'s Testing shell block shows the quick-run invocation.
+- Quick runs still exercise the Round 83 badge + group-filter flow and the
+  mode chip; screenshots/report remain mode-suffixed.
 
 ## Test status
 
-- `node scripts/api-e2e.mjs` — **green**: flip to API-only, API E2E
-  123 passed / 12 suites, restore to enabled mode, exit 0.
-- `node scripts/verify.mjs --build` — **green end to end**: both guards,
-  backend unit **182 / 14**, backend lint + types, frontend lint + types,
-  `nest build` + `next build` all pass.
-- REST docs guard OK — routes 70 / rows 69; test-count guard OK — unit 14 /
-  API E2E 12 suites.
-- Browser E2E: unchanged this round (no runtime code touched); both modes
-  archived green in Round 85.
+- Browser E2E (enabled mode): **full default run green** — all routes +
+  all 10 journeys, zero console/network/HTTP errors; `report-enabled.json`
+  updated (chip `enabled`, `groupFilterProven: true`, journeys `["all"]`).
+- Browser E2E quick subset (`E2E_JOURNEYS=routes,cron`): **green** —
+  report recorded exactly `["routes","cron"]` with skills/settings omitted,
+  cron chip + group filter still proven.
+- No backend/frontend runtime code changed this round; `node --check` clean
+  on the edited script; guards carried green from Round 87 (no doc-count or
+  REST changes to their inputs).
 
 ## Known issues / open tickets
 
@@ -39,26 +38,26 @@ fast verify can cover builds.
 - **Low** — `e2e/report.json` is the latest-run mirror only; the per-round
   historical archive lives in git history via the committed
   `report-<mode>.json` files (by design).
+- **Low** — `E2E_JOURNEYS` is a flat list, not per-mode shorthands; users
+  must spell out the flows they care about (a `cron-only` / `ui-only`
+  preset could come later).
 - Load-all is deliberately capped (200 runs, 500 transition events,
   5 pages); a history deeper than that shows "First N runs/transitions"
   (bounded UI memory).
 
 ## Next round focus
 
-- **E2E speed pass** — the full browser journey takes ~75 s per mode + two
-  full runs per round; consider a `--quick`/journey-select flag so unchanged
-  areas can be skipped while the touched journeys still run.
-- **Base-agent/journal friction sweep** — visit the agent journey with a
+- **Agent/journal friction sweep** — visit the agent journey with a
   connection-less default provider and with a pinned saved connection, log
   anything rough (empty states, confusing notices, stale fetch after save),
   fix what is cheap.
-- **Bundle/frontend hygiene** — `next build` output is clean; sweep for
-  large/duplicated client bundles (e.g. via `next build` size output or
-  `webpack-bundle-analyzer`-free inspection) and ticket real wins.
+- **Bundle/frontend hygiene** — inspect `next build` size output for
+  large/duplicated client bundles and ticket real wins.
+- **Journey presets** — add `E2E_JOURNEYS=cron-only|ui-only|core` shorthands
+  so quick runs are one word instead of a flow list.
 
 ## Loop state
 
-Loop state: running — Round 87 replaced the repeated manual API-E2E mode
-flip with `scripts/api-e2e.mjs`, extended `verify.mjs` with `--build` /
-`--api-e2e`, and left every suite green. No exit condition fires; proceed to
-Round 88.
+Loop state: running — Round 88 made the browser E2E selectable per flow
+(default unchanged: all), proved both quick and full runs green, and left
+the backend in enabled mode. No exit condition fires; proceed to Round 89.
