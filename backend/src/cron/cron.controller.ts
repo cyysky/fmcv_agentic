@@ -56,6 +56,19 @@ export class CronController {
     );
   }
 
+  @Get('overview/events')
+  overviewEvents(
+    @Query('group') group?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.cron.overviewEvents(
+      group?.trim() || undefined,
+      limit === undefined ? undefined : Number(limit),
+      offset === undefined ? undefined : Number(offset),
+    );
+  }
+
   @Get(':id/runs')
   runs(
     @Param('id', ParseUUIDPipe) id: string,

@@ -32,6 +32,21 @@ interface CronRunRow {
   createdAt: string;
 }
 
+interface CronOverviewEventPageRow {
+  group: string | null;
+  events: Array<{
+    id: string;
+    group: string;
+    event: string;
+    owner: string;
+    previousOwner: string | null;
+    createdAt: string;
+  }>;
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 interface CronOverviewRow {
   now: string;
   leases: Array<{
@@ -416,6 +431,116 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
           .expect(200),
       );
       expect(clamped.events).toHaveLength(13);
+    } finally {
+      await prisma.cronSchedulerEvent.deleteMany({
+        where: { schedulerGroup: group },
+      });
+    }
+  });
+
+  it('pages transition events with /overview/events', async () => {
+    const group = `e2e-events-page-${stamp}`;
+    await prisma.cronSchedulerEvent.createMany({
+      data: Array.from({ length: 14 }, (_, i) => ({
+        id: `e2e-events-page-${stamp}-${i}`,
+        schedulerGroup: group,
+        owner: `replica-${i}`,
+        event: 'acquired',
+        previousOwner: i ? `replica-${i - 1}` : null,
+        createdAt: new Date(Date.now() - (14 - i) * 1000),
+      })),
+    });
+    try {
+      // First page: newest-first, one page's worth, with the group total.
+      const first = json<CronOverviewEventPageRow>(
+        await http()
+          .get(
+            `/api/cron/overview/events?group=${encodeURIComponent(group)}&limit=5&offset=0`,
+          )
+          .expect(200),
+      );
+      expect(first.group).toBe(group);
+      expect(first.limit).toBe(5);
+      expect(first.offset).toBe(0);
+      expect(first.total).toBe(14);
+      expect(first.events).toHaveLength(5);
+      expect(first.events.every((evt) => evt.group === group)).toBe(true);
+      expect(first.events[0].id).toBe(`e2e-events-page-${stamp}-13`);
+      expect(first.events[4].id).toBe(`e2e-events-page-${stamp}-9`);
+      // The newest row's chain link survives the page mapping (replica-13
+      // was acquired from replica-12).
+      expect(first.events[0].previousOwner).toBe(`replica-12`);
+      // A second page continues newest-first without overlap.
+      const second = json<CronOverviewEventPageRow>(
+        await http()
+          .get(
+            `/api/cron/overview/events?group=${encodeURIComponent(group)}&limit=5&offset=5`,
+          )
+          .expect(200),
+      );
+      expect(second.events).toHaveLength(5);
+      expect(second.offset).toBe(5);
+      expect(second.events[0].id).toBe(`e2e-events-page-${stamp}-8`);
+      expect(
+        second.events.some((evt) =>
+          first.events.some((seen) => seen.id === evt.id),
+        ),
+      ).toBe(false);
+      // The final short page drains the tail and reports the same total.
+      const tail = json<CronOverviewEventPageRow>(
+        await http()
+          .get(
+            `/api/cron/overview/events?group=${encodeURIComponent(group)}&limit=5&offset=10`,
+          )
+          .expect(200),
+      );
+      expect(tail.events).toHaveLength(4);
+      expect(tail.events[3].id).toBe(`e2e-events-page-${stamp}-0`);
+      expect(tail.total).toBe(14);
+      // Offsets past the end come back empty; default limit is the window
+      // default, huge limits clamp to 100, and unknown groups report 0.
+      const beyond = json<CronOverviewEventPageRow>(
+        await http()
+          .get(
+            `/api/cron/overview/events?group=${encodeURIComponent(group)}&limit=5&offset=14`,
+          )
+          .expect(200),
+      );
+      expect(beyond.events).toEqual([]);
+      expect(beyond.total).toBe(14);
+      const defaulted = json<CronOverviewEventPageRow>(
+        await http()
+          .get(`/api/cron/overview/events?group=${encodeURIComponent(group)}`)
+          .expect(200),
+      );
+      expect(defaulted.limit).toBe(10);
+      expect(defaulted.events).toHaveLength(10);
+      const clamped = json<CronOverviewEventPageRow>(
+        await http()
+          .get(
+            `/api/cron/overview/events?group=${encodeURIComponent(group)}&limit=500`,
+          )
+          .expect(200),
+      );
+      expect(clamped.limit).toBe(100);
+      expect(clamped.events).toHaveLength(14);
+      const none = json<CronOverviewEventPageRow>(
+        await http()
+          .get('/api/cron/overview/events?group=no-such-group-e2e&limit=5')
+          .expect(200),
+      );
+      expect(none.events).toEqual([]);
+      expect(none.total).toBe(0);
+      expect(none.group).toBe('no-such-group-e2e');
+      // Without a group the pass spans every lease group.
+      const all = json<CronOverviewEventPageRow>(
+        await http()
+          .get('/api/cron/overview/events?limit=100&offset=0')
+          .expect(200),
+      );
+      expect(all.group).toBeNull();
+      expect(all.total).toBeGreaterThanOrEqual(14);
+      expect(all.events.some((evt) => evt.group === group)).toBe(true);
     } finally {
       await prisma.cronSchedulerEvent.deleteMany({
         where: { schedulerGroup: group },

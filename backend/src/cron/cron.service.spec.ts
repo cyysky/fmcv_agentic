@@ -50,6 +50,7 @@ function prismaDouble(): {
     create: jest.fn(async () => ({ id: 'evt-1' })),
     findMany: jest.fn(async () => []),
     groupBy: jest.fn(async () => []),
+    count: jest.fn(async () => 0),
   };
   const cronRun: MockStore = {
     create: jest.fn(async () => ({ id: 'run-1' })),
@@ -642,6 +643,80 @@ describe('CronService', () => {
     expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
       expect.objectContaining({ take: OVERVIEW_RECENT_EVENTS }),
     );
+  });
+
+  describe('overviewEvents pagination (Round 78)', () => {
+    it('pages newest-first with limit/offset and reports the group total', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronSchedulerEvent.findMany.mockResolvedValue(
+        Array.from({ length: 5 }, (_, i) => ({
+          id: `evt-${i}`,
+          schedulerGroup: 'e2e',
+          owner: `replica-${i}`,
+          event: 'acquired',
+          previousOwner: i ? `replica-${i - 1}` : null,
+          createdAt: new Date('2026-08-08T12:00:00Z'),
+        })),
+      );
+      prisma.cronSchedulerEvent.count.mockResolvedValue(14);
+      const page = await service.overviewEvents('e2e', 5, 5);
+      expect(page.group).toBe('e2e');
+      expect(page.total).toBe(14);
+      expect(page.offset).toBe(5);
+      expect(page.limit).toBe(5);
+      expect(page.events).toEqual(
+        Array.from({ length: 5 }, (_, i) => ({
+          id: `evt-${i}`,
+          group: 'e2e',
+          event: 'acquired',
+          owner: `replica-${i}`,
+          previousOwner: i ? `replica-${i - 1}` : null,
+          createdAt: '2026-08-08T12:00:00.000Z',
+        })),
+      );
+      expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { schedulerGroup: 'e2e' },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 5,
+          skip: 5,
+        }),
+      );
+      expect(prisma.cronSchedulerEvent.count).toHaveBeenCalledWith({
+        where: { schedulerGroup: 'e2e' },
+      });
+    });
+
+    it('clamps and defaults limit/offset like the overview window', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronSchedulerEvent.count.mockResolvedValue(0);
+      await service.overviewEvents(undefined, 0, -3);
+      expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {},
+          take: OVERVIEW_RECENT_EVENTS,
+          skip: 0,
+        }),
+      );
+      await service.overviewEvents(undefined, 500, Number.NaN);
+      expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          take: OVERVIEW_EVENT_LIMIT_MAX,
+          skip: 0,
+        }),
+      );
+      await service.overviewEvents('g', -2, 7.9);
+      expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ take: 1, skip: 7 }),
+      );
+      const page = await service.overviewEvents(undefined, 13, 0);
+      expect(page.group).toBeNull();
+      expect(page.total).toBe(0);
+      expect(page.events).toEqual([]);
+      expect(prisma.cronSchedulerEvent.count).toHaveBeenCalledWith({
+        where: {},
+      });
+    });
   });
 
   it('records an acquired lease event with the previous owner on takeover', async () => {

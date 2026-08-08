@@ -93,6 +93,19 @@ export interface CronOverviewEventStat {
   total: number;
 }
 
+/** One page of transition events for the cluster overview's per-group
+ *  "load all for this group" pass (Round 78): events are newest-first with
+ *  `offset`/`limit` paging inside the 1..100 clamp, so a group with more
+ *  history than the overview window can be walked page by page without
+ *  unbounded payloads. */
+export interface CronOverviewEventPage {
+  group: string | null;
+  events: CronOverviewEvent[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
 /** Cluster-wide scheduler observability payload (Round 69). */
 export interface CronOverview {
   now: string;
@@ -371,6 +384,49 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       take: Math.min(Math.max(Math.trunc(limit) || 20, 1), 100),
       skip: Math.max(Math.trunc(offset) || 0, 0),
     });
+  }
+
+  /**
+   * Paginated transition events for the cluster overview (Round 78): a
+   * per-group "load all" pass pages through every event with limit/offset
+   * inside the same 1..100 clamp as the overview window, and the response
+   * carries the group's event total so the UI can say "all N" or "first N
+   * of M" when the page cap cut the pass short.
+   */
+  async overviewEvents(
+    group?: string,
+    limit = OVERVIEW_RECENT_EVENTS,
+    offset = 0,
+  ): Promise<CronOverviewEventPage> {
+    const eventLimit = Math.min(
+      Math.max(Math.trunc(limit) || OVERVIEW_RECENT_EVENTS, 1),
+      OVERVIEW_EVENT_LIMIT_MAX,
+    );
+    const skip = Math.max(Math.trunc(offset) || 0, 0);
+    const where = group ? { schedulerGroup: group } : {};
+    const [rows, total] = await Promise.all([
+      this.prisma.cronSchedulerEvent.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: eventLimit,
+        skip,
+      }),
+      this.prisma.cronSchedulerEvent.count({ where }),
+    ]);
+    return {
+      group: group ?? null,
+      events: rows.map((event) => ({
+        id: event.id,
+        group: event.schedulerGroup,
+        event: event.event as 'acquired' | 'lost',
+        owner: event.owner,
+        previousOwner: event.previousOwner,
+        createdAt: event.createdAt.toISOString(),
+      })),
+      total,
+      offset: skip,
+      limit: eventLimit,
+    };
   }
 
   /**
