@@ -54,12 +54,17 @@ Environment overrides:
    folder + dotfile through the UI, and then confirms server-side removal via
    the files API (no leftovers).
 5. **Settings journey**: the script creates a throwaway connection via the
-   API, clicks Edit and asserts the API-key field opens blank (so the masked
-   preview cannot overwrite the stored secret), captures the wire PATCH body
-   to prove `apiKey` is never replayed, clicks the new Test button against a
-   dead endpoint and asserts a graceful inline failure result, then deletes
-   the fixture and confirms the row disappears.
-5. **Screenshots**: key screens (home, settings, agent, channel running,
+   API (with a stored key), clicks Edit and asserts the API-key field opens
+   blank (so the masked preview cannot overwrite the stored secret), changes
+   the URL to a dead endpoint and clicks the form's **Test Connection** button
+   to prove unsaved values are probed gracefully, then clicks Cancel and
+   asserts the stored URL is preserved. It re-enters Edit, renames, and
+   captures the wire PATCH body to prove `apiKey` is never replayed on a plain
+   edit, then checks **Clear stored API key**, asserts the clear PATCH sends
+   `apiKey:""`, and verifies via the API that the stored secret became NULL.
+   Finally it clicks the row Test against the dead endpoint for a graceful
+   inline result, then deletes the fixture and confirms the row disappears.
+6. **Screenshots**: key screens (home, settings, agent, channel running,
    channel done, files before/after) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate

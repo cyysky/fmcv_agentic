@@ -37,8 +37,11 @@ and coordinate multi-agent teams in Slack-style channels.
   connections (display name, base URL, model, context length, concurrent
   connections, optional key). Every row has a **Test** button that probes the
   endpoint live (one-token `chat/completions` with the stored key) and shows a
-  graceful pass/fail result with latency; editing never replays the masked key
-  back over the stored secret.
+  graceful pass/fail result with latency; the create/edit form has its own
+  **Test Connection** button that probes the unsaved values before you commit;
+  editing never replays the masked key back over the stored secret, and an
+  explicit "Clear stored API key" checkbox lets you remove a secret (stored as
+  NULL, never an empty string).
 - **Agent chat (`/agent`)** — stateless turns plus a persistent Sessions tab
   (sidebar, continue, delete) backed by Postgres; model picker (`ds4-flash`
   default, `qwen3.6-35b`), conversation loop with a hard `maxSteps` cap,
@@ -73,6 +76,7 @@ Connections:
 | PATCH  | `/api/connections/:id` | update        |
 | DELETE | `/api/connections/:id` | delete        |
 | POST   | `/api/connections/:id/test` | live connectivity probe (one-token chat/completions with the stored key) |
+| POST   | `/api/connections/test`      | same probe against unsaved form values (test before save)               |
 
 Agent:
 
@@ -141,21 +145,25 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 67 tests / 11 suites** — model catalog, workspace service + tools,
+- **Unit: 74 tests / 11 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
   (list/read/download/write/mkdir/delete, directory-first ordering,
   `..`/absolute/symlink escapes rejected, project scopes read-only, 100 KB
   read cap, download resolver rejects directories / empty paths / missing
-  files), and the connection-test probe (reachable 200, upstream 401,
-  network failure, abort/timeout, unknown id 404).
-- **API E2E: 51 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
+  files), and the connection-test probes (reachable 200, upstream 401,
+  network failure, abort/timeout, unknown id 404; draft values tested without
+  touching the DB, trailing-slash normalization, no-auth-header omission) plus
+  apiKey normalization (empty-string clears to NULL on create and update).
+- **API E2E: 56 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
-  `test/test-app.ts`: app health (5), connections CRUD + live probes (8: CRUD
-  round-trip, masked key, validation 400s, probe OK through a hermetic fake
+  `test/test-app.ts`: app health (5), connections CRUD + live probes (13:
+  CRUD round-trip, masked key, validation 400s, explicit empty-string clears
+  the stored key to NULL server-side, probe OK through a hermetic fake
   upstream that asserts the stored bearer key, 401 reporting, unreachable
-  endpoint graceful failure, unknown id 404), agent
+  endpoint graceful failure, unknown id 404, draft endpoint success/401/
+  unreachable/validation against entered values without persisting a row), agent
   sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
   (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
   delete + file delete, path-escape 400, project-scope 403, scope
@@ -186,10 +194,14 @@ cd e2e && node browser-e2e.mjs
   deletes both through the UI, confirms the removal server-side via the
   files API, and asserts the success notice after each create/download/delete,
   and a settings journey that creates a throwaway connection through the API,
-  proves the Edit form opens with a blank API-key field, captures the wire
-  PATCH (`Network.requestWillBeSent`) to prove `apiKey` is never replayed, and
-  clicks Test against a dead endpoint to assert the graceful inline failure
-  result, then cleans the fixture up server-side. The sessions step waits for the CDP navigation
+  proves the Edit form opens with a blank API-key field, clicks the form's
+  "Test Connection" button against a dead endpoint to prove unsaved values are
+  probed gracefully and then Cancel preserves the stored URL, captures the wire
+  PATCH (`Network.requestWillBeSent`) to prove `apiKey` is never replayed on a
+  plain edit, checks "Clear stored API key" and asserts the wire PATCH sends
+  `apiKey:""` with a NULL server-side result, clicks the row Test against a
+  dead endpoint to assert the graceful inline failure result, then cleans the
+  fixture up server-side. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
@@ -261,6 +273,23 @@ cd e2e && node browser-e2e.mjs
 - Unit 62 → 67, API E2E 47 → 51, frontend lint/tsc clean, browser E2E all
   green including the new settings journey (key-blank on edit, no `apiKey` in
   the wire PATCH, graceful Test result, fixture cleanup).
+
+### Round 18 — test-before-save + explicit key clearing
+- `POST /api/connections/test` probes *unsaved* form values (base URL, model,
+  entered key) with the same one-token `chat/completions` semantics as the
+  stored-row test — validation and reachability are verified before saving,
+  and no row is created.
+- Settings form "Test Connection" button with an inline `aria-live` result;
+  cancelling an edit after a failed probe preserves the stored URL.
+- "Clear stored API key" checkbox on Edit: sends `apiKey: ""`, stored as NULL
+  (never an empty string) on both create and update; the credential field
+  disables with a "will be removed" placeholder while armed.
+- Unit 67 → 74 (draft-probe + apiKey-normalization suites), API E2E 51 → 56
+  (draft endpoint against a hermetic fake upstream + explicit key-clearing),
+  backend `nest build`/`tsc --noEmit` clean, frontend `tsc --noEmit` +
+  `eslint` clean, browser E2E all green including the extended settings
+  journey (form-test fail → cancel keeps URL → plain-edit PATCH carries no
+  key → clear-key PATCH empties the stored secret server-side → row Test).
 
 ## Local development
 

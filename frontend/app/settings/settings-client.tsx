@@ -44,6 +44,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [clearKey, setClearKey] = useState(false);
+  const [formTesting, setFormTesting] = useState(false);
+  const [formTestResult, setFormTestResult] = useState<ConnectionTest | null>(null);
   const [testStates, setTestStates] = useState<
     Record<string, { busy: boolean; result: ConnectionTest | null }>
   >({});
@@ -90,12 +93,16 @@ export default function SettingsPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+    // A result from a previous probe is stale as soon as the values change.
+    setFormTestResult(null);
   };
 
   const resetForm = () => {
     setForm({ ...EMPTY_FORM });
     setEditingId(null);
     setMessage(null);
+    setClearKey(false);
+    setFormTestResult(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,8 +119,11 @@ export default function SettingsPage() {
       if (form.concurrentConnections !== "") {
         payload.concurrentConnections = Number(form.concurrentConnections);
       }
-      // Credential (API key): only send when provided so editing doesn't wipe it.
-      if (form.apiKey !== "") {
+      // Credential (API key): send only when provided so editing doesn't
+      // wipe it — unless the user explicitly asks to clear the stored key.
+      if (clearKey) {
+        payload.apiKey = "";
+      } else if (form.apiKey !== "") {
         payload.apiKey = form.apiKey;
       }
       // Default parameters: parse JSON textarea into an object.
@@ -181,6 +191,46 @@ export default function SettingsPage() {
     });
     setError(null);
     setMessage(null);
+    setClearKey(false);
+    setFormTestResult(null);
+  };
+
+  const handleFormTest = async () => {
+    setFormTesting(true);
+    setFormTestResult(null);
+    setError(null);
+    try {
+      const payload: Record<string, unknown> = {
+        baseUrl: form.baseUrl,
+        modelName: form.modelName,
+      };
+      // Probe the key exactly as entered; blank means "no key for this probe".
+      if (form.apiKey !== "") {
+        payload.apiKey = form.apiKey;
+      }
+      const res = await apiFetch(`/connections/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await res.json().catch(() => null)) as ConnectionTest | null;
+      if (!res.ok) {
+        const msg = Array.isArray(data?.message)
+          ? data.message.join(", ")
+          : data?.message ?? `Test failed (HTTP ${res.status})`;
+        throw new Error(msg);
+      }
+      setFormTestResult(data);
+    } catch (err) {
+      setFormTestResult({
+        ok: false,
+        model: form.modelName,
+        latencyMs: 0,
+        message: err instanceof Error ? err.message : "Test failed",
+      });
+    } finally {
+      setFormTesting(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -283,22 +333,42 @@ export default function SettingsPage() {
           />
         </label>
 
-        <label className={styles.field}>
+        <div className={styles.field}>
           <span>Credential (API Key)</span>
           <input
             name="apiKey"
             value={form.apiKey}
             onChange={handleChange}
-            placeholder="sk-... (leave blank on edit to keep existing)"
+            placeholder={
+              clearKey
+                ? "Stored key will be removed on save."
+                : "sk-... (leave blank on edit to keep existing)"
+            }
             type="password"
             autoComplete="off"
+            disabled={clearKey}
           />
           {editingId && (
-            <span className={styles.hint}>
-              Existing key is preserved when this field is left blank.
-            </span>
+            <>
+              <span className={styles.hint}>
+                Existing key is preserved when this field is left blank.
+              </span>
+              <label className={styles.checkbox} htmlFor="clearStoredKey">
+                <input
+                  id="clearStoredKey"
+                  type="checkbox"
+                  name="clearKey"
+                  checked={clearKey}
+                  onChange={(e) => {
+                    setClearKey(e.target.checked);
+                    setFormTestResult(null);
+                  }}
+                />
+                Clear stored API key
+              </label>
+            </>
           )}
-        </label>
+        </div>
 
         <label className={styles.field}>
           <span>Default Parameters (JSON)</span>
@@ -349,6 +419,14 @@ export default function SettingsPage() {
               Cancel
             </button>
           )}
+          <button
+            type="button"
+            className={styles.btnGhost}
+            onClick={handleFormTest}
+            disabled={formTesting || saving}
+          >
+            {formTesting ? "Testing…" : "Test Connection"}
+          </button>
           <button type="submit" className={styles.btnPrimary} disabled={saving}>
             {saving
               ? "Saving…"
@@ -357,6 +435,17 @@ export default function SettingsPage() {
                 : "Add Connection"}
           </button>
         </div>
+        {formTestResult && (
+          <div
+            data-form-test-result="true"
+            className={`${styles.testResult} ${
+              formTestResult.ok ? styles.testOk : styles.testErr
+            }`}
+            aria-live="polite"
+          >
+            {formTestResult.message}
+          </div>
+        )}
       </form>
 
       <section className={styles.card}>

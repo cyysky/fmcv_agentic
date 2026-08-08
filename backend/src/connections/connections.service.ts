@@ -5,7 +5,11 @@ import {
 } from '@nestjs/common';
 import { Connection, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
+import {
+  CreateConnectionDto,
+  TestConnectionDto,
+  UpdateConnectionDto,
+} from './dto/connection.dto';
 
 /** Result of a live connectivity probe against one stored connection. */
 export interface ConnectionTestResult {
@@ -32,7 +36,9 @@ export class ConnectionsService {
       modelName: dto.modelName,
       contextLength: dto.contextLength,
       concurrentConnections: dto.concurrentConnections,
-      ...(dto.apiKey !== undefined && { apiKey: dto.apiKey }),
+      ...(dto.apiKey !== undefined && {
+        apiKey: this.normalizeApiKey(dto.apiKey),
+      }),
       ...(dto.defaultParameters !== undefined && {
         defaultParameters: dto.defaultParameters as Prisma.InputJsonValue,
       }),
@@ -65,7 +71,7 @@ export class ConnectionsService {
     if (dto.contextLength !== undefined) data.contextLength = dto.contextLength;
     if (dto.concurrentConnections !== undefined)
       data.concurrentConnections = dto.concurrentConnections;
-    if (dto.apiKey !== undefined) data.apiKey = dto.apiKey;
+    if (dto.apiKey !== undefined) data.apiKey = this.normalizeApiKey(dto.apiKey);
     if (dto.defaultParameters !== undefined)
       data.defaultParameters = dto.defaultParameters as Prisma.InputJsonValue;
 
@@ -94,26 +100,44 @@ export class ConnectionsService {
     if (!conn) {
       throw new NotFoundException(`Connection ${id} not found`);
     }
+    return this.probe(conn.baseUrl, conn.modelName, conn.apiKey ?? undefined);
+  }
 
+  /**
+   * Probe connection values that have not been persisted yet (the settings
+   * form's "Test Connection" button). Same wire behavior as `test(id)` so
+   * users can validate an endpoint before saving it.
+   */
+  async testDraft(dto: TestConnectionDto): Promise<ConnectionTestResult> {
+    return this.probe(dto.baseUrl, dto.modelName, dto.apiKey);
+  }
+
+  /** Shared live probe: one-token chat/completions with bounds + graceful errors. */
+  private async probe(
+    baseUrl: string,
+    modelName: string,
+    apiKey?: string,
+  ): Promise<ConnectionTestResult> {
     const started = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.testTimeoutMs);
     try {
-      const response = await fetch(`${conn.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(conn.apiKey
-            ? { authorization: `Bearer ${conn.apiKey}` }
-            : {}),
+      const response = await fetch(
+        `${this.normalizeBaseUrl(baseUrl)}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [{ role: 'user', content: 'ping' }],
+            max_tokens: 1,
+          }),
+          signal: controller.signal,
         },
-        body: JSON.stringify({
-          model: conn.modelName,
-          messages: [{ role: 'user', content: 'ping' }],
-          max_tokens: 1,
-        }),
-        signal: controller.signal,
-      });
+      );
       const latencyMs = Date.now() - started;
 
       if (response.ok) {
@@ -121,8 +145,8 @@ export class ConnectionsService {
           ok: true,
           status: response.status,
           latencyMs,
-          model: conn.modelName,
-          message: `Connected — ${conn.modelName} responded in ${latencyMs} ms.`,
+          model: modelName,
+          message: `Connected — ${modelName} responded in ${latencyMs} ms.`,
         };
       }
 
@@ -136,7 +160,7 @@ export class ConnectionsService {
         ok: false,
         status: response.status,
         latencyMs,
-        model: conn.modelName,
+        model: modelName,
         message: `Upstream returned HTTP ${response.status}${
           detail ? `: ${detail}` : ''
         }`,
@@ -147,7 +171,7 @@ export class ConnectionsService {
       return {
         ok: false,
         latencyMs,
-        model: conn.modelName,
+        model: modelName,
         message: /abort/i.test(raw)
           ? `Connection timed out after ${this.testTimeoutMs} ms.`
           : `Connection failed: ${raw}`,
@@ -166,6 +190,11 @@ export class ConnectionsService {
 
   private normalizeBaseUrl(url: string): string {
     return url.replace(/\/+$/, '');
+  }
+
+  /** Empty-string apiKey means "no key": store NULL, never an empty string. */
+  private normalizeApiKey(apiKey: string): string | null {
+    return apiKey === '' ? null : apiKey;
   }
 
   /** Mask the API key so secrets are not returned to the client. */

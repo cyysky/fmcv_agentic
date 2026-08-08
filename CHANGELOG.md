@@ -1,4 +1,46 @@
-## Round 2026-08-08 — autonomous iteration round 17 (tag `round-17`)
+## Round 2026-08-08 — autonomous iteration round 18 (tag `round-18`)
+
+### Added
+- `POST /api/connections/test` — connection-test probe for **unsaved** form
+  values. Same one-token `chat/completions` probe as the stored-row test
+  (bounded by `CONNECTION_TEST_TIMEOUT_MS`), but takes `baseUrl`, `modelName`,
+  and optional `apiKey` from the request instead of a DB row; validates the
+  URL with the same rule and never creates or touches a connection.
+- Settings form **Test Connection** button: while adding or editing, the form
+  probes the currently-entered endpoint inline (`aria-live` result) so users
+  can validate before committing; the result clears on any form change, save,
+  cancel, or edit-switch.
+- **Clear stored API key** checkbox on Edit: arming it disables the key field
+  with a "Stored key will be removed on save." placeholder and saves an
+  explicit `apiKey: ""`; the backend stores that as NULL (on both create and
+  update), so a cleared secret is never an empty string and never masked-shown
+  as `***`.
+
+### Fixed
+- Invalid HTML nesting when clearing keys: the Credential field was a `<label>`
+  wrapping another `<label>`, which can misroute checkbox clicks; the outer
+  wrapper is now a `<div>` with an `htmlFor`-wired label.
+- Empty-string key artifacts: PATCHing `apiKey: ""` previously stored `""`
+  and the API returned `""` instead of `null`; both create and update now
+  normalize empty strings to NULL.
+- e2e/README duplicate list numbering (two items both numbered 5).
+
+### Test status
+- Unit **74 passed / 11 suites** (67 → +4 draft-probe, +3 apiKey
+  normalization).
+- API E2E **56 passed / 7 suites** (51 → +4 draft endpoint cases: entered-key
+  success with bearer assertion, 401 reporting, unreachable graceful failure,
+  invalid URL 400 — plus +1 explicit key-clearing to NULL round-trip).
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean; Docker `next build` clean.
+- Browser E2E all green (exit 0, zero console/network errors across every
+  probe and journey). The settings journey gained four gates: form-test
+  graceful failure against a dead endpoint, Cancel preserving the stored URL,
+  clear-key PATCH carrying `apiKey:""` with a NULL server-side result, and
+  the existing key-blank / no-key-replay / row-Test gates. Screenshots +
+  `e2e/report.json` refreshed.
+
+
 
 ### Added
 - Connection testing: `POST /api/connections/:id/test` probes a stored

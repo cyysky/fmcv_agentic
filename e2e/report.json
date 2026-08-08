@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-08T05:12:53.315Z",
+  "ranAt": "2026-08-08T05:23:45.302Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "C718997DA1E80D9AEFB77FDFB68971DD",
+        "id": "B1B5B0C448815AE6D60B43BBFA19F7BB",
         "created": true
       },
       "checks": {
@@ -34,7 +34,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "499879A429C35E3993A3645DC6450494",
+        "id": "5452825D5AEBD3E26B87D3313C41B6F3",
         "created": true
       },
       "checks": {
@@ -58,7 +58,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "C790E8108804BED6D9B7A8DD138C52BE",
+        "id": "8FCA2B27A979B4BEB805B79CDFB8F5B0",
         "created": true
       },
       "checks": {
@@ -83,7 +83,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "6FC0E5032071C00934417276320677CE",
+        "id": "1F4893606D8F38A1283A619BAB36D961",
         "created": true
       },
       "checks": {
@@ -109,7 +109,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "3B8DC858B67B6F3A6CB63C76AC0A7681",
+        "id": "C944AF0EEBEF4C6395A0D8154C10648B",
         "created": true
       },
       "checks": {
@@ -131,7 +131,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "0EC76B8343F36C2745999227331B0257",
+        "id": "D26BAD8AAB4DBD9B9B2E02FE09C214C1",
         "created": true
       },
       "checks": {
@@ -155,7 +155,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "EE8A4C334FDE6379DAF48BDF08F6827A",
+        "id": "819E73A37050569159067904DB7A9560",
         "created": true
       },
       "checks": {
@@ -179,7 +179,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "5C818AE9DB2D825764451121DBAA8ED0",
+        "id": "37DAA189B049CC8D0605F09BE3A75791",
         "created": true
       },
       "checks": {
@@ -204,7 +204,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "784D505513E22D183D038EDDDC51F6D1",
+        "id": "8544BDCA2D9885D38D774CF26BC7EEF9",
         "created": true
       },
       "checks": {
@@ -228,7 +228,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "3E3D11EE3AF2B67D694A9A173AB46524",
+        "id": "6FC9B370D1DD358C47917956A1AEB3A1",
         "created": true
       },
       "checks": {
@@ -250,7 +250,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "01D73CF6658BFD1753AAF0BAD68E9824",
+        "id": "3D7278C4496DE0FC24FB7494395BD436",
         "created": true
       },
       "checks": {
@@ -274,7 +274,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "25363E2458A89EACA00BE6C167D8D64D",
+        "id": "D8437613550A659EBD9C0B3D48B052C8",
         "created": true
       },
       "checks": {
@@ -297,10 +297,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "151E128789647F7499995E5455AFD4A0",
+      "id": "1B06A7FF2371C77C138549968C25A092",
       "created": true
     },
-    "channelName": "browser-e2e-msjx453v",
+    "channelName": "browser-e2e-msjxi3jy",
     "flow": {
       "steps": [
         "created-channel",
@@ -308,9 +308,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-08T05:13:14.269Z",
-        "finishedAt": "2026-08-08T05:13:16.951Z",
-        "elapsedMs": 1347
+        "postedAt": "2026-08-08T05:24:05.432Z",
+        "finishedAt": "2026-08-08T05:24:08.087Z",
+        "elapsedMs": 1365
       },
       "result": {
         "answer": true,
@@ -318,8 +318,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msjx453v",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-08T05:13:13.569Z\nAgent coder joined #browser-e2e-msjx453v.\nsystem\n[SYSTEM]\n2026-08-08T05:13:13.594Z\nChannel #browser-e2e-msjx453v created.\nyou\n[USER]\n2026-08-08T05:13:14.270Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-08T05:13:16.412Z\nHello! I've written `round2.md` into my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Ro"
+      "channelName": "browser-e2e-msjxi3jy",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-08T05:24:04.801Z\nAgent coder joined #browser-e2e-msjxi3jy.\nsystem\n[SYSTEM]\n2026-08-08T05:24:04.831Z\nChannel #browser-e2e-msjxi3jy created.\nyou\n[USER]\n2026-08-08T05:24:05.436Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-08T05:24:07.537Z\nHello! I've written `round2.md` into my own agent folder (agents/coder) as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \""
     },
     "errors": {
       "netFailures": [],
@@ -347,7 +347,7 @@
   "navFlow": {
     "url": "http://localhost:3333/",
     "tabInfo": {
-      "id": "A1E466277CE3C506A935B8D002FFBC24",
+      "id": "A518B82242C8AD2AAFE1D29ED7C7F693",
       "created": true
     },
     "flow": {
@@ -377,7 +377,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "4F3C99C34EFE40D77F8B3B534689A1EE",
+      "id": "78DB7E505EC59BFD367DD9D23C552AAF",
       "created": true
     },
     "flow": {
@@ -390,20 +390,20 @@
         "history-rendered"
       ],
       "timings": {
-        "postedAt": "2026-08-08T05:13:19.535Z",
-        "finishedAt": "2026-08-08T05:13:21.142Z",
-        "elapsedMs": 2163
+        "postedAt": "2026-08-08T05:24:10.646Z",
+        "finishedAt": "2026-08-08T05:24:11.454Z",
+        "elapsedMs": 1352
       },
       "result": {
         "persisted": true,
         "renamed": true
       },
-      "createdAt": "2026-08-08T05:13:18.806Z",
-      "sentText": "Hello from sessions E2E (msjx49q3)",
+      "createdAt": "2026-08-08T05:24:09.913Z",
+      "sentText": "Hello from sessions E2E (msjxi84e)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (msjx49q3)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. I can work with files in my workspace and public projects, reason through problems, and use tools as needed.\n\nWhat would you like to do?",
+      "threadSnippet": "YOU\nHello from sessions E2E (msjxi84e)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. What can I do for you today?",
       "autoTitleSeen": true,
-      "renamedTitle": "Renamed msjx4bhe",
+      "renamedTitle": "Renamed msjxi99a",
       "historySeen": true,
       "titleAfterReload": true
     },
@@ -419,22 +419,22 @@
   "filesFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "445456DE64E950DEDF7B597E5EEAF02F",
+      "id": "D6B1E9C936DD852E829AC26CD4720224",
       "created": true
     },
     "flow": {
       "steps": [
-        "created browser-e2e-files-msjx4ecm/hello.txt",
-        "created .dot-msjx4ecm",
+        "created browser-e2e-files-msjxic5q/hello.txt",
+        "created .dot-msjxic5q",
         "root-lists-folder-and-dotfile",
         "navigated-into-folder",
         "downloaded-hello.txt",
         "deleted-hello.txt",
-        "deleted browser-e2e-files-msjx4ecm",
-        "deleted .dot-msjx4ecm"
+        "deleted browser-e2e-files-msjxic5q",
+        "deleted .dot-msjxic5q"
       ],
       "timings": {
-        "elapsedMs": 5093
+        "elapsedMs": 5122
       },
       "result": {
         "created": true,
@@ -442,11 +442,11 @@
         "deleted": true
       },
       "scope": "agent:coder",
-      "createdAt": "2026-08-08T05:13:25.013Z",
-      "folder": "browser-e2e-files-msjx4ecm",
-      "dotfile": ".dot-msjx4ecm",
-      "file": "browser-e2e-files-msjx4ecm/hello.txt",
-      "content": "hello from files e2e msjx4ecm",
+      "createdAt": "2026-08-08T05:24:15.357Z",
+      "folder": "browser-e2e-files-msjxic5q",
+      "dotfile": ".dot-msjxic5q",
+      "file": "browser-e2e-files-msjxic5q/hello.txt",
+      "content": "hello from files e2e msjxic5q",
       "contentSeen": true,
       "realDownload": "ok",
       "downloadVerified": true,
@@ -470,21 +470,34 @@
       "steps": [
         "fixture-created",
         "edit-mode-key-blank",
+        "form-test-before-save",
+        "form-test-cancel-preserves-url",
         "edited-without-key",
+        "cleared-stored-key",
         "test-result-rendered"
       ],
       "result": {
         "keyBlankOnEdit": true,
         "keyNotSentOnPatch": true,
+        "formTestGracefulFailure": true,
+        "cancelPreservedUrl": true,
+        "clearKeySent": true,
+        "keyClearedServerSide": true,
         "testGracefulFailure": true,
         "cleanup": "clean"
       },
       "fixtureId": null,
       "keyBlankOnEdit": true,
+      "formTestGracefulFailure": true,
+      "cancelPreservedUrl": true,
       "patchBodies": [
-        "{\"displayName\":\"Renamed msjx4j06\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000}"
+        "{\"displayName\":\"Renamed msjxihbm\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000}"
       ],
       "keyNotSentOnPatch": true,
+      "keyDisabledBeforeCheck": false,
+      "keyDisabledAfterCheck": true,
+      "clearKeySent": true,
+      "keyClearedServerSide": true,
       "testResultText": "Connection failed: fetch failed",
       "testGracefulFailure": true,
       "cleanup": "clean"

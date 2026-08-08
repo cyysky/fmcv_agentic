@@ -1261,8 +1261,73 @@ async function settingsFlow() {
     }
     flow.steps.push("edit-mode-key-blank");
 
-    // 2. Rename + save: the wire PATCH must not carry apiKey at all.
+    // 2. Test-before-save: the form's "Test Connection" probes the entered
+    //    values (not the stored row), must fail gracefully against a dead
+    //    endpoint, and Cancel must discard the probed URL without saving.
+    await evalJs(c, jsSetInput('input[name="baseUrl"]', "http://127.0.0.1:1/v1"));
+    await delay(100);
+    const formTestClicked = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Test Connection" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!formTestClicked) throw new Error("settings flow: form Test Connection button missing");
+    const formTestDone = await waitFor(
+      c,
+      `document.querySelector('[data-form-test-result]')?.innerText.trim().length > 0`,
+      20000,
+      500,
+      "form test result",
+    );
+    const formTestText = await evalJs(
+      c,
+      `document.querySelector('[data-form-test-result]')?.innerText.trim() ?? null`,
+    );
+    flow.formTestGracefulFailure =
+      !!formTestDone &&
+      !!formTestText &&
+      /Connection failed|timed out|HTTP \d+/.test(formTestText);
+    if (!flow.formTestGracefulFailure) {
+      throw new Error(`settings flow: no graceful form-test result (${JSON.stringify(formTestText)})`);
+    }
+    flow.steps.push("form-test-before-save");
+
+    const cancelled = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Cancel");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!cancelled) throw new Error("settings flow: Cancel button missing");
+    const addMode = await waitFor(c, `document.body.innerText.includes("Add Connection")`, 15000, 400, "add mode after cancel");
+    const storedUrlKept = await waitFor(
+      c,
+      `document.body.innerText.includes("ds4-flash · http://127.0.0.1:9/v1")`,
+      15000,
+      400,
+      "stored url preserved",
+    );
+    flow.cancelPreservedUrl = !!addMode && !!storedUrlKept;
+    if (!flow.cancelPreservedUrl) {
+      throw new Error("settings flow: Cancel did not preserve the stored URL");
+    }
+    flow.steps.push("form-test-cancel-preserves-url");
+
+    // 3. Rename + save: the wire PATCH must not carry apiKey at all.
     const renamed = `Renamed ${Date.now().toString(36)}`;
+    const reopened = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(connName)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Edit");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!reopened) throw new Error("settings flow: Edit button missing (reopen)");
+    const reopenedEdit = await waitFor(c, `document.body.innerText.includes("Edit Connection")`, 15000, 400, "edit mode reopened");
+    if (!reopenedEdit) throw new Error("settings flow: edit mode never reopened");
     await evalJs(c, jsSetInput('input[name="displayName"]', renamed));
     await delay(100);
     const submitted = await evalJs(c, `(() => {
@@ -1275,13 +1340,68 @@ async function settingsFlow() {
     if (!submitted) throw new Error("settings flow: save button not found/enabled");
     const saved = await waitFor(c, `document.body.innerText.includes("Connection updated.")`, 15000, 400, "update notice");
     if (!saved) throw new Error("settings flow: update notice never appeared");
-    flow.patchBodies = [...patchBodies];
+    const namePatchBodies = [...patchBodies];
+    flow.patchBodies = namePatchBodies;
     flow.keyNotSentOnPatch =
-      flow.patchBodies.length > 0 && flow.patchBodies.every((body) => !body.includes('"apiKey"'));
+      namePatchBodies.length > 0 && namePatchBodies.every((body) => !body.includes('"apiKey"'));
     if (!flow.keyNotSentOnPatch) {
-      throw new Error(`settings flow: PATCH replayed apiKey (${JSON.stringify(flow.patchBodies)})`);
+      throw new Error(`settings flow: PATCH replayed apiKey (${JSON.stringify(namePatchBodies)})`);
     }
     flow.steps.push("edited-without-key");
+
+    // 4. Clear stored key: an explicit opt-in sends apiKey:"" and removes the
+    //    stored secret server-side; a previously saved key must not prevent it.
+    const clearedEdit = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(renamed)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Edit");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!clearedEdit) throw new Error("settings flow: Edit missing for clear-key step");
+    const clearEditMode = await waitFor(c, `document.body.innerText.includes("Edit Connection")`, 15000, 400, "edit mode for clear-key");
+    if (!clearEditMode) throw new Error("settings flow: edit mode never reopened for clear-key");
+    const keyDisabledBeforeCheck = await evalJs(
+      c,
+      `document.querySelector('input[name="apiKey"]')?.disabled ?? false`,
+    );
+    const clearChecked = await evalJs(c, `(() => {
+      const cb = document.querySelector('input[name="clearKey"]');
+      if (!cb || cb.checked) return false;
+      cb.click();
+      return true;
+    })()`);
+    if (!clearChecked) throw new Error("settings flow: clear-key checkbox missing");
+    const keyDisabledAfterCheck = await waitFor(
+      c,
+      `document.querySelector('input[name="apiKey"]')?.disabled === true && document.querySelector('input[name="apiKey"]')?.placeholder.includes("Stored key will be removed")`,
+      10000,
+      300,
+      "clear-key disabled state",
+    );
+    flow.keyDisabledBeforeCheck = keyDisabledBeforeCheck;
+    flow.keyDisabledAfterCheck = !!keyDisabledAfterCheck;
+    const submitClear = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitClear) throw new Error("settings flow: clear-key save button not found/enabled");
+    const clearedSaved = await waitFor(c, `document.body.innerText.includes("Connection updated.")`, 15000, 400, "clear-key save notice");
+    if (!clearedSaved) throw new Error("settings flow: clear-key save notice never appeared");
+    const clearPatch = patchBodies.at(-1) ?? "";
+    flow.clearKeySent = clearPatch.includes('"apiKey":""');
+    if (!flow.clearKeySent) {
+      throw new Error(`settings flow: clear-key PATCH missing apiKey:"" (${JSON.stringify(patchBodies)})`);
+    }
+    const rowState = await fetch(`${API}/connections/${flow.fixtureId}`).then((r) => r.json());
+    flow.keyClearedServerSide = rowState.apiKey == null;
+    if (!flow.keyClearedServerSide) {
+      throw new Error(`settings flow: stored apiKey not cleared server-side (${JSON.stringify(rowState.apiKey)})`);
+    }
+    flow.steps.push("cleared-stored-key");
 
     // 3. Test button: dead upstream must surface as a graceful inline result.
     const testClicked = await evalJs(c, `(() => {
@@ -1326,6 +1446,10 @@ async function settingsFlow() {
     flow.result = {
       keyBlankOnEdit: flow.keyBlankOnEdit,
       keyNotSentOnPatch: flow.keyNotSentOnPatch,
+      formTestGracefulFailure: flow.formTestGracefulFailure,
+      cancelPreservedUrl: flow.cancelPreservedUrl,
+      clearKeySent: flow.clearKeySent,
+      keyClearedServerSide: flow.keyClearedServerSide,
       testGracefulFailure: flow.testGracefulFailure,
       cleanup: flow.cleanup,
     };
@@ -1574,6 +1698,10 @@ async function main() {
     !sfl ||
     !sfl.flow.result?.keyBlankOnEdit ||
     !sfl.flow.result?.keyNotSentOnPatch ||
+    !sfl.flow.result?.formTestGracefulFailure ||
+    !sfl.flow.result?.cancelPreservedUrl ||
+    !sfl.flow.result?.clearKeySent ||
+    !sfl.flow.result?.keyClearedServerSide ||
     !sfl.flow.result?.testGracefulFailure
   ) {
     failures.push(`settings flow: key-safety/test not verified (${JSON.stringify(sfl && sfl.flow)})`);

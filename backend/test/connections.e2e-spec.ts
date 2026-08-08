@@ -102,6 +102,27 @@ describe('Connections API (e2e, real Postgres)', () => {
     await http().get(`/api/connections/${one.body.id}`).expect(404);
   });
 
+  it('clears a stored API key when the edit explicitly sends an empty string', async () => {
+    const created = await http()
+      .post('/api/connections')
+      .send({ ...keyedPayload, displayName: `e2e-clear-${Date.now().toString(36)}` })
+      .expect(201);
+    expect(created.body.apiKey).toContain('***');
+
+    try {
+      const cleared = await http()
+        .patch(`/api/connections/${created.body.id}`)
+        .send({ apiKey: '' })
+        .expect(200);
+      expect(cleared.body.apiKey).toBeNull();
+
+      const fetched = await http().get(`/api/connections/${created.body.id}`).expect(200);
+      expect(fetched.body.apiKey).toBeNull();
+    } finally {
+      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+    }
+  });
+
   it('rejects updates with no fields', async () => {
     const created = await http().post('/api/connections').send(payload).expect(201);
     const invalid = await http()
@@ -204,6 +225,72 @@ describe('Connections API (e2e, real Postgres)', () => {
       await http()
         .post('/api/connections/00000000-0000-0000-0000-000000000000/test')
         .expect(404);
+    });
+  });
+
+  describe('connection draft test endpoint (test before save)', () => {
+    it('probes entered values with the entered key, without persisting anything', async () => {
+      const before = await http().get('/api/connections').expect(200);
+
+      const res = await http()
+        .post('/api/connections/test')
+        .send({
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          apiKey: 'sk-e2e-supersecret123',
+        })
+        .expect(200);
+
+      expect(res.body.ok).toBe(true);
+      expect(res.body.status).toBe(200);
+      expect(res.body.model).toBe('probe-model');
+      expect(String(res.body.message)).toContain('responded');
+      expect(lastAuth).toBe('Bearer sk-e2e-supersecret123');
+
+      const after = await http().get('/api/connections').expect(200);
+      expect(after.body).toEqual(before.body); // no row created
+    });
+
+    it('reports auth failures for unauthenticated draft requests', async () => {
+      const res = await http()
+        .post('/api/connections/test')
+        .send({
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          apiKey: 'sk-wrong-key',
+        })
+        .expect(200);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.status).toBe(401);
+      expect(String(res.body.message)).toContain('401');
+    });
+
+    it('reports unreachable draft endpoints gracefully', async () => {
+      const probe = createServer();
+      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      const closedPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+      const res = await http()
+        .post('/api/connections/test')
+        .send({
+          baseUrl: `http://127.0.0.1:${closedPort}/v1`,
+          modelName: 'probe-model',
+        })
+        .expect(200);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.status).toBeUndefined();
+      expect(String(res.body.message)).toContain('Connection failed');
+    });
+
+    it('rejects non-http(s) draft base URLs', async () => {
+      const res = await http()
+        .post('/api/connections/test')
+        .send({ baseUrl: 'ftp://example.com', modelName: 'probe-model' })
+        .expect(400);
+      expect(JSON.stringify(res.body.message)).toContain('baseUrl');
     });
   });
 });

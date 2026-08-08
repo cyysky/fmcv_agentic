@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Connection } from '@prisma/client';
 import { ConnectionTestResult, ConnectionsService } from './connections.service';
-import { CreateConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
+import { CreateConnectionDto, TestConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
 
 @Controller('connections')
 export class ConnectionsController {
@@ -43,6 +43,12 @@ export class ConnectionsController {
   @Delete(':id')
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.connectionsService.remove(id);
+  }
+
+  @Post('test')
+  @HttpCode(200)
+  testDraft(@Body() dto: TestConnectionDto): Promise<ConnectionTestResult> {
+    return this.connectionsService.testDraft(dto);
   }
 
   @Post(':id/test')

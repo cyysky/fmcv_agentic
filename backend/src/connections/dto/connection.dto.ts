@@ -48,6 +48,20 @@ export class CreateConnectionDto {
   defaultParameters?: Record<string, unknown>;
 }
 
+export class TestConnectionDto {
+  @IsString()
+  @Matches(URL_REGEX, { message: 'baseUrl must be a valid http(s) URL' })
+  baseUrl: string;
+
+  @IsString()
+  @IsNotEmpty()
+  modelName: string;
+
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+}
+
 export class UpdateConnectionDto {
   @IsString()
   @MinLength(1)
