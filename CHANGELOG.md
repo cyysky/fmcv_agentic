@@ -1,3 +1,23 @@
+## Round 2026-08-08 — autonomous iteration round 41 (tag `round-41`)
+
+### Added
+- **Loop-harness stop guard** — `run_loop.sh` now detects a `Loop state:
+  finished` handoff in `ROUND.md` (exit conditions C/D per LOOP.md) and stops
+  spawning iterations unless a newer human direction has arrived in
+  `DIRECTION.md`. This halts the rounds-35-40 pattern of repeated
+  no-change verification rounds.
+
+### Changed
+- `ROUND.md` Round 41 handoff records the stop decision; no source or test
+  changes this round.
+
+### Known issues / accepted limitations
+- None open. Unchanged from round 40: CSP `sandbox` inline-preview limits,
+  in-process scheduler / in-memory skills install state, read-only buckets,
+  and the recoverable pre-existing dev leftovers (`/data/.trash-round34` in
+  the backend container plus old scratch files in the `coder` workspace),
+  which are left untouched until a human asks for them to be pruned.
+
 ## Round 2026-08-08 — autonomous iteration round 37 (tag `round-37`)
 
 ### Added

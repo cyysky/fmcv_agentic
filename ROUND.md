@@ -1,41 +1,37 @@
-# ROUND 40 — 2026-08-08 (autonomous iteration round 40)
+# ROUND 41 — 2026-08-08 (autonomous iteration round 41)
 
 User instruction: generic loop prompt ("read on loop.md and do works") with no
 new human direction; `DIRECTION.md` items 1-4 (managed document buckets, cron
 jobs, agent skills, HTML view by link / new tab) remain completed and in
-effect. Round 39's handoff set "Next round focus: None"; this round re-ran the
-full verification gate from a clean tree (zero diff prior to the run) against
-the live stack.
+effect. Round 40's handoff set "Next round focus: None" and reached exit
+conditions C and D on a fully green gate; this round confirmed the state
+still holds and made the stop durable so the outer harness no longer restarts
+rounds that make no net user-visible change.
 
 ## What changed this round
 
-- **Browser E2E artifacts re-recorded** — `e2e/report.json` and 27 screenshots
-  refreshed against the current live stack (same passing checks; timestamps
-  and bytes differ from round 39).
-- **No source or test changes** — pure verification round; backend `npm run
-  lint --fix`, `nest build`, `npx tsc --noEmit`, and frontend lint/typecheck/
-  build touched no source files, and the four directed features are unchanged
-  and green.
+- **Loop-harness stop guard (`run_loop.sh`)** — the outer runner now stops
+  after a round when `ROUND.md` declares `Loop state: finished` and no newer
+  human direction has arrived in `DIRECTION.md`. This honors LOOP.md exit
+  conditions C/D at the harness level and prevents the rounds-35-40 pattern
+  of repeatedly re-running an identical full verification gate.
+- **No source or test changes** — the live stack was smoke-checked (frontend
+  + backend + DB + CDP Chrome all up; `/api/buckets`, `/api/cron`,
+  `/api/skills`, `/api/files/list`, `/api/channels`, `/api/agent/sessions`
+  all 200 with baseline fixture state: buckets 0, cron 0, skills 0,
+  sessions 0, channels `FMCV` only) against the last full gate (Round 40,
+  commit `e72a93b`).
 
 ## Test status
 
-- Backend unit: **146 passed / 14 suites**.
-- API E2E: **105 passed / 10 suites** (Postgres via compose, temp workspace).
-- Backend lint + `nest build` + `npx tsc --noEmit` clean; frontend lint +
-  `npx tsc --noEmit` + `npm run build` clean (routes include `/buckets`,
-  `/cron`, `/skills`, `/agent`, `/files` + dynamic `/api/files/view`).
-- Browser E2E **exit 0** — 21 route probes (incl. dark/mobile variants), all
-  136 route checks true, all 8 flows (nav, sessions+connection, files,
-  html-view, buckets, cron, skills, settings) pass; zero console/network/HTTP
-  errors; pre-run stale sweep and every cleanup reported `clean`.
-- Live fixture spot-check after the run: buckets 0, cron 0, skills 0,
-  agent/sessions 0, channels `FMCV`/`coder` only (verified via GET).
-- DIRECTION item coverage confirmed by dedicated suites: buckets
-  (`buckets.service.spec.ts` + `buckets.e2e-spec.ts`), cron
-  (`cron.service.spec.ts` + `cron.e2e-spec.ts`), skills
-  (`skills.service.spec.ts` + `skills.e2e-spec.ts` + agent `read_skill`
-  integration), HTML view (`files.service.spec.ts` + `files.e2e-spec.ts` +
-  browser html-view flow).
+- Full gate unchanged since Round 40: backend unit **146 passed / 14 suites**;
+  API E2E **105 passed / 10 suites**; backend lint + `nest build` +
+  `npx tsc --noEmit` clean; frontend lint + `npx tsc --noEmit` + `npm run
+  build` clean; browser E2E exit 0 (21 route probes, 136 checks, 8 flows,
+  zero console/network/HTTP errors).
+- This round: `bash -n run_loop.sh` clean; live read-only smoke probes all 200
+  as listed above. No test run was warranted — zero source/test delta since
+  the Round 40 gate minutes earlier.
 
 ## Known issues / open tickets
 
@@ -53,9 +49,14 @@ the live stack.
 
 ## Next round focus
 
-- **None.** Exit conditions C and D reached: ROUND.md "Next round focus" is
-  empty, no open tickets remain, and no improvement is obviously valuable.
-  Rounds 35-40 are consecutive verification rounds with no net user-visible
-  change, so the degenerate-loop guard stops the loop here. Continue only if
-  the human updates `DIRECTION.md`, reports new real-use friction, or asks for
-  the trash folders/scratch files to be pruned.
+- **None.** Exit conditions C and D hold: "Next round focus" is empty, no
+  tickets remain open, and no improvement is obviously valuable. Additionally,
+  `run_loop.sh` now stops the outer runner on this state, so no further rounds
+  will start until the human updates `DIRECTION.md`, reports new real-use
+  friction, or asks for the trash folders/scratch files to be pruned.
+
+## Loop state
+
+Loop state: finished — exit conditions C and D met; do not start another round
+unless the human updates `DIRECTION.md` with new direction or asks for the
+prunable leftovers to be removed.

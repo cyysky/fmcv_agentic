@@ -41,6 +41,14 @@ for i in $(seq 1 "$MAX"); do
   else
     echo "[push=skipped: no secret found]" | tee -a "$LOGFILE"
   fi
+
+  # Stop when the latest handoff says the loop is finished (LOOP.md exit
+  # conditions) unless a newer human direction has arrived in DIRECTION.md.
+  if grep -qE '^Loop state: finished' ROUND.md 2>/dev/null \
+     && { [ ! -f DIRECTION.md ] || [ ROUND.md -nt DIRECTION.md ]; }; then
+    echo ">>> Loop finished per ROUND.md handoff (exit conditions met). Stopping." | tee -a "$LOGFILE"
+    break
+  fi
 done
 
 echo ">>> All $MAX iterations completed. Log: $LOGFILE"
