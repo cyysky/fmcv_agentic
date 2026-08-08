@@ -3029,7 +3029,7 @@ async function skillsCleanup(flow) {
 async function staleSweep() {
   const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], skills: [], files: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
-    ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
+    ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-", "skill-aware e2e"].some((p) =>
       String(name ?? "").startsWith(p),
     );
   try {

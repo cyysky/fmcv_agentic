@@ -159,16 +159,30 @@ describe('Skills API (e2e, real Postgres)', () => {
   });
 
   it('agent turns still run with installed skills present', async () => {
-    await http()
+    const created = await http()
       .post('/api/agent/sessions')
       .send({ title: 'skill-aware e2e' })
       .expect(201);
-    const res = await http()
-      .post('/api/agent/turn')
-      .send({ message: 'ping pong with skills', maxSteps: 2 })
-      .ok((r) => r.status === 201 || r.status === 200);
-    expect([200, 201]).toContain(res.status);
-    expect(json<{ answer: string }>(res).answer).toMatch(/^\[stub\] /);
+    const sessionId = created.body.id as string;
+    try {
+      const res = await http()
+        .post('/api/agent/turn')
+        .send({ message: 'ping pong with skills', maxSteps: 2 })
+        .ok((r) => r.status === 201 || r.status === 200);
+      expect([200, 201]).toContain(res.status);
+      expect(json<{ answer: string }>(res).answer).toMatch(/^\[stub\] /);
+    } finally {
+      // Session rows are persisted to the shared Postgres but only tracked
+      // in-memory by the live backend, so an un-deleted fixture here would be
+      // invisible to the running app until restart. Always clean it up.
+      const del = await http()
+        .delete(`/api/agent/sessions/${sessionId}`)
+        .ok((r) => r.status === 200);
+      expect(del.body).toEqual({ deleted: true });
+      expect(
+        await prisma.agentSession.findUnique({ where: { id: sessionId } }),
+      ).toBeNull();
+    }
   });
 
   it('400s/404s on unknown ids for install, uninstall, and delete', async () => {
