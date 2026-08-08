@@ -55,6 +55,12 @@
   border-color: #bfdbfe;
 }
 
+.jobOwnershipChip {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #e5e7eb;
+}
+
 .schedulerMeta {
   color: #888;
   font-size: 0.75rem;

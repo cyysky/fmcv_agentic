@@ -497,10 +497,33 @@ describe('CronService', () => {
         { cronJobId: 'job-1', _count: { _all: 5 }, _avg: { ms: 100 } },
         { cronJobId: 'job-2', _count: { _all: 2 }, _avg: { ms: 200 } },
       ]);
-    prisma.cronJob.findMany.mockResolvedValue([
-      { id: 'job-1', name: 'daily-digest' },
-      { id: 'job-2', name: 'weekly-report' },
-    ]);
+    // First overview call: job ownership rows (Round 81); second call: the
+    // busiest jobs' names for the per-job stats.
+    prisma.cronJob.findMany
+      .mockResolvedValueOnce([
+        {
+          schedulerGroup: 'default',
+          enabled: true,
+          lastRunStatus: null,
+          nextRunAt: past,
+        },
+        {
+          schedulerGroup: 'default',
+          enabled: true,
+          lastRunStatus: 'running',
+          nextRunAt: past,
+        },
+        {
+          schedulerGroup: 'e2e',
+          enabled: false,
+          lastRunStatus: 'done',
+          nextRunAt: null,
+        },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'job-1', name: 'daily-digest' },
+        { id: 'job-2', name: 'weekly-report' },
+      ]);
     prisma.cronSchedulerEvent.findMany.mockResolvedValue([
       {
         id: 'evt-1',
@@ -552,6 +575,10 @@ describe('CronService', () => {
     expect(overview.eventStats).toEqual([
       { group: 'default', total: 4 },
       { group: 'e2e', total: 1 },
+    ]);
+    expect(overview.jobGroups).toEqual([
+      { group: 'default', jobs: 2, enabled: 2, running: 1, due: 1 },
+      { group: 'e2e', jobs: 1, enabled: 0, running: 0, due: 0 },
     ]);
     expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({

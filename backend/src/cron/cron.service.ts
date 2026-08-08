@@ -117,6 +117,16 @@ export interface CronOverview {
   /** Per-group transition totals, so the UI can say "showing newest N of
    *  M transitions" and label filter chips with their history size (Round 74). */
   eventStats: CronOverviewEventStat[];
+  /** Per-lease-group job ownership (Round 81): how many cron jobs each
+   *  group owns and how many are enabled/running/due right now, so shared-DB
+   *  deployments can see which group owns what at a glance. */
+  jobGroups: {
+    group: string;
+    jobs: number;
+    enabled: number;
+    running: number;
+    due: number;
+  }[];
   runs: {
     total: number;
     lastHour: number;
@@ -736,7 +746,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * adds per-group transition totals (eventStats) so the newest-10 window can
    * be labeled against each group's full history. Round 76: `limit` widens
    * (or narrows) the transition window (1..100, default 10) so a selected
-   * group can show more than its newest 10 events.
+   * group can show more than its newest 10 events. Round 81 adds per-group
+   * job ownership counts (jobs/enabled/running/due) so the same call answers
+   * "which deployment owns which jobs" for a shared Postgres.
    */
   async overview(
     group?: string,
@@ -748,38 +760,54 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       Math.max(Math.trunc(limit) || OVERVIEW_RECENT_EVENTS, 1),
       OVERVIEW_EVENT_LIMIT_MAX,
     );
-    const [leases, events, eventGroups, total, lastHour, byStatus, topJobs] =
-      await Promise.all([
-        this.prisma.cronSchedulerLease.findMany({
-          orderBy: { schedulerGroup: 'asc' },
-        }),
-        this.prisma.cronSchedulerEvent.findMany({
-          ...(group ? { where: { schedulerGroup: group } } : {}),
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: eventLimit,
-        }),
-        this.prisma.cronSchedulerEvent.groupBy({
-          by: ['schedulerGroup'],
-          _count: { _all: true },
-          orderBy: { schedulerGroup: 'asc' },
-        }),
-        this.prisma.cronRun.count(),
-        this.prisma.cronRun.count({
-          where: { createdAt: { gte: hourAgo } },
-        }),
-        this.prisma.cronRun.groupBy({
-          by: ['status'],
-          _count: { _all: true },
-          _avg: { ms: true },
-        }),
-        this.prisma.cronRun.groupBy({
-          by: ['cronJobId'],
-          _count: { _all: true },
-          _avg: { ms: true },
-          orderBy: { _count: { cronJobId: 'desc' } },
-          take: OVERVIEW_TOP_JOBS,
-        }),
-      ]);
+    const [
+      leases,
+      events,
+      eventGroups,
+      total,
+      lastHour,
+      byStatus,
+      topJobs,
+      jobRows,
+    ] = await Promise.all([
+      this.prisma.cronSchedulerLease.findMany({
+        orderBy: { schedulerGroup: 'asc' },
+      }),
+      this.prisma.cronSchedulerEvent.findMany({
+        ...(group ? { where: { schedulerGroup: group } } : {}),
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: eventLimit,
+      }),
+      this.prisma.cronSchedulerEvent.groupBy({
+        by: ['schedulerGroup'],
+        _count: { _all: true },
+        orderBy: { schedulerGroup: 'asc' },
+      }),
+      this.prisma.cronRun.count(),
+      this.prisma.cronRun.count({
+        where: { createdAt: { gte: hourAgo } },
+      }),
+      this.prisma.cronRun.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+        _avg: { ms: true },
+      }),
+      this.prisma.cronRun.groupBy({
+        by: ['cronJobId'],
+        _count: { _all: true },
+        _avg: { ms: true },
+        orderBy: { _count: { cronJobId: 'desc' } },
+        take: OVERVIEW_TOP_JOBS,
+      }),
+      this.prisma.cronJob.findMany({
+        select: {
+          schedulerGroup: true,
+          enabled: true,
+          lastRunStatus: true,
+          nextRunAt: true,
+        },
+      }),
+    ]);
     const jobNames = new Map(
       (
         await this.prisma.cronJob.findMany({
@@ -788,6 +816,37 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         })
       ).map((job) => [job.id, job.name]),
     );
+    // Per-lease-group job ownership (Round 81): aggregate all rows once and
+    // let the map answer "who owns which jobs". `due` mirrors the ticker's
+    // NOT_RUNNING semantics (enabled + past nextRunAt + not running/never
+    // run); running rows are already claimed and not due again.
+    const jobGroups = new Map<
+      string,
+      { jobs: number; enabled: number; running: number; due: number }
+    >();
+    for (const job of jobRows) {
+      const entry = jobGroups.get(job.schedulerGroup) ?? {
+        jobs: 0,
+        enabled: 0,
+        running: 0,
+        due: 0,
+      };
+      entry.jobs += 1;
+      if (job.enabled) entry.enabled += 1;
+      if (job.lastRunStatus === STATUS_RUNNING) entry.running += 1;
+      const notRunning =
+        !job.lastRunStatus || job.lastRunStatus !== STATUS_RUNNING;
+      if (
+        job.enabled &&
+        job.nextRunAt !== null &&
+        job.nextRunAt !== undefined &&
+        job.nextRunAt.getTime() <= now.getTime() &&
+        notRunning
+      ) {
+        entry.due += 1;
+      }
+      jobGroups.set(job.schedulerGroup, entry);
+    }
     return {
       now: now.toISOString(),
       leases: leases.map((lease) => ({
@@ -810,6 +869,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         group: row.schedulerGroup,
         total: row._count._all,
       })),
+      jobGroups: [...jobGroups.entries()]
+        .map(([groupName, stats]) => ({ group: groupName, ...stats }))
+        .sort((a, b) => a.group.localeCompare(b.group)),
       runs: {
         total,
         lastHour,

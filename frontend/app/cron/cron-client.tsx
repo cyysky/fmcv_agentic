@@ -94,6 +94,13 @@ interface CronOverview {
   events: CronOverviewEvent[];
   eventGroups: string[];
   eventStats: Array<{ group: string; total: number }>;
+  jobGroups: Array<{
+    group: string;
+    jobs: number;
+    enabled: number;
+    running: number;
+    due: number;
+  }>;
   runs: {
     total: number;
     lastHour: number;
@@ -712,6 +719,30 @@ export default function CronPanel() {
                 >
                   {lease.group} · {lease.held ? "active" : "expired"} ·{" "}
                   {lease.owner}
+                </span>
+              ))
+            )}
+          </div>
+          <div className={styles.overviewRow}>
+            <span className={styles.overviewLabel}>Jobs by group:</span>
+            {overview.jobGroups.length === 0 ? (
+              <span className={styles.schedulerMeta}>No cron jobs yet</span>
+            ) : (
+              overview.jobGroups.map((owned) => (
+                <span
+                  key={owned.group}
+                  className={`${styles.schedulerChip} ${styles.jobOwnershipChip}`}
+                  title={`Group ${owned.group} · ${owned.jobs} job(s) · ${owned.enabled} enabled · ${owned.running} running · ${owned.due} due now`}
+                  data-testid="overview-job-group"
+                  data-job-group={owned.group}
+                  data-jobs={owned.jobs}
+                  data-enabled={owned.enabled}
+                  data-running={owned.running}
+                  data-due={owned.due}
+                >
+                  {owned.group} · {owned.jobs} job{owned.jobs === 1 ? "" : "s"} ·{" "}
+                  {owned.enabled} enabled · {owned.running} running ·{" "}
+                  {owned.due} due
                 </span>
               ))
             )}

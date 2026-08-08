@@ -67,6 +67,13 @@ interface CronOverviewRow {
   }>;
   eventGroups: string[];
   eventStats: Array<{ group: string; total: number }>;
+  jobGroups: Array<{
+    group: string;
+    jobs: number;
+    enabled: number;
+    running: number;
+    due: number;
+  }>;
   runs: {
     total: number;
     lastHour: number;
@@ -413,6 +420,17 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
         }),
       ]),
     );
+    // Round 81: per-group job ownership. This suite's main/restart/grouped
+    // jobs are all owned by `default`; the grouped job was returned to it
+    // before firing, so it shows up here too.
+    const defaultJobs = overview.jobGroups.find(
+      (owned) => owned.group === 'default',
+    );
+    if (!defaultJobs)
+      throw new Error('overview: default group job counts missing');
+    expect(defaultJobs.jobs).toBeGreaterThanOrEqual(3);
+    expect(defaultJobs.enabled).toBeGreaterThanOrEqual(3);
+    expect(defaultJobs.running).toBe(0);
     // The job behind this suite has three terminal runs at this point.
     expect(overview.runs.total).toBeGreaterThanOrEqual(3);
     expect(overview.runs.lastHour).toBeGreaterThanOrEqual(3);
