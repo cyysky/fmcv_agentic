@@ -10,8 +10,17 @@ import {
   Post,
 } from '@nestjs/common';
 import { Connection } from '@prisma/client';
-import { ConnectionTestResult, ConnectionsService } from './connections.service';
-import { CreateConnectionDto, TestConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
+import {
+  ConnectionTestResult,
+  ConnectionsService,
+  ModelListResult,
+} from './connections.service';
+import {
+  CreateConnectionDto,
+  FetchModelsDto,
+  TestConnectionDto,
+  UpdateConnectionDto,
+} from './dto/connection.dto';
 
 @Controller('connections')
 export class ConnectionsController {
@@ -32,6 +41,13 @@ export class ConnectionsController {
     return this.connectionsService.findOne(id);
   }
 
+  @Get(':id/models')
+  findModels(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ModelListResult> {
+    return this.connectionsService.fetchModels(id);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -49,6 +65,12 @@ export class ConnectionsController {
   @HttpCode(200)
   testDraft(@Body() dto: TestConnectionDto): Promise<ConnectionTestResult> {
     return this.connectionsService.testDraft(dto);
+  }
+
+  @Post('models/fetch')
+  @HttpCode(200)
+  fetchModels(@Body() dto: FetchModelsDto): Promise<ModelListResult> {
+    return this.connectionsService.fetchModelsDraft(dto);
   }
 
   @Post(':id/test')

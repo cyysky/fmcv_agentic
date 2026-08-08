@@ -7,6 +7,7 @@ import { Connection, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CreateConnectionDto,
+  FetchModelsDto,
   TestConnectionDto,
   UpdateConnectionDto,
 } from './dto/connection.dto';
@@ -18,6 +19,16 @@ export interface ConnectionTestResult {
   latencyMs: number;
   model: string;
   message: string;
+}
+
+/** Result of fetching a provider's model list (OpenAI-compatible GET /models). */
+export interface ModelListResult {
+  ok: boolean;
+  models: string[];
+  status?: number;
+  latencyMs: number;
+  message: string;
+  truncated?: boolean;
 }
 
 @Injectable()
@@ -102,7 +113,46 @@ export class ConnectionsService {
     if (!conn) {
       throw new NotFoundException(`Connection ${id} not found`);
     }
-    return this.probe(conn.baseUrl, conn.modelName, conn.apiKey ?? undefined);
+    const result = await this.probe(
+      conn.baseUrl,
+      conn.modelName,
+      conn.apiKey ?? undefined,
+    );
+    // Persist the last-known probe so a reload of /settings still shows the
+    // connection's known health (fresh row results always win in the UI).
+    await this.prisma.connection.update({
+      where: { id },
+      data: {
+        lastProbeAt: new Date(),
+        lastProbeOk: result.ok,
+        lastProbeStatus: result.status ?? null,
+        lastProbeLatencyMs: result.latencyMs,
+        lastProbeModel: result.model,
+        lastProbeMessage: result.message,
+      },
+    });
+    return result;
+  }
+
+  /**
+   * Fetch the provider model list for a stored connection (GET {baseUrl}/models
+   * with the stored key). Same wire behavior as `fetchModelsDraft` so the
+   * Settings form can hydrate its Models textarea from known-good values.
+   */
+  async fetchModels(id: string): Promise<ModelListResult> {
+    const conn = await this.prisma.connection.findUnique({ where: { id } });
+    if (!conn) {
+      throw new NotFoundException(`Connection ${id} not found`);
+    }
+    return this.fetchModelsFrom(conn.baseUrl, conn.apiKey ?? undefined);
+  }
+
+  /**
+   * Fetch a provider model list from connection values that have not been
+   * persisted yet (the Settings form's "Fetch Models" button before saving).
+   */
+  async fetchModelsDraft(dto: FetchModelsDto): Promise<ModelListResult> {
+    return this.fetchModelsFrom(dto.baseUrl, dto.apiKey);
   }
 
   /**
@@ -112,6 +162,102 @@ export class ConnectionsService {
    */
   async testDraft(dto: TestConnectionDto): Promise<ConnectionTestResult> {
     return this.probe(dto.baseUrl, dto.modelName, dto.apiKey);
+  }
+
+
+  /** Shared model-list fetch: GET {baseUrl}/models with bounds + graceful errors. */
+  private async fetchModelsFrom(
+    baseUrl: string,
+    apiKey?: string,
+  ): Promise<ModelListResult> {
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.testTimeoutMs);
+    try {
+      const response = await fetch(
+        `${this.normalizeBaseUrl(baseUrl)}/models`,
+        {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+          },
+          signal: controller.signal,
+        },
+      );
+      const latencyMs = Date.now() - started;
+
+      if (!response.ok) {
+        let detail = '';
+        try {
+          detail = (await response.text()).slice(0, 300).trim();
+        } catch {
+          /* body unreadable; the status is still useful */
+        }
+        return {
+          ok: false,
+          models: [],
+          status: response.status,
+          latencyMs,
+          message: `Upstream returned HTTP ${response.status}${
+            detail ? `: ${detail}` : ''
+          }`,
+        };
+      }
+
+      let ids: string[] = [];
+      let truncated = false;
+      try {
+        const parsed = (await response.json()) as {
+          data?: Array<{ id?: unknown }>;
+        };
+        const rawIds = Array.isArray(parsed?.data)
+          ? parsed.data
+              .map((entry) =>
+                typeof entry?.id === 'string' ? entry.id.trim() : '',
+              )
+              .filter((id) => id.length > 0)
+          : [];
+        ids = this.normalizeModels(rawIds);
+        if (rawIds.length > ids.length) {
+          // Raw list had duplicates/blank entries before normalization.
+        }
+        if (rawIds.length > 50) {
+          ids = ids.slice(0, 50);
+          truncated = true;
+        }
+      } catch {
+        return {
+          ok: false,
+          models: [],
+          status: response.status,
+          latencyMs,
+          message: 'Upstream returned a body that is not a JSON model list.',
+        };
+      }
+
+      return {
+        ok: true,
+        models: ids,
+        status: response.status,
+        latencyMs,
+        truncated,
+        message: `Fetched ${ids.length} model${ids.length === 1 ? '' : 's'} from the provider.`,
+      };
+    } catch (err) {
+      const latencyMs = Date.now() - started;
+      const raw = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        models: [],
+        latencyMs,
+        message: /abort/i.test(raw)
+          ? `Connection timed out after ${this.testTimeoutMs} ms.`
+          : `Connection failed: ${raw}`,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Shared live probe: one-token chat/completions with bounds + graceful errors. */
@@ -199,12 +345,21 @@ export class ConnectionsService {
     return apiKey === '' ? null : apiKey;
   }
 
-  /** Trim, drop blanks, and de-dupe the provider model list so the picker
-   *  never shows empty labels or repeated entries. Empty array clears. */
+  /** Trim, drop blanks, and de-dupe the provider model list (case-insensitive,
+   *  first-seen casing wins) so the picker never shows empty labels or
+   *  case-variant duplicates. Empty array clears. */
   private normalizeModels(models: string[]): string[] {
-    return [...new Set(
-      models.map((m) => m.trim()).filter((m) => m.length > 0),
-    )];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of models) {
+      const model = raw.trim();
+      if (!model) continue;
+      const key = model.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(model);
+    }
+    return out;
   }
 
   /** Mask the API key so secrets are not returned to the client. */

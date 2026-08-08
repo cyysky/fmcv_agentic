@@ -72,6 +72,16 @@ export class TestConnectionDto {
   apiKey?: string;
 }
 
+export class FetchModelsDto {
+  @IsString()
+  @Matches(URL_REGEX, { message: 'baseUrl must be a valid http(s) URL' })
+  baseUrl: string;
+
+  @IsString()
+  @IsOptional()
+  apiKey?: string;
+}
+
 export class UpdateConnectionDto {
   @IsString()
   @MinLength(1)

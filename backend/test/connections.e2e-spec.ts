@@ -35,6 +35,20 @@ describe('Connections API (e2e, real Postgres)', () => {
           res.end('{"error":"invalid api key"}');
           return;
         }
+        if (req.method === 'GET' && (req.url ?? '').endsWith('/models')) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              object: 'list',
+              data: [
+                { id: 'probe-model' },
+                { id: 'llama-3.1-70b' },
+                { id: 'LLAMA-3.1-70B' },
+              ],
+            }),
+          );
+          return;
+        }
         const parsed = JSON.parse(body || '{}');
         const valid =
           parsed.model === 'probe-model' && parsed.max_tokens === 1;
@@ -168,6 +182,22 @@ describe('Connections API (e2e, real Postgres)', () => {
     }
   });
 
+  it('de-dupes model ids case-insensitively (first-seen casing wins)', async () => {
+    const created = await http()
+      .post('/api/connections')
+      .send({
+        ...payload,
+        displayName: `e2e-models-ci-${Date.now().toString(36)}`,
+        models: ['Llama-3.1-70B', 'llama-3.1-70b', 'MIXTRAL-8x7B', 'mixtral-8x7b'],
+      })
+      .expect(201);
+    try {
+      expect(created.body.models).toEqual(['Llama-3.1-70B', 'MIXTRAL-8x7B']);
+    } finally {
+      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+    }
+  });
+
   it('rejects malformed model lists', async () => {
     const created = await http().post('/api/connections').send(payload).expect(201);
     try {
@@ -280,6 +310,50 @@ describe('Connections API (e2e, real Postgres)', () => {
         .post('/api/connections/00000000-0000-0000-0000-000000000000/test')
         .expect(404);
     });
+
+    it('persists the probe result on the row so reloads keep known health', async () => {
+      const created = await http()
+        .post('/api/connections')
+        .send({
+          displayName: `probe-persist-${Date.now().toString(36)}`,
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          contextLength: 128000,
+          apiKey: 'sk-e2e-supersecret123',
+        })
+        .expect(201);
+
+      try {
+        await http()
+          .post(`/api/connections/${created.body.id}/test`)
+          .expect(200);
+
+        const row = await http().get(`/api/connections/${created.body.id}`).expect(200);
+        expect(row.body.lastProbeOk).toBe(true);
+        expect(row.body.lastProbeStatus).toBe(200);
+        expect(row.body.lastProbeLatencyMs).toBeGreaterThanOrEqual(0);
+        expect(row.body.lastProbeModel).toBe('probe-model');
+        expect(String(row.body.lastProbeMessage)).toContain('responded');
+        expect(row.body.lastProbeAt).toBeDefined();
+
+        // A later failed probe replaces the last-known result (failure metrics
+        // are just as useful after a reload).
+        await http()
+          .patch(`/api/connections/${created.body.id}`)
+          .send({ apiKey: 'sk-wrong-key' })
+          .expect(200);
+        const failed = await http()
+          .post(`/api/connections/${created.body.id}/test`)
+          .expect(200);
+        expect(failed.body.ok).toBe(false);
+        const row2 = await http().get(`/api/connections/${created.body.id}`).expect(200);
+        expect(row2.body.lastProbeOk).toBe(false);
+        expect(row2.body.lastProbeStatus).toBe(401);
+        expect(String(row2.body.lastProbeMessage)).toContain('401');
+      } finally {
+        await cleanup(created.body.id);
+      }
+    });
   });
 
   describe('connection draft test endpoint (test before save)', () => {
@@ -345,6 +419,80 @@ describe('Connections API (e2e, real Postgres)', () => {
         .send({ baseUrl: 'ftp://example.com', modelName: 'probe-model' })
         .expect(400);
       expect(JSON.stringify(res.body.message)).toContain('baseUrl');
+    });
+  });
+
+  describe('connection model discovery (GET /models)', () => {
+    it('GET /:id/models fetches the provider list with the stored key', async () => {
+      const created = await http()
+        .post('/api/connections')
+        .send({
+          displayName: `models-ok-${Date.now().toString(36)}`,
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          contextLength: 128000,
+          apiKey: 'sk-e2e-supersecret123',
+        })
+        .expect(201);
+
+      try {
+        const res = await http()
+          .get(`/api/connections/${created.body.id}/models`)
+          .expect(200);
+        expect(res.body.ok).toBe(true);
+        // Case-insensitive dedupe: LLAMA-3.1-70B collapses into the first id.
+        expect(res.body.models).toEqual(['probe-model', 'llama-3.1-70b']);
+        expect(res.body.status).toBe(200);
+        expect(res.body.latencyMs).toBeGreaterThanOrEqual(0);
+        expect(String(res.body.message)).toContain('Fetched 2 models');
+        expect(lastAuth).toBe('Bearer sk-e2e-supersecret123');
+      } finally {
+        await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+      }
+    });
+
+    it('POST /models/fetch probes unsaved values with the entered key', async () => {
+      const res = await http()
+        .post('/api/connections/models/fetch')
+        .send({
+          baseUrl: upstreamUrl,
+          apiKey: 'sk-e2e-supersecret123',
+        })
+        .expect(200);
+
+      expect(res.body.ok).toBe(true);
+      expect(res.body.models).toEqual(['probe-model', 'llama-3.1-70b']);
+      expect(lastAuth).toBe('Bearer sk-e2e-supersecret123');
+    });
+
+    it('reports endpoints without a reachable /models route gracefully', async () => {
+      const probe = createServer();
+      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      const closedPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+      const res = await http()
+        .post('/api/connections/models/fetch')
+        .send({ baseUrl: `http://127.0.0.1:${closedPort}/v1` })
+        .expect(200);
+
+      expect(res.body.ok).toBe(false);
+      expect(res.body.models).toEqual([]);
+      expect(String(res.body.message)).toContain('Connection failed');
+    });
+
+    it('rejects non-http(s) base URLs for model fetch', async () => {
+      const res = await http()
+        .post('/api/connections/models/fetch')
+        .send({ baseUrl: 'ftp://example.com' })
+        .expect(400);
+      expect(JSON.stringify(res.body.message)).toContain('baseUrl');
+    });
+
+    it('404 for an unknown connection id', async () => {
+      await http()
+        .get('/api/connections/00000000-0000-0000-0000-000000000000/models')
+        .expect(404);
     });
   });
 });

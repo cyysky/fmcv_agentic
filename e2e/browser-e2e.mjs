@@ -37,6 +37,14 @@
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
 //      graceful inline result
+//   12. Pre-run stale sweep: rows/folders from interrupted runs with this
+//      script's fixture prefixes (browser-e2e-*, e2e-settings-*, e2e-auto-*,
+//      e2e-session-*, e2e-status-*) are deleted before any flow starts
+//   13. Settings model discovery + probe persistence: Fetch Models fills the
+//      Models textarea through both the stored-key and draft endpoints
+//      (case-insensitive dedupe, graceful dead-endpoint failure), probes
+//      persist server-side and survive reload with a "probed HH:MM" marker,
+//      and failure-with-status rows keep their HTTP 401 · N ms metrics
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -132,7 +140,14 @@ async function httpJson(path, method = "GET") {
  *  (body + authorization header) so the E2E can prove the agent routed the
  *  turn to the saved connection's endpoint/model/key without touching a real
  *  LLM or any secret. */
-async function startFakeUpstream() {
+async function startFakeUpstream(options = {}) {
+  // Options: `key` auth-gates both routes; `chatStatus` (default 200) makes
+  // POST /chat/completions fail with that HTTP status so the E2E can exercise
+  // failure-with-status metrics. GET /models deliberately returns a
+  // case-variant duplicate so the Settings Fetch Models flow can prove
+  // case-insensitive dedupe (probe-model, llama-3.1-70b, LLAMA-3.1-70B).
+  const expectedKey = options.key ?? null;
+  const chatStatus = Number(options.chatStatus ?? 200);
   const received = [];
   const server = createServer((req, res) => {
     let raw = "";
@@ -150,7 +165,34 @@ async function startFakeUpstream() {
         authorization: req.headers.authorization ?? null,
         body,
       });
+      if (req.method === "GET" && (req.url ?? "").endsWith("/models")) {
+        if (expectedKey && req.headers.authorization !== `Bearer ${expectedKey}`) {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "unauthorized" } }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          object: "list",
+          data: [
+            { id: "probe-model" },
+            { id: "llama-3.1-70b" },
+            { id: "LLAMA-3.1-70B" },
+          ],
+        }));
+        return;
+      }
       if (req.method === "POST" && (req.url ?? "").endsWith("/chat/completions")) {
+        if (expectedKey && req.headers.authorization !== `Bearer ${expectedKey}`) {
+          res.writeHead(401, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: "unauthorized" } }));
+          return;
+        }
+        if (chatStatus !== 200) {
+          res.writeHead(chatStatus, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: { message: `simulated HTTP ${chatStatus}` } }));
+          return;
+        }
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
           id: "e2e-conn-completion",
@@ -1781,13 +1823,94 @@ async function filesCleanup(flow) {
 
 /* --------------------------------- main --------------------------------- */
 
+/** Pre-run garbage collection: delete rows/folders this script itself creates
+ *  that were left behind by an earlier interrupted run (killed tabs, failed
+ *  rounds, host restarts). Only fixture names/prefixes are matched — real
+ *  user data is never touched. Empty per-channel project folders are pruned by
+ *  channel deletion; any still-present fixture folder is reported, not
+ *  silently removed (the read-only project API cannot force a delete). */
+async function staleSweep() {
+  const result = { channels: [], sessions: [], connections: [], projectFolders: [], errors: [] };
+  const isFixture = (name) =>
+    ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
+      String(name ?? "").startsWith(p),
+    );
+  try {
+    const res = await fetch(`${API}/channels`);
+    if (!res.ok) throw new Error(`list channels -> HTTP ${res.status}`);
+    const channels = await res.json();
+    for (const ch of Array.isArray(channels) ? channels : []) {
+      if (!isFixture(ch.slug ?? ch.name ?? "")) continue;
+      const del = await fetch(`${API}/channels/${ch.id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete channel #${ch.slug} -> HTTP ${del.status}`);
+      result.channels.push(ch.slug ?? ch.id);
+    }
+    if (result.channels.length) log(`  stale sweep: deleted ${result.channels.length} channel(s) [${result.channels.join(", ")}]`);
+  } catch (err) {
+    result.errors.push(`channels: ${err.message}`);
+    log(`  stale sweep: channels FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/agent/sessions`);
+    if (!res.ok) throw new Error(`list sessions -> HTTP ${res.status}`);
+    const sessions = await res.json();
+    for (const s of Array.isArray(sessions) ? sessions : []) {
+      if (!s?.id) continue;
+      const title = String(s.title ?? "");
+      if (!isFixture(title) && !title.startsWith("Hello from sessions E2E")) continue;
+      const del = await fetch(`${API}/agent/sessions/${s.id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete session ${s.id} -> HTTP ${del.status}`);
+      result.sessions.push(s.id);
+    }
+    if (result.sessions.length) log(`  stale sweep: deleted ${result.sessions.length} session(s)`);
+  } catch (err) {
+    result.errors.push(`sessions: ${err.message}`);
+    log(`  stale sweep: sessions FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/connections`);
+    if (!res.ok) throw new Error(`list connections -> HTTP ${res.status}`);
+    const conns = await res.json();
+    for (const c of Array.isArray(conns) ? conns : []) {
+      if (!isFixture(c.displayName ?? "")) continue;
+      const del = await fetch(`${API}/connections/${c.id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete connection #${c.displayName} -> HTTP ${del.status}`);
+      result.connections.push(c.displayName ?? c.id);
+    }
+    if (result.connections.length) log(`  stale sweep: deleted ${result.connections.length} connection(s) [${result.connections.join(", ")}]`);
+  } catch (err) {
+    result.errors.push(`connections: ${err.message}`);
+    log(`  stale sweep: connections FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/agent/workspaces`);
+    if (!res.ok) throw new Error(`workspaces -> HTTP ${res.status}`);
+    const body = await res.json();
+    const projects = Array.isArray(body.projects) ? body.projects : [];
+    for (const pr of projects) {
+      const name = String(pr?.name ?? pr ?? "");
+      if (isFixture(name)) result.projectFolders.push(name);
+    }
+    if (result.projectFolders.length) {
+      log(`  stale sweep: leftover fixture project folder(s) [${result.projectFolders.join(", ")}]`);
+    }
+  } catch (err) {
+    result.errors.push(`workspaces: ${err.message}`);
+    log(`  stale sweep: workspaces FAILED: ${err.message}`);
+  }
+  if (!result.errors.length) log("  stale sweep: clean (no fixture leftovers)");
+  return result;
+}
+
 async function settingsFlow() {
   const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/settings`;
   log(`flow settings -> ${url}`);
   const { tab, c } = await setupPage(url);
-  const flow = { steps: [], result: null, fixtureId: null, autoFixtureId: null };
+  const flow = { steps: [], result: null, fixtureId: null, autoFixtureId: null, statusFixtureId: null };
   let autoUpstream = null;
+  let draftUpstream = null;
+  let statusUpstream = null;
   try {
     wireErrorCapture(c, sink);
 
@@ -2033,7 +2156,7 @@ async function settingsFlow() {
     const autoName = `e2e-auto-${Date.now().toString(36)}`;
     const autoKey = `sk-e2e-auto-${Date.now().toString(36)}`;
     const autoModel = process.env.E2E_CONN_MODEL || "ds4-flash";
-    autoUpstream = await startFakeUpstream();
+    autoUpstream = await startFakeUpstream({ key: autoKey });
     const autoBaseUrl = `http://${connectionHostIp()}:${autoUpstream.port}/v1`;
     await c.send("Page.navigate", { url });
     // The fixture row (renamed) only renders after the client fetch finishes,
@@ -2123,6 +2246,281 @@ async function settingsFlow() {
     flow.steps.push("auto-probe-replayed-in-edit");
     await screenshot(c, "settings-auto-probe.png");
 
+    // 7. Fetch Models (stored-key endpoint): still editing the auto fixture
+    //    with the stored base URL and a blank key, the button must call
+    //    GET /connections/:id/models with the backend credential and write
+    //    the provider's deduped list into the Models textarea.
+    const fetchStoredClicked = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Fetch Models" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!fetchStoredClicked) throw new Error("settings flow: Fetch Models button missing (stored key)");
+    const fetchStoredDone = await waitFor(
+      c,
+      `document.querySelector('[data-models-fetch-result]')?.innerText.includes("Fetched 2 models") ?? false`,
+      20000,
+      500,
+      "fetch models result (stored key)",
+    );
+    const fetchStoredNote = await evalJs(
+      c,
+      `document.querySelector('[data-models-fetch-result]')?.innerText.trim() ?? null`,
+    );
+    const fetchStoredText = await evalJs(
+      c,
+      `document.querySelector('textarea[name="models"]')?.value ?? ""`,
+    );
+    const modelsFetchStoredHit = autoUpstream.received.find(
+      (r) => r.method === "GET" && (r.url ?? "").endsWith("/models"),
+    );
+    flow.modelsFetchStoredKeyOk =
+      !!fetchStoredDone &&
+      (fetchStoredNote ?? "").includes("Fetched 2 models") &&
+      fetchStoredText.includes("probe-model") &&
+      fetchStoredText.includes("llama-3.1-70b") &&
+      !fetchStoredText.includes("LLAMA-3.1-70B");
+    flow.modelsFetchStoredKeyAuthOk =
+      !!modelsFetchStoredHit &&
+      modelsFetchStoredHit.authorization === `Bearer ${autoKey}`;
+    if (!flow.modelsFetchStoredKeyOk || !flow.modelsFetchStoredKeyAuthOk) {
+      throw new Error(`settings flow: Fetch Models (stored key) failed (text=${JSON.stringify(fetchStoredText)} note=${JSON.stringify(fetchStoredNote)} wire=${JSON.stringify(modelsFetchStoredHit)})`);
+    }
+    flow.steps.push("fetch-models-stored-key");
+
+    // 8. Fetch Models (draft endpoint): changing the base URL and entering a
+    //    key routes through POST /connections/models/fetch, proving the
+    //    entered key is what reaches the provider.
+    const draftKey = `sk-e2e-draft-${Date.now().toString(36)}`;
+    draftUpstream = await startFakeUpstream({ key: draftKey });
+    const draftBaseUrl = `http://${connectionHostIp()}:${draftUpstream.port}/v1`;
+    await evalJs(c, jsSetInput('input[name="baseUrl"]', draftBaseUrl));
+    await evalJs(c, jsSetInput('input[name="apiKey"]', draftKey));
+    await delay(100);
+    const fetchDraftClicked = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Fetch Models" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!fetchDraftClicked) throw new Error("settings flow: Fetch Models button missing (draft)");
+    const fetchDraftDone = await waitFor(
+      c,
+      `document.querySelector('[data-models-fetch-result]')?.innerText.includes("Fetched 2 models") ?? false`,
+      20000,
+      500,
+      "fetch models result (draft)",
+    );
+    const fetchDraftText = await evalJs(
+      c,
+      `document.querySelector('textarea[name="models"]')?.value ?? ""`,
+    );
+    const modelsFetchDraftHit = draftUpstream.received.find(
+      (r) => r.method === "GET" && (r.url ?? "").endsWith("/models"),
+    );
+    flow.modelsFetchDraftOk =
+      !!fetchDraftDone &&
+      fetchDraftText.includes("probe-model") &&
+      fetchDraftText.includes("llama-3.1-70b") &&
+      !fetchDraftText.includes("LLAMA-3.1-70B");
+    flow.modelsFetchDraftAuthOk =
+      !!modelsFetchDraftHit &&
+      modelsFetchDraftHit.authorization === `Bearer ${draftKey}`;
+    if (!flow.modelsFetchDraftOk || !flow.modelsFetchDraftAuthOk) {
+      throw new Error(`settings flow: Fetch Models (draft) failed (text=${JSON.stringify(fetchDraftText)} wire=${JSON.stringify(modelsFetchDraftHit)})`);
+    }
+    flow.steps.push("fetch-models-draft");
+    await screenshot(c, "settings-fetch-models.png");
+
+    // 8b. Discard the draft values, then prove Fetch Models fails gracefully
+    //    (visible error note, never a crash) against a dead endpoint.
+    const cancelDraft = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Cancel");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!cancelDraft) throw new Error("settings flow: Cancel (draft) missing");
+    const backToAdd = await waitFor(c, `document.body.innerText.includes("Add Connection")`, 15000, 400, "add mode after draft cancel");
+    if (!backToAdd) throw new Error("settings flow: draft cancel never returned to add mode");
+    const deadEdit = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(renamed)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Edit");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!deadEdit) throw new Error("settings flow: Edit (dead fixture) missing");
+    const deadEditMode = await waitFor(c, `document.body.innerText.includes("Edit Connection")`, 15000, 400, "dead fixture edit mode");
+    if (!deadEditMode) throw new Error("settings flow: dead fixture edit mode never opened");
+    const deadFetchClicked = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Fetch Models" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!deadFetchClicked) throw new Error("settings flow: Fetch Models (dead) missing");
+    const deadFetchDone = await waitFor(
+      c,
+      `(() => {
+        const el = document.querySelector('[data-models-fetch-result]');
+        if (!el) return false;
+        const t = el.innerText;
+        return /Connection failed|timed out|HTTP \d+/.test(t);
+      })()`,
+      20000,
+      500,
+      "fetch models failure note",
+    );
+    const deadFetchNote = await evalJs(
+      c,
+      `document.querySelector('[data-models-fetch-result]')?.innerText.trim() ?? null`,
+    );
+    flow.modelsFetchDeadGraceful = !!deadFetchDone && /Connection failed|timed out|HTTP \d+/.test(deadFetchNote ?? "");
+    if (!flow.modelsFetchDeadGraceful) {
+      throw new Error(`settings flow: dead Fetch Models did not fail gracefully (${JSON.stringify(deadFetchNote)})`);
+    }
+    flow.steps.push("fetch-models-dead-graceful");
+    const cancelDead = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.textContent.trim() === "Cancel");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!cancelDead) throw new Error("settings flow: Cancel (dead) missing");
+
+    // 9. Probe persistence: the auto-probe must be stored server-side and a
+    //    reload must replay it with metrics + a "probed HH:MM" marker.
+    const persistedRow = await fetch(`${API}/connections/${flow.autoFixtureId}`).then((r) => r.json());
+    flow.autoProbePersistedServerSide =
+      persistedRow.lastProbeOk === true &&
+      persistedRow.lastProbeStatus === 200 &&
+      typeof persistedRow.lastProbeLatencyMs === "number" &&
+      persistedRow.lastProbeModel === autoModel &&
+      !!persistedRow.lastProbeAt;
+    if (!flow.autoProbePersistedServerSide) {
+      throw new Error(`settings flow: auto probe not persisted server-side (${JSON.stringify(persistedRow)})`);
+    }
+    await c.send("Page.navigate", { url });
+    const reloadedAutoRow = await waitFor(
+      c,
+      `(() => {
+        const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(autoName)}));
+        const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+        if (!r) return false;
+        const t = r.innerText;
+        return t.includes("Connected") && /HTTP 200/.test(t) && /\\d+ ms/.test(t) && /probed \\d{1,2}:\\d{2}/.test(t);
+      })()`,
+      30000,
+      600,
+      "auto probe persisted after reload",
+    );
+    flow.autoProbePersistedAfterReload = !!reloadedAutoRow;
+    flow.autoProbePersistedRowText = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(autoName)}));
+      const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+      return r ? r.innerText.trim() : null;
+    })()`);
+    if (!flow.autoProbePersistedAfterReload) {
+      throw new Error(`settings flow: auto probe lost after reload (${JSON.stringify(flow.autoProbePersistedRowText)})`);
+    }
+    flow.steps.push("probe-persisted-after-reload");
+
+    // 10. Failure-with-status metrics: a probe that got an HTTP answer but
+    //    failed must still render metrics (HTTP 401 · N ms) and survive a
+    //    reload, proving the last-known result keeps its context.
+    const statusKey = `sk-e2e-status-${Date.now().toString(36)}`;
+    statusUpstream = await startFakeUpstream({ key: statusKey, chatStatus: 401 });
+    const statusName = `e2e-status-${Date.now().toString(36)}`;
+    const statusConn = await fetch(`${API}/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        displayName: statusName,
+        baseUrl: `http://${connectionHostIp()}:${statusUpstream.port}/v1`,
+        modelName: autoModel,
+        contextLength: 128000,
+        apiKey: statusKey,
+      }),
+    });
+    if (!statusConn.ok) {
+      throw new Error(`settings flow: could not create failure fixture (HTTP ${statusConn.status})`);
+    }
+    flow.statusFixtureId = (await statusConn.json()).id;
+    await c.send("Page.navigate", { url });
+    const statusRowSeen = await waitFor(c, `document.body.innerText.includes(${JSON.stringify(statusName)})`, 30000, 600, "failure fixture row");
+    if (!statusRowSeen) throw new Error("settings flow: failure fixture row never rendered");
+    const statusTestClicked = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(statusName)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Test");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!statusTestClicked) throw new Error("settings flow: Test (failure fixture) missing");
+    const statusMetricsSeen = await waitFor(
+      c,
+      `(() => {
+        const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(statusName)}));
+        const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+        if (!r) return false;
+        const t = r.innerText;
+        return t.includes("HTTP 401") && /HTTP 401 · \\d+ ms/.test(t);
+      })()`,
+      20000,
+      500,
+      "failure-with-status metrics",
+    );
+    flow.failureWithStatusMetrics = !!statusMetricsSeen;
+    if (!flow.failureWithStatusMetrics) {
+      const snapshot = await evalJs(c, `(() => {
+        const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(statusName)}));
+        const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+        return r ? r.innerText.trim() : document.body.innerText.slice(0, 1200);
+      })()`);
+      throw new Error(`settings flow: failure-with-status metrics missing (${JSON.stringify(snapshot)})`);
+    }
+    flow.failureWithStatusRowText = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(statusName)}));
+      const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+      return r ? r.innerText.trim() : null;
+    })()`);
+    const statusPersisted = await fetch(`${API}/connections/${flow.statusFixtureId}`).then((r) => r.json());
+    flow.failurePersistedServerSide =
+      statusPersisted.lastProbeOk === false &&
+      statusPersisted.lastProbeStatus === 401 &&
+      typeof statusPersisted.lastProbeLatencyMs === "number" &&
+      !!statusPersisted.lastProbeAt;
+    if (!flow.failurePersistedServerSide) {
+      throw new Error(`settings flow: failed probe not persisted (${JSON.stringify(statusPersisted)})`);
+    }
+    await c.send("Page.navigate", { url });
+    const statusReloadSeen = await waitFor(
+      c,
+      `(() => {
+        const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(statusName)}));
+        const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+        if (!r) return false;
+        const t = r.innerText;
+        return t.includes("HTTP 401") && /probed \\d{1,2}:\\d{2}/.test(t);
+      })()`,
+      30000,
+      600,
+      "failure metrics after reload",
+    );
+    flow.failurePersistedAfterReload = !!statusReloadSeen;
+    if (!flow.failurePersistedAfterReload) {
+      throw new Error("settings flow: failure metrics lost after reload");
+    }
+    flow.steps.push("failure-metrics-persisted");
+    await screenshot(c, "settings-failed-status-reload.png");
+
     // 4. Server-side cleanup: drop the fixture and confirm the row disappears.
     await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" });
     flow.fixtureId = null;
@@ -2151,6 +2549,21 @@ async function settingsFlow() {
     );
     flow.autoCleanup = autoGone ? "clean" : "leftover";
 
+    // 13. Failure fixture cleanup.
+    if (flow.statusFixtureId) {
+      await fetch(`${API}/connections/${flow.statusFixtureId}`, { method: "DELETE" }).catch(() => undefined);
+      flow.statusFixtureId = null;
+    }
+    await c.send("Page.navigate", { url });
+    const statusGone = await waitFor(
+      c,
+      `!document.body.innerText.includes(${JSON.stringify(statusName)})`,
+      15000,
+      400,
+      "failure fixture removal",
+    );
+    flow.statusCleanup = statusGone ? "clean" : "leftover";
+
     flow.result = {
       keyBlankOnEdit: flow.keyBlankOnEdit,
       keyNotSentOnPatch: flow.keyNotSentOnPatch,
@@ -2167,6 +2580,19 @@ async function settingsFlow() {
       autoProbeUpstreamMaxTokens: flow.autoProbeUpstreamMaxTokens,
       autoProbeRowText: flow.autoProbeRowText,
       autoEditReplaysProbe: flow.autoEditReplaysProbe,
+      modelsFetchStoredKeyOk: flow.modelsFetchStoredKeyOk,
+      modelsFetchStoredKeyAuthOk: flow.modelsFetchStoredKeyAuthOk,
+      modelsFetchDraftOk: flow.modelsFetchDraftOk,
+      modelsFetchDraftAuthOk: flow.modelsFetchDraftAuthOk,
+      modelsFetchDeadGraceful: flow.modelsFetchDeadGraceful,
+      autoProbePersistedServerSide: flow.autoProbePersistedServerSide,
+      autoProbePersistedAfterReload: flow.autoProbePersistedAfterReload,
+      autoProbePersistedRowText: flow.autoProbePersistedRowText,
+      failureWithStatusMetrics: flow.failureWithStatusMetrics,
+      failureWithStatusRowText: flow.failureWithStatusRowText,
+      failurePersistedServerSide: flow.failurePersistedServerSide,
+      failurePersistedAfterReload: flow.failurePersistedAfterReload,
+      statusCleanup: flow.statusCleanup,
       autoCleanup: flow.autoCleanup,
       cleanup: flow.cleanup,
     };
@@ -2178,11 +2604,17 @@ async function settingsFlow() {
     if (flow.autoFixtureId) {
       await fetch(`${API}/connections/${flow.autoFixtureId}`, { method: "DELETE" }).catch(() => undefined);
     }
-    if (autoUpstream) {
-      try {
-        autoUpstream.server.close();
-      } catch {
-        // socket already closed
+    if (flow.statusFixtureId) {
+      await fetch(`${API}/connections/${flow.statusFixtureId}`, { method: "DELETE" }).catch(() => undefined);
+      flow.statusFixtureId = null;
+    }
+    for (const up of [autoUpstream, draftUpstream, statusUpstream]) {
+      if (up) {
+        try {
+          up.server.close();
+        } catch {
+          // socket already closed
+        }
       }
     }
     c.close();
@@ -2350,6 +2782,7 @@ async function main() {
   log("browser E2E start");
 
   try {
+    report.staleSweep = await staleSweep();
     for (const r of routes) {
       report.routes.push(await probeRoute(r));
     }
@@ -2369,6 +2802,13 @@ async function main() {
   }
 
   const failures = [];
+  const sweep = report.staleSweep;
+  if (!sweep || sweep.errors.length) {
+    failures.push(`stale sweep: ${sweep ? sweep.errors.join("; ") : "missing result"}`);
+  }
+  if (sweep && sweep.projectFolders.length) {
+    failures.push(`stale sweep: leftover fixture project folder(s) [${sweep.projectFolders.join(", ")}]`);
+  }
   for (const r of report.routes) {
     const missing = Object.entries(r.checks).filter(([, v]) => !v).map(([k]) => k);
     if (missing.length) failures.push(`${r.route}: missing check(s) [${missing.join(", ")}]`);
@@ -2483,9 +2923,20 @@ async function main() {
     sflr.autoProbeUpstreamModel !== (process.env.E2E_CONN_MODEL || "ds4-flash") ||
     sflr.autoProbeUpstreamMaxTokens !== 1 ||
     !sflr.autoEditReplaysProbe ||
+    !sflr.modelsFetchStoredKeyOk ||
+    !sflr.modelsFetchStoredKeyAuthOk ||
+    !sflr.modelsFetchDraftOk ||
+    !sflr.modelsFetchDraftAuthOk ||
+    !sflr.modelsFetchDeadGraceful ||
+    !sflr.autoProbePersistedServerSide ||
+    !sflr.autoProbePersistedAfterReload ||
+    !sflr.failureWithStatusMetrics ||
+    !sflr.failurePersistedServerSide ||
+    !sflr.failurePersistedAfterReload ||
+    sflr.statusCleanup !== "clean" ||
     sflr.autoCleanup !== "clean"
   ) {
-    failures.push(`settings flow: auto-probe/replay not verified (${JSON.stringify(sflr)})`);
+    failures.push(`settings flow: auto-probe/replay/fetch-models/persistence not verified (${JSON.stringify(sflr)})`);
   }
   const settingsErrs = errorCount(sfl ? sfl.errors : {});
   if (settingsErrs > 0) failures.push(`settings flow: ${settingsErrs} console/network error(s)`);

@@ -1106,7 +1106,10 @@ export default function AgentPage() {
               <>
                 <option value="">{selectedConn.modelName} (connection default)</option>
                 {(selectedConn.models ?? [])
-                  .filter((m) => m !== selectedConn.modelName)
+                  .filter(
+                    (m) =>
+                      m.toLowerCase() !== selectedConn.modelName.toLowerCase(),
+                  )
                   .map((m) => (
                     <option key={m} value={m}>
                       {m} (connection)
@@ -1115,8 +1118,11 @@ export default function AgentPage() {
                 {models
                   .filter(
                     (m) =>
-                      m.id !== selectedConn.modelName &&
-                      !(selectedConn.models ?? []).includes(m.id),
+                      m.id.toLowerCase() !==
+                        selectedConn.modelName.toLowerCase() &&
+                      !(selectedConn.models ?? []).some(
+                        (cm) => cm.toLowerCase() === m.id.toLowerCase(),
+                      ),
                   )
                   .map((m) => (
                     <option key={m.id} value={m.id}>

@@ -118,6 +118,54 @@ describe('ConnectionsService.test()', () => {
     expect(result.message).toContain('timed out');
   });
 
+  it('persists the last-known probe on success so reloads keep health', async () => {
+    global.fetch = jest.fn(async () => {
+      return new Response('{"choices":[{"message":{"content":"pong"}}]}', {
+        status: 200,
+      });
+    }) as never;
+
+    const prisma = prismaDouble(ROW) as unknown as {
+      connection: { update: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    const result = await service.test('conn-1');
+
+    expect(result.ok).toBe(true);
+    expect(prisma.connection.update).toHaveBeenCalledTimes(1);
+    const call = prisma.connection.update.mock.calls[0][0] as {
+      where: { id: string };
+      data: Record<string, unknown>;
+    };
+    expect(call.where).toEqual({ id: 'conn-1' });
+    expect(call.data.lastProbeOk).toBe(true);
+    expect(call.data.lastProbeStatus).toBe(200);
+    expect(call.data.lastProbeLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(call.data.lastProbeModel).toBe('probe-model');
+    expect(call.data.lastProbeMessage).toContain('responded');
+    expect(call.data.lastProbeAt).toBeInstanceOf(Date);
+  });
+
+  it('persists failed probes (status included) as the last-known result', async () => {
+    global.fetch = jest.fn(async () => {
+      return new Response('{"error":"bad key"}', { status: 401 });
+    }) as never;
+
+    const prisma = prismaDouble(ROW) as unknown as {
+      connection: { update: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    const result = await service.test('conn-1');
+
+    expect(result.ok).toBe(false);
+    const call = prisma.connection.update.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(call.data.lastProbeOk).toBe(false);
+    expect(call.data.lastProbeStatus).toBe(401);
+    expect(String(call.data.lastProbeMessage)).toContain('401');
+  });
+
   it('throws NotFoundException for an unknown connection', async () => {
     const service = new ConnectionsService(prismaDouble(null));
     await expect(service.test('missing')).rejects.toThrow(NotFoundException);
@@ -226,6 +274,157 @@ describe('ConnectionsService.testDraft()', () => {
   });
 });
 
+describe('ConnectionsService model discovery (GET /models)', () => {
+  const originalFetch = global.fetch;
+  const originalTimeout = process.env.CONNECTION_TEST_TIMEOUT_MS;
+
+  beforeAll(() => {
+    process.env.CONNECTION_TEST_TIMEOUT_MS = '2000';
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+    if (originalTimeout === undefined) delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+    else process.env.CONNECTION_TEST_TIMEOUT_MS = originalTimeout;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  function modelsResponse(ids: string[]) {
+    return new Response(JSON.stringify({ data: ids.map((id) => ({ id })) }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('fetchModelsDraft GETs {baseUrl}/models and returns deduped ids', async () => {
+    let sentUrl = '';
+    let sent: RequestInit | undefined;
+    global.fetch = jest.fn(async (url: unknown, init?: RequestInit) => {
+      sentUrl = String(url);
+      sent = init;
+      return modelsResponse(['llama-3.1-70b', 'mixtral-8x7b', 'LLAMA-3.1-70B']);
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1/',
+      apiKey: 'sk-draft-secret',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(200);
+    // Case-insensitive dedupe keeps the first-seen casing.
+    expect(result.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
+    expect(sentUrl).toBe('http://127.0.0.1:4567/v1/models');
+    expect((sent?.headers as Record<string, string>).authorization).toBe(
+      'Bearer sk-draft-secret',
+    );
+  });
+
+  it('omits the authorization header when no key is entered', async () => {
+    let sent: RequestInit | undefined;
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      sent = init;
+      return modelsResponse(['gpt-4o']);
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(
+      (sent?.headers as Record<string, string>).authorization ?? null,
+    ).toBeNull();
+  });
+
+  it('caps the list at 50 ids and flags truncation', async () => {
+    // 60 raw ids: 55 unique + 5 case-duplicates; normalized to 55, capped to 50.
+    const raw: string[] = [];
+    for (let i = 0; i < 55; i++) raw.push(`model-${i}`);
+    for (let i = 0; i < 5; i++) raw.push(`MODEL-${i}`);
+    global.fetch = jest.fn(async () => modelsResponse(raw)) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.truncated).toBe(true);
+    expect(result.models).toHaveLength(50);
+    expect(result.message).toContain('Fetched 50 models');
+  });
+
+  it('reports non-2xx model-list responses with the upstream status', async () => {
+    global.fetch = jest.fn(async () => {
+      return new Response('{"error":"no models endpoint"}', { status: 404 });
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.models).toEqual([]);
+    expect(result.status).toBe(404);
+    expect(result.message).toContain('HTTP 404');
+    expect(result.message).toContain('no models endpoint');
+  });
+
+  it('handles network errors and unreadable bodies gracefully', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new Error('fetch failed');
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const net = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(net.ok).toBe(false);
+    expect(net.message).toContain('Connection failed');
+    expect(net.message).toContain('fetch failed');
+
+    global.fetch = jest.fn(async () => {
+      return new Response('<html>not json</html>', { status: 200 });
+    }) as never;
+    const bad = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(bad.ok).toBe(false);
+    expect(bad.models).toEqual([]);
+    expect(bad.message).toContain('not a JSON model list');
+  });
+
+  it('fetchModels(id) uses the stored connection + stored key', async () => {
+    let sentUrl = '';
+    let auth: string | undefined;
+    global.fetch = jest.fn(async (url: unknown, init?: RequestInit) => {
+      sentUrl = String(url);
+      auth = (init?.headers as Record<string, string>)?.authorization;
+      return modelsResponse(['stored-model']);
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(ROW));
+    const result = await service.fetchModels('conn-1');
+
+    expect(result.ok).toBe(true);
+    expect(result.models).toEqual(['stored-model']);
+    expect(sentUrl).toBe('http://127.0.0.1:9876/v1/models');
+    expect(auth).toBe('Bearer sk-probe-secret');
+  });
+
+  it('throws NotFoundException when fetching models for an unknown connection', async () => {
+    const service = new ConnectionsService(prismaDouble(null));
+    await expect(service.fetchModels('missing')).rejects.toThrow(NotFoundException);
+  });
+});
+
 describe('ConnectionsService apiKey normalization', () => {
   function updateDouble() {
     return {
@@ -309,6 +508,23 @@ describe('ConnectionsService models normalization', () => {
 
     const data = prisma.connection.create.mock.calls[0][0].data;
     expect(data.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
+  });
+
+  it('de-dupes model ids case-insensitively (first-seen casing wins)', async () => {
+    const prisma = modelsDouble() as unknown as {
+      connection: { create: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    await service.create({
+      displayName: 'list-provider',
+      baseUrl: 'http://127.0.0.1:1/v1',
+      modelName: 'default-model',
+      contextLength: 128000,
+      models: ['Llama-3.1-70B', 'llama-3.1-70b', 'MIXTRAL-8x7B', 'mixtral-8x7b'],
+    });
+
+    const data = prisma.connection.create.mock.calls[0][0].data;
+    expect(data.models).toEqual(['Llama-3.1-70B', 'MIXTRAL-8x7B']);
   });
 
   it('clears the stored list when update receives an empty array', async () => {

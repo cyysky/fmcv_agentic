@@ -11,6 +11,9 @@ interface ConnectionTest {
   latencyMs: number;
   model: string;
   message: string;
+  /** When the result came from a persisted row probe (after a reload), the
+   *  time the probe ran — rendered as a "probed HH:MM" marker. */
+  probedAt?: string;
 }
 
 interface Connection {
@@ -23,6 +26,12 @@ interface Connection {
   apiKey?: string;
   defaultParameters?: Record<string, unknown> | null;
   models?: string[];
+  lastProbeAt?: string | null;
+  lastProbeOk?: boolean | null;
+  lastProbeStatus?: number | null;
+  lastProbeLatencyMs?: number | null;
+  lastProbeModel?: string | null;
+  lastProbeMessage?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +42,28 @@ function probeMetrics(result: ConnectionTest): string {
   if (result.status !== undefined) parts.push(`HTTP ${result.status}`);
   parts.push(`${result.latencyMs} ms`);
   return parts.join(" · ");
+}
+
+/** True when a result has a structured metrics line worth rendering. Failed
+ *  probes that got an upstream answer (status set) keep their metrics too, so
+ *  a stale/last-known probe never loses its context. */
+function hasMetrics(result: ConnectionTest): boolean {
+  return result.status !== undefined || result.ok;
+}
+
+/** Compact "probed HH:MM" marker for persisted last-known results. */
+function probedLabel(probedAt?: string): string {
+  if (!probedAt) return "";
+  try {
+    const d = new Date(probedAt);
+    if (Number.isNaN(d.getTime())) return "";
+    return `probed ${d.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    })}`;
+  } catch {
+    return "";
+  }
 }
 
 /** Human-readable probe summary; latency/status come from structured fields
@@ -65,9 +96,37 @@ export default function SettingsPage() {
   const [clearKey, setClearKey] = useState(false);
   const [formTesting, setFormTesting] = useState(false);
   const [formTestResult, setFormTestResult] = useState<ConnectionTest | null>(null);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [modelsFetchResult, setModelsFetchResult] = useState<string | null>(null);
   const [testStates, setTestStates] = useState<
     Record<string, { busy: boolean; result: ConnectionTest | null }>
   >({});
+
+  // Persist last-known probe results from the server into the row/replay
+  // state so a reload of /settings still shows known health. A fresh in-memory
+  // result for a row always wins (e.g. an auto-probe racing a reload), so only
+  // rows without a current result are seeded.
+  const seedProbeState = (rows: Connection[]) => {
+    setTestStates((prev) => {
+      const next = { ...prev };
+      for (const c of rows) {
+        if (!c.lastProbeAt || next[c.id]?.result) continue;
+        if (!c.lastProbeOk && !c.lastProbeMessage) continue;
+        next[c.id] = {
+          busy: false,
+          result: {
+            ok: !!c.lastProbeOk,
+            status: c.lastProbeStatus ?? undefined,
+            latencyMs: c.lastProbeLatencyMs ?? 0,
+            model: c.lastProbeModel ?? c.modelName,
+            message: c.lastProbeMessage ?? "",
+            probedAt: c.lastProbeAt,
+          },
+        };
+      }
+      return next;
+    });
+  };
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +135,7 @@ export default function SettingsPage() {
       const data = (await res.json()) as Connection[];
       setConnections(data);
       setError(null);
+      seedProbeState(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load connections");
     } finally {
@@ -95,6 +155,7 @@ export default function SettingsPage() {
         if (!cancelled) {
           setConnections(data);
           setError(null);
+          seedProbeState(data);
         }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load connections");
@@ -111,8 +172,9 @@ export default function SettingsPage() {
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
-    // A result from a previous probe is stale as soon as the values change.
+    // A result from a previous probe/fetch is stale as soon as the values change.
     setFormTestResult(null);
+    setModelsFetchResult(null);
   };
 
   const resetForm = () => {
@@ -121,6 +183,7 @@ export default function SettingsPage() {
     setMessage(null);
     setClearKey(false);
     setFormTestResult(null);
+    setModelsFetchResult(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -285,6 +348,64 @@ export default function SettingsPage() {
     }
   };
 
+  /** Fetch the provider's model list into the Models textarea. Editing a
+   *  connection with its stored base URL untouched and no key re-entered uses
+   *  the backend credential; otherwise the posted form values are probed. */
+  const handleFetchModels = async () => {
+    setFetchingModels(true);
+    setModelsFetchResult(null);
+    setError(null);
+    try {
+      const storedRow = editingId
+        ? connections.find((c) => c.id === editingId)
+        : null;
+      const baseUrlUnchanged =
+        !!storedRow &&
+        storedRow.baseUrl === form.baseUrl.trim().replace(/\/+$/, "");
+      let res: Response;
+      if (storedRow && baseUrlUnchanged && form.apiKey === "") {
+        res = await apiFetch(`/connections/${editingId}/models`, {
+          method: "GET",
+        });
+      } else {
+        const payload: Record<string, unknown> = { baseUrl: form.baseUrl };
+        if (form.apiKey !== "") payload.apiKey = form.apiKey;
+        res = await apiFetch(`/connections/models/fetch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      const data = (await res.json().catch(() => null)) as
+        | {
+            ok?: boolean;
+            models?: string[];
+            message?: string;
+            truncated?: boolean;
+          }
+        | null;
+      if (!res.ok) {
+        throw new Error(data?.message ?? `Fetch failed (HTTP ${res.status})`);
+      }
+      if (!data?.ok) {
+        throw new Error(data?.message ?? "Fetch failed");
+      }
+      const ids = data.models ?? [];
+      setForm((f) => ({ ...f, models: ids.join("\n") }));
+      setModelsFetchResult(
+        `${data.message ?? `Fetched ${ids.length} model(s) from the provider.`}${
+          data.truncated ? " (capped at 50)" : ""
+        }`,
+      );
+    } catch (err) {
+      setModelsFetchResult(
+        err instanceof Error ? err.message : "Fetch failed",
+      );
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this connection?")) return;
     try {
@@ -395,11 +516,26 @@ export default function SettingsPage() {
             rows={4}
             className={styles.textarea}
           />
+          <button
+            type="button"
+            className={styles.btnGhost}
+            onClick={handleFetchModels}
+            disabled={fetchingModels || saving}
+            style={{ alignSelf: "flex-start" }}
+          >
+            {fetchingModels ? "Fetching…" : "Fetch Models"}
+          </button>
+          {modelsFetchResult && (
+            <span className={styles.hint} data-models-fetch-result>
+              {modelsFetchResult}
+            </span>
+          )}
           <span className={styles.hint}>
             Extra model ids this provider exposes. They appear in the agent
             model picker whenever this connection is selected, so non-catalog
             providers are first-class (the connection default stays the model
-            name above).
+            name above). Fetch Models reads the provider&apos;s GET
+            /models endpoint when available.
           </span>
         </label>
 
@@ -514,7 +650,7 @@ export default function SettingsPage() {
             aria-live="polite"
           >
             <div>{formTestResult.message}</div>
-            {formTestResult.ok && (
+            {hasMetrics(formTestResult) && (
               <div className={styles.testDetail}>
                 {probeMetrics(formTestResult)}
               </div>
@@ -552,9 +688,11 @@ export default function SettingsPage() {
                       aria-live="polite"
                     >
                       <div>{testStates[c.id]!.result!.message}</div>
-                      {testStates[c.id]!.result!.ok && (
+                      {hasMetrics(testStates[c.id]!.result!) && (
                         <div className={styles.testDetail}>
                           {probeMetrics(testStates[c.id]!.result!)}
+                          {probedLabel(testStates[c.id]!.result!.probedAt) &&
+                            ` · ${probedLabel(testStates[c.id]!.result!.probedAt)}`}
                         </div>
                       )}
                     </div>

@@ -16,6 +16,12 @@ model Connection {
   apiKey               String?
   defaultParameters    Json?
   models               String[] @default([])
+  lastProbeAt          DateTime?
+  lastProbeOk          Boolean?
+  lastProbeStatus      Int?
+  lastProbeLatencyMs   Int?
+  lastProbeModel       String?
+  lastProbeMessage     String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
