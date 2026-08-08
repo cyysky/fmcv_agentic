@@ -539,11 +539,16 @@ docker-compose.yml       # frontend + backend + db services
 
 The `reference/` directory holds local clones of open-source agent projects
 kept for study/reference. It is gitignored, so these folders exist only in
-local checkouts:
+local checkouts. If any referenced repo is missing locally or not up to date,
+clone or pull it into `reference/` (e.g. `git clone <upstream> reference/<name>`
+or `git -C reference/<name> pull --ff-only`), then re-verify the local folder
+matches the upstream.
 
 | Name | Folder | Upstream | What it demonstrates |
 |------|--------|----------|----------------------|
-| Hermes Agent | [reference/hermes-agent](reference/hermes-agent) | [NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | Self-improving agent with a built-in learning loop, autonomous skill creation, and a multi-platform gateway (CLI/TUI, Telegram, Slack, ...). |
-| jcode | [reference/jcode](reference/jcode) | [1jehuang/jcode](https://github.com/1jehuang/jcode) | RAM-efficient agent harness (Rust) with an SDK and benchmarks. |
-| Pi | [reference/pi](reference/pi) | [earendil-works/pi](https://github.com/earendil-works/pi) | Self-extensible coding agent harness with a unified multi-provider LLM API and agent runtime. |
-| Prime Agent | [reference/prime-agent](reference/prime-agent) | [PrimeIntellect-ai/prime-agent](https://github.com/PrimeIntellect-ai/prime-agent) | Self-improving RLM agent: persistent Python control environment, recursive subagents, and refinement of durable harness state. |
+| PageIndex | [reference/PageIndex](reference/PageIndex) | [VectifyAI/PageIndex](https://github.com/VectifyAI/PageIndex) | Reasoning-based RAG with tree indexing. |
+| turbovec | [reference/turbovec](reference/turbovec) | [RyanCodrai/turbovec](https://github.com/RyanCodrai/turbovec) | Rust ANN index library, used by embedder-py. |
+| Hermes Agent | [reference/hermes-agent](reference/hermes-agent) | [NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | Nous Research agent CLI; pi / hermes design source; self-improving agent with a built-in learning loop, autonomous skill creation, and a multi-platform gateway (CLI/TUI, Telegram, Slack, ...). |
+| Pi | [reference/pi](reference/pi) | [earendil-works/pi](https://github.com/earendil-works/pi) | The agent runtime that inspired round 48ci. |
+| Prime Agent | [reference/prime-agent](reference/prime-agent) | [PrimeIntellect-ai/prime-agent](https://github.com/PrimeIntellect-ai/prime-agent) | TypeScript agent harness; RL infra reference (persistent Python control environment, recursive subagents, durable harness state). |
+| jcode | [reference/jcode](reference/jcode) | [1jehuang/jcode](https://github.com/1jehuang/jcode) | CLI coding agent, Anthropic-API compatible. |
