@@ -1,14 +1,15 @@
-# ROUND 60 — 2026-08-08 (autonomous iteration round 60)
+# ROUND 61 — 2026-08-08 (autonomous iteration round 61)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty; the
 user asked the loop to run again ("read on loop.md and do works"), so this
-round's goal was the Round 59 handoff's standby: re-orient and re-verify the
+round's goal was the Round 60 handoff's standby: re-orient and re-verify the
 system end to end, fixing anything that regressed.
 
 ## What changed this round
 
 - **Verification round** — no application code changed. Orientation found a
-  clean worktree with no diff against tag `round-59`; the full suite plus
+  clean worktree with no diff against tag `round-60` (round-59..round-60 was
+  only the Round 60 handoff + refreshed browser artifacts); the full suite plus
   browser E2E were re-run green against the live stack.
 - **Artifacts refreshed** — `e2e/report.json` + screenshots regenerated
   against this round's passing browser run.
@@ -39,7 +40,7 @@ system end to end, fixing anything that regressed.
 
 ## Known issues / open tickets
 
-- **None open.** Accepted limitations unchanged from Round 59: CSP `sandbox`
+- **None open.** Accepted limitations unchanged from Round 60: CSP `sandbox`
   disables scripts/forms/external navigation in the inline HTML preview; the
   cron scheduler ticker runs in-process (single-instance deployment
   assumed); buckets are read-only by design (no delete/rename endpoints);
@@ -54,7 +55,9 @@ system end to end, fixing anything that regressed.
 
 ## Loop state
 
-Loop state: finished — exit condition C met; Round 60 re-verified the
-Round 59 state end to end (clean worktree, full suite + browser E2E green,
-zero open tickets). Do not start another round unless the human updates
-`DIRECTION.md` or asks for the loop to run again.
+Loop state: finished — exit condition C met (Round 61 re-verified the
+Round 60 state end to end: clean worktree, full suite + browser E2E green,
+zero open tickets) and exit condition D also holds (rounds 58–61 made no
+net user-visible improvement — same tickets, no new tests, no app changes).
+Do not start another round unless the human updates `DIRECTION.md` or asks
+for new work; verification-only re-runs are no longer valuable.
