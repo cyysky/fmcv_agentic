@@ -1,41 +1,45 @@
-# Round 107 — channel-job service coverage to 100% lines (2026-08-09)
+# Round 108 — buckets service coverage to 100% lines (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 106's next-focus item 1: lifted `channel-job.service.ts`
-from 76.27% to 100% lines (98.43% stmts / 80.48% branch / 100% funcs).
+executed Round 107's next-focus item 1: lifted `buckets.service.ts` from
+79.45% to 100% lines (96.89% stmts / 95.91% branch).
 
 ## What changed this round
 
-- **`statusFor` coverage** — returns the latest in-memory job per
-  channel+agent (including after it finishes) and null for never-run members.
-- **`getRunning` validation edges** — wrong-channel jobs raise 404, finished
-  jobs raise 400 (`is not running`) for both `interject` and `stop`, and an
-  unknown job id raises 404 from `get()`.
-- **Aborted-run failure path** — when a run is stopped and later rejects,
-  the terminal `stopped` status is preserved: no `error` event, no
-  downgrade, single `finishedAt`.
-- **Debug-trace routing** — per-tool `toolStatusPost` lands in the created
-  sub-channel; when `ensureSubChannel` fails, the run degrades gracefully
-  and posts trace updates to the main channel.
-- **`stopForChannel` lifecycle** — running jobs are stopped with exactly one
-  `stopped` event and finished jobs are untouched; persisted run history is
-  pruned via `channelRun.deleteMany`, and a prune failure is logged, not
-  thrown. Unrelated channels verify a zero count.
-- **Failure tolerance** — a `channelRun.upsert` rejection never fails the
-  in-memory job; `onModuleInit` recovery, `snapshot`, and `latestFor` all
-  return null/undefined cleanly on DB errors and on missing rows.
+- **Upload naming edges** — long names are capped at 180 chars with the
+  extension preserved; empty/undefined `originalname` falls back to
+  `'document'`; uploads without a usable buffer are rejected.
+- **`listDocuments` delegation** — checks bucket membership, then delegates
+  to `findMany` with the correct where/orderBy.
+- **`createBucket` failure paths** — non-unique DB errors are rethrown with
+  the folder rolled back; folder-creation failures are wrapped as
+  BadRequest; a project folder path that is a file is rejected
+  (`is not a folder`).
+- **`resolveDownload` edges** — 404 when the stored document is missing;
+  metadata fallback to `application/octet-stream` for a null mime type with
+  a real file on disk.
+- **`renameBucket` failure paths** — non-ENOENT target inspection →
+  BadRequest; ENOTEMPTY move → Conflict; other move errnos (EACCES)
+  rethrown; DB-update failure rolls the folder back (unique violation →
+  Conflict, generic → BadRequest).
+- **`deleteBucket` failure paths** — folder-removal failure wrapped as
+  BadRequest; a failing transaction restores the folder.
+- **`addDocument` write/DB failures** — non-EEXIST store failures wrapped as
+  BadRequest; the stored file is removed when the document row create fails
+  (unique violation → Conflict, generic → rethrown).
 
 ## Test status
 
 - Fast verify `verify.mjs`: green on the final tree — REST docs guard
-  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 203
-  tests passed** (+8 this round), backend lint + types, frontend types +
+  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 219
+  tests passed** (+16 this round), backend lint + types, frontend types +
   lint.
-- Coverage run green: `channel-job.service.ts` **76.27% → 100% lines**;
-  remaining branch gaps are nullish-fallback sides over persisted-row
-  fields (answer/error/events/finishedAt), mostly impossible with real DB
-  rows. `channel.service.ts` stays 99.04% (dead `SLUG_RE` guard),
-  `workspace-tools.ts` stays 100%.
+- Coverage run green: `buckets.service.ts` **79.45% → 100% lines**
+  (96.89% stmts / 95.91% branch); the three remaining uncovered statements
+  are nullish-fallback/constructor quirks in `sanitizeFileName`,
+  `deriveDocumentKind`, and the constructor — no reachable code left.
+  `channel.service.ts` stays 99.04% (dead `SLUG_RE` guard),
+  `channel-job.service.ts` and `workspace-tools.ts` stay at 100% lines.
 - Full build gate not re-run (test-only change, no runtime code touched):
   Round 100's `verify --build --api-e2e` remains green — API E2E 12/123,
   bundle `/agent` 484 KB / 8 chunks, headroom 33.6 KB within 44 KB.
@@ -52,15 +56,14 @@ from 76.27% to 100% lines (98.43% stmts / 80.48% branch / 100% funcs).
 - **Open** — `channel.service.ts` line 67 (`SLUG_RE` guard) is dead by
   construction; decide in a runtime round whether to delete it or keep it
   as defense-in-depth.
-- **Open** — `buckets.service.ts` is now the lowest service at 79.45% lines
-  (uncovered: 65-66, 115, 133-134, 159-160, 203, 218-224, 242, 258, 292,
-  313-318, 328-344, 361, 371-372, 411).
+- **Open** — `files.service.ts` is now the lowest service at 88.8% lines
+  (uncovered: 72, 105-106, 109, 116, 125, 224-228, 264, 276, 328, 338).
 
 ## Next round focus
 
-1. **Cover `buckets.service.ts`** — extend `buckets.service.spec.ts` toward
-  the 90%+ service bar, targeting the listed bucket lifecycle/validation
-  paths; re-run fast verify + coverage after.
+1. **Cover `files.service.ts`** — extend `files.service.spec.ts` toward the
+  90%+ service bar, targeting the listed file lifecycle/validation paths;
+  re-run fast verify + coverage after.
 2. **Decide the dead `SLUG_RE` guard** — a small runtime cleanup
   (remove the unreachable branch) needs the full build + API E2E + browser
   gates; only worth doing bundled with a real frontend/backend change.

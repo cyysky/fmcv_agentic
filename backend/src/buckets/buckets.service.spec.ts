@@ -424,6 +424,334 @@ describe('BucketsService', () => {
       service.resolveDownload('bucket-1', 'doc-1'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  it('caps long upload names and falls back to "document"', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const longName = 'a'.repeat(190) + '.txt';
+    await service.addDocument('bucket-1', {
+      originalname: longName,
+      buffer: Buffer.from('x'),
+    });
+    const cappedName = (prisma.managedDocument.create as jest.Mock).mock
+      .calls[0][0].data.name as string;
+    expect(cappedName).toHaveLength(180);
+    expect(cappedName.endsWith('.txt')).toBe(true);
+
+    // An empty/undefined name is replaced.
+    await service.addDocument('bucket-1', {
+      originalname: '',
+      buffer: Buffer.from('y'),
+    });
+    const fallbackName = (prisma.managedDocument.create as jest.Mock).mock
+      .calls[1][0].data.name as string;
+    expect(fallbackName).toBe('document');
+  });
+
+  it('rejects an upload with no usable buffer', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await expect(
+      service.addDocument('bucket-1', { originalname: 'x.txt' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('listDocuments checks the bucket then delegates to findMany', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await service.listDocuments('bucket-1');
+    expect(prisma.managedDocument.findMany).toHaveBeenCalledWith({
+      where: { bucketId: 'bucket-1' },
+      orderBy: { createdAt: 'asc' },
+    });
+  });
+
+  it('wraps bucket-folder creation failures as BadRequest', async () => {
+    // A file squatting on the bucket name makes fs.mkdir fail.
+    await fs.writeFile(path.join(root, 'agents', 'coder', 'occupied'), 'x');
+    await expect(
+      service.createBucket({
+        name: 'occupied',
+        folderType: 'agent',
+        folderName: 'coder',
+      }),
+    ).rejects.toThrow('Cannot create bucket folder');
+  });
+
+  it('rethrows a non-unique DB error and rolls back the folder', async () => {
+    (prisma.bucket.create as jest.Mock).mockRejectedValueOnce(
+      new Error('db down'),
+    );
+    await expect(
+      service.createBucket({
+        name: 'transient',
+        folderType: 'agent',
+        folderName: 'coder',
+      }),
+    ).rejects.toThrow('db down');
+    await expect(
+      fs.stat(path.join(root, 'agents', 'coder', 'transient')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('resolveDownload 404s when the document is not in the bucket', async () => {
+    await expect(
+      service.resolveDownload('bucket-1', 'doc-missing'),
+    ).rejects.toThrow('not found in this bucket');
+  });
+
+  it('resolveDownload returns stored file metadata with a mime fallback', async () => {
+    (prisma.managedDocument.findFirst as jest.Mock).mockResolvedValue({
+      id: 'doc-1',
+      bucketId: 'bucket-1',
+      name: 'paper.pdf',
+      mimeType: null,
+    });
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const target = path.join(root, 'projects', 'docs', 'research', 'paper.pdf');
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, '%PDF fake');
+
+    const out = await service.resolveDownload('bucket-1', 'doc-1');
+    expect(out.target).toBe(target);
+    expect(out.fileName).toBe('paper.pdf');
+    expect(out.mimeType).toBe('application/octet-stream');
+    expect(out.size).toBe(9);
+  });
+
+  it('treats a non-ENOENT stat on the rename target as BadRequest', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    // A file squatting on an ancestor path yields ENOTDIR from fs.stat.
+    await fs.writeFile(path.join(root, 'projects', 'docs', 'blocked'), 'x');
+    await expect(
+      service.renameBucket('bucket-1', 'blocked/child'),
+    ).rejects.toThrow('Cannot inspect target folder');
+  });
+
+  it('maps ENOTEMPTY during the folder move to ConflictException', async () => {
+    (prisma.bucket.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'bucket-1',
+        name: 'research',
+        folderType: 'project',
+        folderName: 'docs',
+      })
+      .mockResolvedValueOnce(null);
+    const renameSpy = jest
+      .spyOn(fs, 'rename')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('target not empty'), { code: 'ENOTEMPTY' }),
+      );
+    try {
+      await expect(
+        service.renameBucket('bucket-1', 'enotempty-target'),
+      ).rejects.toBeInstanceOf(ConflictException);
+    } finally {
+      renameSpy.mockRestore();
+    }
+  });
+
+  it('rolls the folder back when the rename DB update fails', async () => {
+    (prisma.bucket.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'bucket-1',
+        name: 'research',
+        folderType: 'project',
+        folderName: 'docs',
+      })
+      .mockResolvedValueOnce(null);
+    (prisma.bucket.update as jest.Mock).mockRejectedValueOnce(
+      uniqueViolation(),
+    );
+    const oldDir = path.join(root, 'projects', 'docs', 'research');
+    await fs.mkdir(oldDir, { recursive: true });
+
+    await expect(
+      service.renameBucket('bucket-1', 'rollback-target'),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      fs.stat(path.join(root, 'projects', 'docs', 'rollback-target')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await fs.stat(oldDir)).isDirectory()).toBe(true);
+
+    // A generic DB error follows the same rollback and becomes BadRequest.
+    (prisma.bucket.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'bucket-1',
+        name: 'research',
+        folderType: 'project',
+        folderName: 'docs',
+      })
+      .mockResolvedValueOnce(null);
+    (prisma.bucket.update as jest.Mock).mockRejectedValueOnce(
+      new Error('db down'),
+    );
+    await fs.mkdir(path.join(root, 'projects', 'docs', 'generic-move'), {
+      recursive: true,
+    });
+    const genericOld = path.join(root, 'projects', 'docs', 'generic-move');
+    const genericNew = path.join(root, 'projects', 'docs', 'generic-moved');
+    await fs.rename(genericOld, genericNew);
+    // Point the row at the now-moved folder name.
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValueOnce({
+      id: 'bucket-2',
+      name: 'generic-moved',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await expect(
+      service.renameBucket('bucket-2', 'generic-moved-2'),
+    ).rejects.toThrow('db down');
+    await expect(fs.stat(genericNew)).resolves.toBeDefined();
+  });
+
+  it('wraps bucket-folder removal failures as BadRequest', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const rmSpy = jest
+      .spyOn(fs, 'rm')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('busy'), { code: 'EBUSY' }),
+      );
+    try {
+      await expect(service.deleteBucket('bucket-1')).rejects.toThrow(
+        'Cannot remove bucket folder',
+      );
+    } finally {
+      rmSpy.mockRestore();
+    }
+  });
+
+  it('restores the folder when the delete transaction fails', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    prisma.$transaction.mockRejectedValueOnce(new Error('db down'));
+    const bucketDir = path.join(root, 'projects', 'docs', 'research');
+    await fs.mkdir(bucketDir, { recursive: true });
+
+    await expect(service.deleteBucket('bucket-1')).rejects.toThrow('db down');
+    expect((await fs.stat(bucketDir)).isDirectory()).toBe(true);
+  });
+
+  it('rolls the uploaded file back when the document row create fails', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+
+    // Unique-violation on create: Conflict, file removed.
+    (prisma.managedDocument.create as jest.Mock).mockRejectedValueOnce(
+      uniqueViolation(),
+    );
+    await expect(
+      service.addDocument('bucket-1', {
+        originalname: 'dbdup.txt',
+        buffer: Buffer.from('x'),
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      fs.stat(path.join(root, 'projects', 'docs', 'research', 'dbdup.txt')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+
+    // Generic create failure: rethrown, file removed.
+    (prisma.managedDocument.create as jest.Mock).mockRejectedValueOnce(
+      new Error('db down'),
+    );
+    await expect(
+      service.addDocument('bucket-1', {
+        originalname: 'dbfail.txt',
+        buffer: Buffer.from('y'),
+      }),
+    ).rejects.toThrow('db down');
+    await expect(
+      fs.stat(path.join(root, 'projects', 'docs', 'research', 'dbfail.txt')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rejects a project folder path that is a file, not a folder', async () => {
+    await fs.writeFile(path.join(root, 'projects', 'fileblock'), 'x');
+    await expect(
+      service.createBucket({
+        name: 'under-file',
+        folderType: 'project',
+        folderName: 'fileblock',
+      }),
+    ).rejects.toThrow('is not a folder');
+  });
+
+  it('wraps a non-EEXIST file-store failure as BadRequest', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const bucketDir = path.join(root, 'projects', 'docs', 'research');
+    await fs.mkdir(bucketDir, { recursive: true });
+    try {
+      await fs.chmod(bucketDir, 0o555);
+      await expect(
+        service.addDocument('bucket-1', {
+          originalname: 'blocked.txt',
+          buffer: Buffer.from('x'),
+        }),
+      ).rejects.toThrow('Cannot store document');
+    } finally {
+      await fs.chmod(bucketDir, 0o755);
+    }
+  });
+
+  it('rethrows a non-EEXIST/-ENOTEMPTY folder-move failure', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const mappedRoot = path.join(root, 'projects', 'docs');
+    const oldDir = path.join(mappedRoot, 'research');
+    await fs.mkdir(oldDir, { recursive: true });
+    try {
+      await fs.chmod(mappedRoot, 0o555);
+      await expect(
+        service.renameBucket('bucket-1', 'chmod-block'),
+      ).rejects.toThrow('EACCES');
+    } finally {
+      await fs.chmod(mappedRoot, 0o755);
+    }
+  });
 });
 
 describe('deriveDocumentKind', () => {
