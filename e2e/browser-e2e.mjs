@@ -829,8 +829,11 @@ async function agentChannelFlow() {
     // Round 98 visibility-gated polling guard: with the Channels tab open,
     // hide the page for >2 poll intervals (17.5s vs the 8s tick) and assert
     // no `/api/channels` list fetch fires while hidden; restoring visibility
-    // must resume the refresh on the next interval. A spare tab is used as
-    // the frontmost target so `document.visibilityState` flips for real.
+    // must refresh the list again. Round 100 adds an immediate-resume claim:
+    // the `visibilitychange` handler fetches within ~2s of the tab becoming
+    // visible again, on top of the 8s interval that keeps ticking meanwhile.
+    // A spare tab is used as the frontmost target so
+    // `document.visibilityState` flips for real.
     const pollBaseline = sink.channelListCount;
     const spare = await openTab("about:blank");
     try {
@@ -857,24 +860,30 @@ async function agentChannelFlow() {
         "visible visibilityState",
       );
       if (!visibleSeen) throw new Error("agent flow: page did not return to visible");
-      // Restored: the next 8s interval must fetch the list again.
-      await delay(9500);
+      // Restored: the list must refresh promptly (Round 100 visibilitychange
+      // handler, well inside the 2s window) and the 8s interval keeps
+      // polling on top of that (total window 9.5s, same as Round 98).
+      await delay(2000);
+      const immediateCount = sink.channelListCount;
+      await delay(7500);
       const resumedCount = sink.channelListCount;
       flow.pollingGuard = {
         baseline: pollBaseline,
         hiddenCount,
+        immediateCount,
         resumedCount,
         hiddenWindowMs: 17500,
+        immediateWindowMs: 2000,
         resumeWindowMs: 9500,
-        ok: hiddenCount === pollBaseline && resumedCount > hiddenCount,
+        ok: hiddenCount === pollBaseline && immediateCount > hiddenCount && resumedCount > hiddenCount,
       };
       if (!flow.pollingGuard.ok) {
         throw new Error(
-          `agent flow: channel polling not visibility-gated (baseline ${pollBaseline}, hidden ${hiddenCount}, resumed ${resumedCount})`,
+          `agent flow: channel polling not visibility-gated/resumed (baseline ${pollBaseline}, hidden ${hiddenCount}, immediate ${immediateCount}, resumed ${resumedCount})`,
         );
       }
       flow.steps.push("visibility-gated-polling");
-      log(`  visibility polling guard: hidden kept ${hiddenCount}/${pollBaseline}, resumed ${resumedCount} (${flow.pollingGuard.ok ? "ok" : "FAILED"})`);
+      log(`  visibility polling guard: hidden kept ${hiddenCount}/${pollBaseline}, immediate resume ${immediateCount - hiddenCount}, resumed ${resumedCount} (${flow.pollingGuard.ok ? "ok" : "FAILED"})`);
     } finally {
       // Close only the spare tab (never the flow's own agent tab); it was
       // registered in createdTabs as a belt-and-braces cleanup too.

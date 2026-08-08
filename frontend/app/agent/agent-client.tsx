@@ -236,14 +236,23 @@ export default function AgentPage() {
   // Live-refresh the channel list every 8s while on the channels view so
   // newly created sub-channels appear without a page reload. Round 98: skip
   // the refresh while the tab is hidden (visibilityState gate) so idle
-  // background tabs stop polling the backend; the existing interval resumes
-  // on the next tick once the tab is visible again.
+  // background tabs stop polling the backend. Round 100: on top of the
+  // interval, refresh immediately when the tab becomes visible again —
+  // `visibilitychange` fires on restore, so returning users see fresh
+  // channels instantly instead of waiting up to 8s for the next tick.
   useEffect(() => {
     if (view !== "channels") return;
     const t = window.setInterval(() => {
       if (document.visibilityState !== "hidden") loadChannels();
     }, 8000);
-    return () => window.clearInterval(t);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") loadChannels();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [view, loadChannels]);
 
   const fetchChannel = useCallback(async (id: string): Promise<ChannelDetail> => {
