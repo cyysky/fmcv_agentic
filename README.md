@@ -111,7 +111,8 @@ and coordinate multi-agent teams in Slack-style channels.
   reads "All N runs" or "First N runs" when the cap cut it short, and a
   **Paged view** button switches back).
   The page also shows a cluster overview panel with every
-  scheduler lease group, the recent lease transition history
+  scheduler lease group, per-group job ownership (jobs/enabled/running/due
+  chips under "Jobs by group"), the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
   auditable after the fact), and aggregate run throughput; when more than
   one lease group has transition history, the Transitions line gains
@@ -247,7 +248,7 @@ while CRUD and `Run now` still work):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`); the job is stamped with the creating backend's `CRON_LEASE_GROUP` as its owner |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
-| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + per-group job ownership counts (`jobGroups`: jobs/enabled/running/due per `schedulerGroup`) + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
 | GET    | `/api/cron/overview/events` | paginated lease transition events for the load-all history view: same 1–100 `limit` clamp as `/overview` (default 10) plus `offset`, optional `group=` scopes the page to one lease group, and the payload reports the scoped `total` so the UI can page through every event or say "first N of M" when a safety cap cuts the pass short |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
