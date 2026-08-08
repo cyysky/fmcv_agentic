@@ -326,6 +326,11 @@ node scripts/verify-rest-docs.mjs
 # Test-count drift guard: README Testing suite counts must match the
 # spec files; exact per-test counts are banned from that section
 node scripts/verify-test-counts.mjs
+
+# One-command fast verify: both guards + backend unit/lint/types +
+# frontend lint/types (backend must already be running for nothing; the
+# API E2E and browser E2E need docker mode flips and stay explicit)
+node scripts/verify.mjs
 ```
 
 - **Unit: 14 suites** — model catalog, workspace service + tools,
@@ -429,6 +434,12 @@ node scripts/verify-test-counts.mjs
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Suite counts are enforced by
   `scripts/verify-test-counts.mjs` (see the drift guard below).
+- **One-command verify** (`scripts/verify.mjs`) — zero-dependency;
+  runs the REST docs guard, the test-count guard, backend unit tests,
+  backend eslint + `tsc --noEmit`, and frontend eslint + `tsc
+  --noEmit` in one pass, failing fast with the step name. The API E2E,
+  browser E2E, and `next build` stay explicit (docker mode flips /
+  Chrome / longer runs).
 - **Test-count drift guard** (`scripts/verify-test-counts.mjs`) — zero
   dependencies; counts the unit spec files under `backend/src` and the
   API E2E spec files under `backend/test`, then verifies the README
