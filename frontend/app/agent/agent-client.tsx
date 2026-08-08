@@ -22,7 +22,11 @@ import type {
   TurnResponse,
   WorkspaceInfo,
 } from "./agent-types";
-import { ChannelsPanelContext, SessionsPanelContext } from "./agent-context";
+import {
+  ChannelsPanelContext,
+  SessionsPanelContext,
+  WorkspaceViewerContext,
+} from "./agent-context";
 
 // Round 93: the sessions/channels tab panels live in agent-views.tsx and are
 // loaded on demand, so the /agent first load no longer includes their JSX.
@@ -34,9 +38,11 @@ const AgentChannelsView = dynamic(
   () => import("./agent-views").then((m) => m.AgentChannelsPanel),
   { ssr: false },
 );
-
-const isDir = (v: DirNode | null | undefined): v is DirNode =>
-  v !== null && v !== undefined && typeof v === "object";
+// Round 97: the workspace viewer (agent/project trees + folder icons) is also
+// lazy — it loads only after the Workspace header button reveals it.
+const WorkspaceViewer = dynamic(() => import("./workspace-viewer"), {
+  ssr: false,
+});
 
 /* ----------------------------- component -------------------------------- */
 
@@ -54,15 +60,16 @@ export default function AgentPage() {
   // connection is active, so switching back restores it.
   const lastGatewayModelRef = useRef<string>("");
 
-  // workspace viewer state
+  // workspace viewer state (Round 97: render moves to a lazy chunk; the
+  // header + loaders stay here so the Workspace toggle shares the cache)
   const [wsInfo, setWsInfo] = useState<WorkspaceInfo | null>(null);
+  const [wsShow, setWsShow] = useState(false);
   const [wsError, setWsError] = useState<string | null>(null);
-  const [showViewer, setShowViewer] = useState(false);
-  const [selAgent, setSelAgent] = useState<string | null>(null);
-  const [agentTrees, setAgentTrees] = useState<Record<string, DirNode | null>>({});
-  const [selProject, setSelProject] = useState<string | null>(null);
-  const [projectTrees, setProjectTrees] = useState<Record<string, DirNode | null>>({});
-  const [loadingTree, setLoadingTree] = useState<string | null>(null);
+  const [wsSelAgent, setWsSelAgent] = useState<string | null>(null);
+  const [wsAgentTrees, setWsAgentTrees] = useState<Record<string, DirNode | null>>({});
+  const [wsSelProject, setWsSelProject] = useState<string | null>(null);
+  const [wsProjectTrees, setWsProjectTrees] = useState<Record<string, DirNode | null>>({});
+  const [wsLoadingTree, setWsLoadingTree] = useState<string | null>(null);
 
   // sessions view state
   const [view, setView] = useState<"chat" | "sessions" | "channels">("chat");
@@ -879,7 +886,7 @@ export default function AgentPage() {
 
   const loadWorkspace = useCallback(async () => {
     if (wsInfo) {
-      setShowViewer((s) => !s);
+      setWsShow((s) => !s);
       return;
     }
     setWsError(null);
@@ -888,7 +895,7 @@ export default function AgentPage() {
       if (!res.ok) throw new Error(`Failed to load workspace (HTTP ${res.status})`);
       const data = (await res.json()) as WorkspaceInfo;
       setWsInfo(data);
-      setShowViewer(true);
+      setWsShow(true);
     } catch (e) {
       setWsError(e instanceof Error ? e.message : "Failed to load workspace");
     }
@@ -896,46 +903,46 @@ export default function AgentPage() {
 
   const loadAgentTree = useCallback(
     async (name: string) => {
-      if (agentTrees[name] !== undefined) {
-        setSelAgent((cur) => (cur === name ? null : name));
+      if (wsAgentTrees[name] !== undefined) {
+        setWsSelAgent((cur) => (cur === name ? null : name));
         return;
       }
-      setLoadingTree(name);
+      setWsLoadingTree(name);
       try {
         const res = await apiFetch(`/agent/workspaces/agents/${name}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as DirNode | null;
-        setAgentTrees((prev) => ({ ...prev, [name]: data }));
-        setSelAgent(name);
+        setWsAgentTrees((prev) => ({ ...prev, [name]: data }));
+        setWsSelAgent(name);
       } catch (e) {
         setWsError(e instanceof Error ? e.message : `Failed to load ${name}`);
       } finally {
-        setLoadingTree(null);
+        setWsLoadingTree(null);
       }
     },
-    [agentTrees],
+    [wsAgentTrees],
   );
 
   const loadProjectTree = useCallback(
     async (name: string) => {
-      if (projectTrees[name] !== undefined) {
-        setSelProject((cur) => (cur === name ? null : name));
+      if (wsProjectTrees[name] !== undefined) {
+        setWsSelProject((cur) => (cur === name ? null : name));
         return;
       }
-      setLoadingTree(name);
+      setWsLoadingTree(name);
       try {
         const res = await apiFetch(`/agent/workspaces/projects/${name}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as DirNode | null;
-        setProjectTrees((prev) => ({ ...prev, [name]: data }));
-        setSelProject(name);
+        setWsProjectTrees((prev) => ({ ...prev, [name]: data }));
+        setWsSelProject(name);
       } catch (e) {
         setWsError(e instanceof Error ? e.message : `Failed to load ${name}`);
       } finally {
-        setLoadingTree(null);
+        setWsLoadingTree(null);
       }
     },
-    [projectTrees],
+    [wsProjectTrees],
   );
 
   const toggleCollapse = (path: string) =>
@@ -1063,7 +1070,7 @@ export default function AgentPage() {
             onClick={loadWorkspace}
             disabled={busy || view !== "chat"}
           >
-            {wsInfo && showViewer ? "Hide Workspace" : "Workspace"}
+            {wsInfo && wsShow ? "Hide Workspace" : "Workspace"}
           </button>
           <select
             className={styles.modelSelect}
@@ -1153,78 +1160,24 @@ export default function AgentPage() {
         </div>
       )}
 
-      {view === "chat" && showViewer && wsInfo && (
-        <div className={styles.workspace}>
-          <div className={styles.wsRow}>
-            <div className={styles.wsBlock}>
-              <div className={styles.wsBlockTitle}>Agents</div>
-              {wsInfo.agents.length === 0 ? (
-                <div className={styles.muted}>No agent folders</div>
-              ) : (
-                wsInfo.agents.map((a) => (
-                  <div key={a.name}>
-                    <button
-                      className={styles.treeItem}
-                      onClick={() => loadAgentTree(a.name)}
-                    >
-                      <span className={styles.treeCaret}>
-                        {loadingTree === a.name
-                          ? "…"
-                          : agentTrees[a.name] !== undefined
-                            ? selAgent === a.name
-                              ? "▾"
-                              : "▸"
-                            : "▸"}
-                      </span>
-                      {a.label}
-                    </button>
-                    {selAgent === a.name && agentTrees[a.name] !== undefined && (
-                      <div className={styles.treeNested}>
-                        {renderTree(agentTrees[a.name], styles, `${a.name}::`)}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-            <div className={styles.wsBlock}>
-              <div className={styles.wsBlockTitle}>Projects</div>
-              {wsInfo.projects.length === 0 ? (
-                <div className={styles.muted}>No projects</div>
-              ) : (
-                wsInfo.projects.map((p) => (
-                  <div key={p.name}>
-                    <button
-                      className={styles.treeItem}
-                      onClick={() => loadProjectTree(p.name)}
-                    >
-                      <span className={styles.treeCaret}>
-                        {loadingTree === p.name
-                          ? "…"
-                          : projectTrees[p.name] !== undefined
-                            ? selProject === p.name
-                              ? "▾"
-                              : "▸"
-                            : "▸"}
-                      </span>
-                      {p.name}
-                    </button>
-                    {selProject === p.name && projectTrees[p.name] !== undefined && (
-                      <div className={styles.treeNested}>
-                        {renderTree(projectTrees[p.name], styles, `${p.name}::`)}
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-          {wsError && (
-            <div className={styles.wsError} onClick={() => setWsError(null)}>
-              {wsError}
-            </div>
-          )}
-        </div>
+      {view === "chat" && wsShow && (
+        <WorkspaceViewerContext.Provider
+          value={{
+            wsInfo,
+            wsError,
+            setWsError,
+            wsShow,
+            wsLoadingTree,
+            wsSelAgent,
+            wsAgentTrees,
+            wsSelProject,
+            wsProjectTrees,
+            wsLoadAgentTree: loadAgentTree,
+            wsLoadProjectTree: loadProjectTree,
+          }}
+        >
+          <WorkspaceViewer />
+        </WorkspaceViewerContext.Provider>
       )}
 
       {view === "chat" && (
@@ -1346,28 +1299,4 @@ function TraceView({ trace }: { trace: ToolTraceStep[] }) {
   );
 }
 
-function renderTree(
-  node: DirNode | null | undefined,
-  styles: { [k: string]: string },
-  prefix = "",
-): React.ReactNode {
-  if (!node || !isDir(node)) return <div className={styles.muted}>∅</div>;
-  const names = Object.keys(node);
-  if (names.length === 0) return <div className={styles.muted}>∅</div>;
-  return (
-    <ul className={styles.treeList}>
-      {names.map((name) => {
-        const child = node[name];
-        const isFolder = isDir(child);
-        return (
-          <li key={prefix + name} className={styles.treeLeaf}>
-            <span className={isFolder ? styles.treeFolder : styles.treeFile}>
-              {isFolder ? "📁" : "📄"} {name}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 

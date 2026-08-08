@@ -10,7 +10,9 @@ import type {
   ChannelSummary,
   ChatMsg,
   ConnectionOption,
+  DirNode,
   MemberStatus,
+  WorkspaceInfo,
   ModelOption,
 } from "./agent-types";
 
@@ -123,5 +125,35 @@ export function useSessionsPanel(): SessionsPanelValue {
 export function useChannelsPanel(): ChannelsPanelValue {
   const value = useContext(ChannelsPanelContext);
   if (!value) throw new Error("useChannelsPanel must be rendered inside the agent page provider");
+  return value;
+}
+
+/**
+ * Workspace-viewer context (Round 97). AgentPage owns the workspace data and
+ * loaders so the header's Workspace toggle shares the same cache/show state;
+ * the viewer JSX (tree rendering + folder icons) is lazy so the eager /agent
+ * first load keeps only the header glue. Keys are prefixed with `ws` to stay
+ * disjoint from the sessions/channels panel values (which also carry
+ * collapsed/toggleCollapse).
+ */
+export interface WorkspaceViewerValue {
+  wsInfo: WorkspaceInfo | null;
+  wsError: string | null;
+  setWsError: (v: string | null) => void;
+  wsShow: boolean;
+  wsLoadingTree: string | null;
+  wsSelAgent: string | null;
+  wsAgentTrees: Record<string, DirNode | null>;
+  wsSelProject: string | null;
+  wsProjectTrees: Record<string, DirNode | null>;
+  wsLoadAgentTree: (name: string) => Promise<void>;
+  wsLoadProjectTree: (name: string) => Promise<void>;
+}
+
+export const WorkspaceViewerContext = createContext<WorkspaceViewerValue | null>(null);
+
+export function useWorkspaceViewer(): WorkspaceViewerValue {
+  const value = useContext(WorkspaceViewerContext);
+  if (!value) throw new Error("useWorkspaceViewer must be rendered inside the agent page provider");
   return value;
 }

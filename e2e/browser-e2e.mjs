@@ -702,6 +702,48 @@ async function agentChannelFlow() {
     const eagerChunkUrls = await evalJs(c, `(() => ${chunkUrlExpr})()`);
     flow.lazyGuard = { eagerChunkCount: eagerChunkUrls.length, ok: false };
 
+    const chunkAfter = (excluded) =>
+      `(() => { const urls = ${chunkUrlExpr}; return urls.filter((u) => !${JSON.stringify(excluded)}.includes(u)).length > 0; })()`;
+
+    // 0. Round 97 workspace-viewer guard: opening the viewer must fetch a NEW
+    // deferred chunk (not part of the eager /agent load), then render the
+    // two workspace blocks (real folder names when the backend has agents).
+    await evalJs(c, jsClick("Workspace", true));
+    await delay(300);
+    const wsLazyChunkSeen = await waitFor(
+      c,
+      chunkAfter(eagerChunkUrls),
+      15000,
+      400,
+      "lazy workspace-viewer chunk",
+    );
+    if (!wsLazyChunkSeen) {
+      throw new Error("agent flow: opening Workspace did not fetch a lazy chunk");
+    }
+    const chunkUrlsAfterWorkspace = await evalJs(c, `(() => ${chunkUrlExpr})()`);
+    const workspaceLazyChunkUrls = chunkUrlsAfterWorkspace.filter((u) => !eagerChunkUrls.includes(u));
+    const viewerSeen = await waitFor(
+      c,
+      `!!document.querySelector('[class*="workspace"]') &&
+       (document.body.innerText.includes("No agent folders") || document.body.innerText.includes("No projects") ||
+        document.body.innerText.includes("AGENTS") && document.body.innerText.includes("PROJECTS"))`,
+      15000,
+      400,
+      "workspace viewer render",
+    );
+    if (!viewerSeen) {
+      throw new Error("agent flow: Workspace viewer never rendered its Agents/Projects blocks");
+    }
+    flow.workspaceViewer = {
+      lazyChunkCount: workspaceLazyChunkUrls.length,
+      renderedFolders: await evalJs(
+        c,
+        `(() => { const t = document.body.innerText; return { agents: !!t.includes("AGENTS"), projects: !!t.includes("PROJECTS"), empty: t.includes("No agent folders") || t.includes("No projects") }; })()`,
+      ),
+    };
+    await evalJs(c, jsClick("Hide Workspace", true));
+    await delay(150);
+
     // 1. Open the Channels tab and the New-channel modal.
     await evalJs(c, jsClick("Channels", true));
     await delay(400);
@@ -712,20 +754,22 @@ async function agentChannelFlow() {
     }
 
     // The Channels tab must have fetched the deferred panel chunk; verify the
-    // marker UI only ever lives in the lazy chunk (never the eager first load).
+    // marker UI only ever lives in the lazy chunk (never the eager first load
+    // or the workspace-viewer chunk).
     const marker = "saved sessions yet";
-    const lazyChunkSeen = await waitFor(
+    const panelChunkSeen = await waitFor(
       c,
-      `(() => { const urls = ${chunkUrlExpr}; return urls.filter((u) => !${JSON.stringify(eagerChunkUrls)}.includes(u)).length > 0; })()`,
+      chunkAfter(chunkUrlsAfterWorkspace),
       15000,
       400,
       "lazy panel chunk",
     );
-    if (!lazyChunkSeen) {
+    if (!panelChunkSeen) {
       throw new Error("agent flow: opening Channels did not fetch the lazy panel chunk");
     }
     const chunkUrlsAfterChannels = await evalJs(c, `(() => ${chunkUrlExpr})()`);
-    const lazyChunkUrls = chunkUrlsAfterChannels.filter((u) => !eagerChunkUrls.includes(u));
+    const allLazyChunkUrls = chunkUrlsAfterChannels.filter((u) => !eagerChunkUrls.includes(u));
+    const panelLazyChunkUrls = chunkUrlsAfterChannels.filter((u) => !chunkUrlsAfterWorkspace.includes(u));
     const chunkHasMarker = async (u) => {
       const r = await fetch(u);
       if (!r.ok) throw new Error(`agent flow: lazy-guard chunk fetch -> HTTP ${r.status} (${u})`);
@@ -738,8 +782,15 @@ async function agentChannelFlow() {
     if (eagerMarkerHits.length > 0) {
       throw new Error(`agent flow: eager /agent load includes lazy panel chunk(s) [${eagerMarkerHits.join(", ")}]`);
     }
+    const workspaceMarkerHits = [];
+    for (const u of workspaceLazyChunkUrls) {
+      if (await chunkHasMarker(u)) workspaceMarkerHits.push(u);
+    }
+    if (workspaceMarkerHits.length > 0) {
+      throw new Error(`agent flow: workspace-viewer lazy chunk includes panel UI [${workspaceMarkerHits.join(", ")}]`);
+    }
     const lazyMarkerChunks = [];
-    for (const u of lazyChunkUrls) {
+    for (const u of panelLazyChunkUrls) {
       if (await chunkHasMarker(u)) lazyMarkerChunks.push(u);
     }
     if (lazyMarkerChunks.length === 0) {
@@ -747,13 +798,18 @@ async function agentChannelFlow() {
     }
     flow.lazyGuard = {
       eagerChunkCount: eagerChunkUrls.length,
-      lazyChunkCount: lazyChunkUrls.length,
+      workspaceLazyChunkCount: workspaceLazyChunkUrls.length,
+      panelLazyChunkCount: panelLazyChunkUrls.length,
       eagerMarkerHits: eagerMarkerHits.map((u) => u.split("/").pop().split("?")[0]),
+      workspaceMarkerHits: workspaceMarkerHits.map((u) => u.split("/").pop().split("?")[0]),
       lazyMarkerChunks: lazyMarkerChunks.map((u) => u.split("/").pop().split("?")[0]),
       ok: true,
     };
-    flow.steps.push("lazy-chunk-guard");
-    log(`  lazy chunk guard: ${lazyMarkerChunks.length} marker chunk(s) deferred (${flow.lazyGuard.lazyChunkCount} lazy, ${flow.lazyGuard.eagerChunkCount} eager)`);
+    flow.steps.push("lazy-chunk-guard", "workspace-viewer-chunk");
+    log(
+      `  workspace viewer guard: ${flow.lazyGuard.workspaceLazyChunkCount} lazy chunk(s) fetched on open; ` +
+      `panel guard: ${lazyMarkerChunks.length} marker chunk(s) deferred (${flow.lazyGuard.panelLazyChunkCount} panel-lazy, ${flow.lazyGuard.workspaceLazyChunkCount} workspace-lazy, ${flow.lazyGuard.eagerChunkCount} eager)`,
+    );
 
     const channelName = `browser-e2e-${Date.now().toString(36)}`;
     await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
