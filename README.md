@@ -215,7 +215,7 @@ and awaits the agent turn):
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
 | POST   | `/api/cron/:id/run`  | run the job now, outside its schedule                     |
-| GET    | `/api/cron/:id/runs` | append-only run history, newest first (`limit` 1–100, default 20) |
+| GET    | `/api/cron/:id/runs` | append-only run history, newest first (`limit` 1–100 default 20, `offset` default 0; kept to the newest 100 runs per job) |
 
 Skills:
 
@@ -305,8 +305,10 @@ node scripts/verify-rest-docs.mjs
   run-now through the agent records done/error + message/model/duration,
   restart recovery marks interrupted runs error, delete rejected while
   running, run history persists a terminal `cronRun` row per firing,
-  `runs()` lists newest first with a clamped limit and 404s on unknown
-  jobs), and the skills service
+  `runs()` lists newest first with clamped `limit`/`offset` pagination and
+  a stable createdAt/id tie-break, per-job history prunes
+  past the 100-run retention cap, and 404s on unknown jobs), and the
+  skills service
   (create/list/get/update/delete, unique slug-form names with 409
   duplicate, invalid-name 400, install requires non-empty content,
   uninstall keeps the record, empty PATCH 400, content capped at 200k

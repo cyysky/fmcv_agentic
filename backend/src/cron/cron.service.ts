@@ -27,6 +27,8 @@ export const CRON_LEASE_DURATION_MS = 5000;
 export const CRON_LEASE_GROUP = 'default';
 /** Truncation cap for the run result stored/displayed on the job row. */
 export const MAX_RUN_MESSAGE = 500;
+/** Retention cap for per-job run history: keep only the newest runs. */
+export const MAX_RUN_HISTORY = 100;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Terminal status written by this service when a run ends. */
@@ -267,13 +269,34 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     return this.executeJob(id);
   }
 
-  /** Recent terminal runs for a job, newest first (Round 67). */
-  async runs(id: string, limit = 20): Promise<CronRun[]> {
+  /**
+   * Recent terminal runs for a job, newest first, with offset pagination
+   * (Round 68). Defaults: limit 20 (clamped 1-100), offset 0 (clamped >= 0).
+   */
+  async runs(id: string, limit = 20, offset = 0): Promise<CronRun[]> {
     await this.get(id); // 404 on an unknown job
     return this.prisma.cronRun.findMany({
       where: { cronJobId: id },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: Math.min(Math.max(Math.trunc(limit) || 20, 1), 100),
+      skip: Math.max(Math.trunc(offset) || 0, 0),
+    });
+  }
+
+  /**
+   * Retention cap (Round 68): after each terminal insert, keep only the
+   * newest MAX_RUN_HISTORY runs for the job and prune the rest. Best
+   * effort — a pruning failure is logged and never breaks the run result.
+   */
+  private async pruneRunHistory(id: string): Promise<void> {
+    const keep = await this.prisma.cronRun.findMany({
+      where: { cronJobId: id },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true },
+      take: MAX_RUN_HISTORY,
+    });
+    await this.prisma.cronRun.deleteMany({
+      where: { cronJobId: id, id: { notIn: keep.map((run) => run.id) } },
     });
   }
 
@@ -439,7 +462,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         (await this.prisma.cronJob.findUnique({ where: { id } })) ??
           (current as CronJob),
       );
-      await this.prisma.cronRun
+      const created = await this.prisma.cronRun
         .create({
           data: {
             cronJobId: id,
@@ -453,7 +476,15 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
           this.logger.warn(
             `Could not persist cron run history for ${id}: ${(err as Error).message}`,
           );
+          return null;
         });
+      if (created) {
+        await this.pruneRunHistory(id).catch((err) => {
+          this.logger.warn(
+            `Could not prune cron run history for ${id}: ${(err as Error).message}`,
+          );
+        });
+      }
     }
   }
 

@@ -45,8 +45,16 @@ export class CronController {
   }
 
   @Get(':id/runs')
-  runs(@Param('id', ParseUUIDPipe) id: string, @Query('limit') limit?: string) {
-    return this.cron.runs(id, limit === undefined ? undefined : Number(limit));
+  runs(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.cron.runs(
+      id,
+      limit === undefined ? undefined : Number(limit),
+      offset === undefined ? undefined : Number(offset),
+    );
   }
 
   @Get(':id')

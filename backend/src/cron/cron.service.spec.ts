@@ -6,7 +6,7 @@ import {
 import { CronJob, Prisma } from '@prisma/client';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CronService, nextCronRun } from './cron.service';
+import { CronService, MAX_RUN_HISTORY, nextCronRun } from './cron.service';
 
 /** Minimal Prisma double covering cronJob + connection lookups. */
 type MockStore = Record<string, jest.Mock>;
@@ -38,6 +38,7 @@ function prismaDouble(): {
   const cronRun: MockStore = {
     create: jest.fn(async () => ({ id: 'run-1' })),
     findMany: jest.fn(async () => []),
+    deleteMany: jest.fn(async () => ({ count: 0 })),
   };
   return {
     cronJob,
@@ -364,7 +365,7 @@ describe('CronService', () => {
     );
   });
 
-  it('lists run history newest-first and 404s on an unknown job', async () => {
+  it('lists run history newest-first with stable tie-break and 404s on an unknown job', async () => {
     const { service, prisma } = makeSvc();
     prisma.cronJob.findUnique.mockResolvedValue(row());
     prisma.cronRun.findMany.mockResolvedValue([
@@ -376,14 +377,70 @@ describe('CronService', () => {
     expect(prisma.cronRun.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { cronJobId: 'job-1' },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: 20,
+        skip: 0,
       }),
     );
     prisma.cronJob.findUnique.mockResolvedValue(null);
     await expect(
       service.runs('00000000-0000-4000-8000-000000000000'),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('clamps pagination limit and offset for run history', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronJob.findUnique.mockResolvedValue(row());
+    prisma.cronRun.findMany.mockResolvedValue([] as never);
+    await service.runs('job-1', 2000, -3);
+    expect(prisma.cronRun.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: 100, skip: 0 }),
+    );
+    await service.runs(
+      'job-1',
+      'nope' as unknown as number,
+      'zzz' as unknown as number,
+    );
+    expect(prisma.cronRun.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: 20, skip: 0 }),
+    );
+    await service.runs('job-1', 2, 10);
+    expect(prisma.cronRun.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: 2, skip: 10 }),
+    );
+  });
+
+  it('prunes run history beyond the retention cap after a terminal run', async () => {
+    const { service, prisma, agent } = makeSvc();
+    prisma.cronJob.findUnique.mockResolvedValue(
+      row({ lastRunStatus: 'done', lastRunMessage: 'Pruned' }),
+    );
+    prisma.cronJob.updateMany.mockResolvedValue({ count: 1 });
+    prisma.cronRun.create.mockResolvedValue({ id: 'run-new' });
+    prisma.cronRun.findMany.mockResolvedValue([
+      { id: 'run-newest' },
+      { id: 'run-older' },
+    ]);
+    agent.runTurn.mockResolvedValue({
+      answer: 'Done',
+      model: 'ds4-flash',
+      steps: 1,
+    });
+    await service.runNow('job-1');
+    expect(prisma.cronRun.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { cronJobId: 'job-1' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true },
+        take: MAX_RUN_HISTORY,
+      }),
+    );
+    expect(prisma.cronRun.deleteMany).toHaveBeenCalledWith({
+      where: {
+        cronJobId: 'job-1',
+        id: { notIn: ['run-newest', 'run-older'] },
+      },
+    });
   });
 
   it('rejects a concurrent run after another replica claimed the job', async () => {

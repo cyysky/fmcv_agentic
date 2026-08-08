@@ -251,6 +251,33 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
       .expect(404);
   });
 
+  it('paginates run history with limit and offset', async () => {
+    // Two more terminal runs so the job has three rows to page through.
+    await http().post(`/api/cron/${jobId}/run`).expect(201);
+    await http().post(`/api/cron/${jobId}/run`).expect(201);
+    const first = json<CronRunRow[]>(
+      await http().get(`/api/cron/${jobId}/runs?limit=2&offset=0`).expect(200),
+    );
+    expect(first).toHaveLength(2);
+    const second = json<CronRunRow[]>(
+      await http().get(`/api/cron/${jobId}/runs?limit=2&offset=2`).expect(200),
+    );
+    expect(second).toHaveLength(1);
+    const all = json<CronRunRow[]>(
+      await http().get(`/api/cron/${jobId}/runs?limit=10`).expect(200),
+    );
+    expect(all).toHaveLength(3);
+    // Pages stitch together newest-first with no overlap or gap.
+    expect([...first, ...second].map((run) => run.id)).toEqual(
+      all.map((run) => run.id),
+    );
+    // Offset beyond the end returns an empty page.
+    const beyond = json<CronRunRow[]>(
+      await http().get(`/api/cron/${jobId}/runs?offset=99`).expect(200),
+    );
+    expect(beyond).toHaveLength(0);
+  });
+
   it('404s running an unknown job', async () => {
     await http()
       .post('/api/cron/00000000-0000-4000-8000-000000000000/run')
