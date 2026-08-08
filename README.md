@@ -286,9 +286,9 @@ cd e2e && node browser-e2e.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 104 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 105 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
-  `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
+  `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
   the stored key to NULL server-side, model-list normalization/replace/clear,
   malformed model-list 400s, probe OK through a hermetic fake upstream that
@@ -300,7 +300,7 @@ cd e2e && node browser-e2e.mjs
   connection, explicit catalog-model override via turn/converse, a raw
   provider model id used verbatim and reported back, unknown connection 404
   on create/turn/converse, malformed id 400), channel lifecycle + streaming
-  jobs (12), files manager (12: CRUD round-trip, directory-first ordering,
+  jobs (12), files manager (13: CRUD round-trip, directory-first ordering,
   empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
   directory/escape download 400, HTML view served inline with sandboxed
@@ -315,7 +315,7 @@ cd e2e && node browser-e2e.mjs
   semantics, empty PATCH 400, run-now drives a stubbed agent turn and
   persists done/error/message/model/duration, delete, delete-while-running
   409 — the agent service is stubbed so the suite stays hermetic), skills
-  (11: create, duplicate-name 409, invalid-name 400, install-content gate,
+  (10: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes
   read_skill, delete), the API

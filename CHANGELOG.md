@@ -1,3 +1,28 @@
+## Round 2026-08-08 — autonomous iteration round 32 (tag `round-32`)
+
+### Added
+- **Verification + docs accuracy pass** — re-ran every gate against the live
+  compose stack: backend unit 145/14, API E2E 105/10, build/tsc/eslint clean
+  on both sides, frontend production build clean, and the CDP browser E2E
+  refreshed `e2e/report.json` + screenshots (exit 0, 21 routes, 9 journeys,
+  zero console/network/HTTP errors; fixtures cleaned).
+- **README API E2E count corrected** — total 105 (was 104) with the per-suite
+  breakdown fixed to the declared tests (connections 22, files 13, skills 10).
+
+### Fixed
+- **Stale bucket fixture cleanup** — removed a leftover `round32-handwalk`
+  bucket row + document (folder already gone) and a probe fixture via
+  id-scoped SQL, because buckets expose no delete API by design. Both came
+  from two concurrent loop sessions choosing the same natural fixture name
+  for the same round number.
+
+### Known issues / accepted limitations
+- Concurrent loop sessions sharing this repo/db can choose identical natural
+  fixture names and interfere; use unique per-session suffixes. Leftover
+  read-only bucket rows must be cleared with SQL (no API delete by design).
+- Unchanged from round 31: CSP `sandbox` preview limits, in-process scheduler /
+  in-memory skills install state, read-only buckets, test-file lint exemptions.
+
 ## Round 2026-08-08 — autonomous iteration round 31 (tag `round-31`)
 
 ### Added
