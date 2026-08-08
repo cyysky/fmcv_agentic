@@ -8,7 +8,8 @@
  *
  * Current baseline: every route pays a ~460-513 KB Next/React framework
  * baseline (shared chunks, ~156 KB gzipped); per-route app code is already
- * well split (13-50 KB). This guard exists to catch accidental bloat, not
+ * well split (about 9-34 KB plus sub-1 KB edge chunks). This guard exists
+ * to catch accidental bloat, not
  * to police the framework baseline. Override the budget with
  * FMCV_BUNDLE_BUDGET_BYTES (default 600000).
  */

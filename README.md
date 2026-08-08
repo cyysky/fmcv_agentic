@@ -333,7 +333,8 @@ node scripts/verify-test-counts.mjs
 # One-command fast verify: both guards + backend unit/lint/types +
 # frontend lint/types (backend must already be running for nothing; the
 # API E2E and browser E2E need docker mode flips and stay explicit).
-#   --build    also runs `nest build` + `next build` + the bundle-size guard
+#   --build    also runs `nest build` + `next build` + the bundle-size
+#              guard + the /agent headroom guard
 #   --api-e2e  also runs the API E2E via scripts/api-e2e.mjs below
 node scripts/verify.mjs
 node scripts/verify.mjs --build --api-e2e
@@ -447,11 +448,12 @@ node scripts/api-e2e.mjs
   `scripts/verify-test-counts.mjs` (see the drift guard below).
 - **One-command verify** (`scripts/verify.mjs`) — zero-dependency;
   runs the REST docs guard, the test-count guard, the bundle-size guard
-  (with `--build`), backend unit tests, backend eslint + `tsc --noEmit`,
-  and frontend eslint + `tsc --noEmit` in one pass, failing fast with the
-  step name. Flags: `--build` adds `nest build` + `next build` + the
-  bundle-size guard; `--api-e2e` adds the API E2E step. The browser E2E
-  stays explicit (Chrome + per-mode runs).
+  + the /agent headroom guard (with `--build`), backend unit tests, backend
+  eslint + `tsc --noEmit`, and frontend eslint + `tsc --noEmit` in one
+  pass, failing fast with the step name. Flags: `--build` adds `nest build`
+  + `next build` + the bundle-size guard + the /agent headroom guard;
+  `--api-e2e` adds the API E2E step. The browser E2E stays explicit
+  (Chrome + per-mode runs).
 - **API E2E helper** (`scripts/api-e2e.mjs`) — zero-dependency; flips the
   backend to `CRON_SCHEDULER_ENABLED=false` + recreate, waits until
   `/api/cron/scheduler` reports `enabled:false`, runs
@@ -468,16 +470,31 @@ node scripts/api-e2e.mjs
   dependencies; reads Next's `route-bundle-stats.json` after `next build`
   and fails the gate when any route's uncompressed first-load JS exceeds
   the budget (default 600 KB, override `FMCV_BUNDLE_BUDGET_BYTES`).
-  Measured baseline Round 97: largest first load is `/agent` at ~484 KB
+  Measured baseline Round 99: largest first load is `/agent` at ~484 KB
   — the Next/React framework baseline (~460 KB shared, ~156 KB gzipped)
-  dominates while per-route app chunks stay 13-50 KB and are not
-  duplicated across routes. Deferred chunks on `/agent` (all fetched only
+  dominates while per-route app chunks stay ~9-34 KB (plus tiny edge
+  chunks) and are not duplicated across routes. Deferred chunks on
+  `/agent` (all fetched only
   on demand, verified by the browser E2E lazy guard): Round 93 lazy-split
   the sessions/channels tab panels (`agent/agent-views.tsx`, ~23 KB);
   Round 97 lazy-split the workspace viewer (`agent/workspace-viewer.tsx`,
   ~2.3 KB) out of the page's eager atomic chunk set — the guard counts 14
   eager / 1 workspace-lazy / 1 panel-lazy script loads. The 8 eager chunks
   carry only the chat composer, trace viewer, and header pickers by design.
+- **Agent headroom guard** (`scripts/verify-agent-headroom.mjs`) — zero
+  dependencies; also reads `route-bundle-stats.json` after `next build`
+  and fails when `/agent`'s uncompressed first-load bytes exceed the
+  smallest shared-baseline route by more than a budgeted delta
+  (default 45,000 B, override `FMCV_AGENT_HEADROOM_BUDGET_BYTES`).
+  Measured baseline Round 99: `/agent` 495,803 B (484 KB / 8 chunks) vs
+  `/` 461,553 B (451 KB / 6 chunks) — a 34,250 B (33.4 KB) agent-specific
+  delta from one 33,934 B page chunk + a 316 B utility chunk. The absolute
+  bundle-size guard alone can hide agent-page creep inside the shared
+  framework floor, so this guard polices the per-route delta directly.
+  No split was made: the remaining first-load code is the composer, trace
+  viewer, and header pickers (~2-3 KB of inline `<select>` JSX), all
+  rendered on first load by design and well under the ~5 KB split
+  threshold.
 - **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
   backend: production `src/**/*.ts` runs the strict
   `recommendedTypeChecked` rule set, while test files
