@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-08T10:17:25.370Z",
+  "ranAt": "2026-08-08T10:20:39.723Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "3DA05F78F8BC109094347DE383178172",
+        "id": "C5C3074413B931E7F94EBB41D0515DFC",
         "created": true
       },
       "checks": {
@@ -38,7 +38,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "48579FD5A4C89D29EDCD009342086181",
+        "id": "EE3F97C2D818FDC2095ECB5E1F8A30B1",
         "created": true
       },
       "checks": {
@@ -63,7 +63,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "949C218FFA0CF681B80E62F4F1B11DEF",
+        "id": "E756DBDA812B84D2519AF89978B64FB4",
         "created": true
       },
       "checks": {
@@ -89,7 +89,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "D0C6632BF177E22B94F814033CA06ED1",
+        "id": "104D33BD8733C0C270271B1422417EC3",
         "created": true
       },
       "checks": {
@@ -116,7 +116,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "58A4325537D58D5489BCACB0397527F9",
+        "id": "467C61AB0C4466C859FEEF4FAD17C207",
         "created": true
       },
       "checks": {
@@ -143,7 +143,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "DB88767785C5766CB53E46CB11781DD5",
+        "id": "FB86537EE5DF999C429ECDE9B4C29D80",
         "created": true
       },
       "checks": {
@@ -169,7 +169,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "58C27D80EF44004DCA252634B9C92995",
+        "id": "C50AEDE961D69ABCF97B3DE4505603C3",
         "created": true
       },
       "checks": {
@@ -193,7 +193,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "7DE89C4A589ECD0C5D3D6A7BB882999A",
+        "id": "2B26D4619DE0597833C6FCDCF5ADC1A1",
         "created": true
       },
       "checks": {
@@ -220,7 +220,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "A21289D53F20FFF3A83BC4E1544FE888",
+        "id": "98AAF0B61970F8D0ED58A2BC2E9B2A92",
         "created": true
       },
       "checks": {
@@ -246,7 +246,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "7E33C9853A7BCE7E6E2B4DFF2C567E80",
+        "id": "4A5E77E9F776EA2BE0D91E44A1ED7E4B",
         "created": true
       },
       "checks": {
@@ -270,7 +270,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "E5E73CFF4128F4616DD38D1F8873D443",
+        "id": "1D767495F56EE0289E8A961C61E28676",
         "created": true
       },
       "checks": {
@@ -297,7 +297,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "7275907BF4279410E09DCC261ECF5C81",
+        "id": "35D5A29C04577F726C0C3979E00D630E",
         "created": true
       },
       "checks": {
@@ -322,7 +322,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "570EA6836017BEE5482AC5332CD27F9D",
+        "id": "36A2C5E3B529DC30BF7EF2483C532B57",
         "created": true
       },
       "checks": {
@@ -346,7 +346,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "F6F18B637ABD2B9381B56B733DD5418A",
+        "id": "2C5A119E8A53805E105ABF1E5C56C009",
         "created": true
       },
       "checks": {
@@ -369,7 +369,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "8F7894AD2DC7F99FCAC444CA5968736E",
+        "id": "5BCA6F25C3A67E6EFF47CBBD3EBF47F1",
         "created": true
       },
       "checks": {
@@ -394,7 +394,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "DF1CE710868FFD6A226374453939D4BA",
+        "id": "0BFEA3C46F78E26817F0926D5164E6E0",
         "created": true
       },
       "checks": {
@@ -419,7 +419,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "94BCEACE8D0F96138801A3214D771241",
+        "id": "13A2D9830FBFBD470DB116EB006A97CB",
         "created": true
       },
       "checks": {
@@ -445,7 +445,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "A9133AA1946916B3F7ED8096A5727DB0",
+        "id": "8AE370BDCBE42C275C3177B1FBC2013B",
         "created": true
       },
       "checks": {
@@ -470,7 +470,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "99B00534F5F41106D4D46A06534DB732",
+        "id": "147AEDF2B0D7E7ABCD7BA0F5FC644B9F",
         "created": true
       },
       "checks": {
@@ -493,7 +493,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "99C164650486DF3AFB4A3DDEA7CFEF5F",
+        "id": "45E51BAB3AD12AC827F08BD4729CF733",
         "created": true
       },
       "checks": {
@@ -518,7 +518,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "4119CD40D5DAC0950F4CE28E12686DEB",
+        "id": "EAB21B25F08C734E6E2D4663778FB51C",
         "created": true
       },
       "checks": {
@@ -542,10 +542,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "5DF04E1E3719697A3B3C31E5EE806F95",
+      "id": "401AE14145619CEBBA44FE76E83778EB",
       "created": true
     },
-    "channelName": "browser-e2e-msk801e9",
+    "channelName": "browser-e2e-msk845xa",
     "flow": {
       "steps": [
         "created-channel",
@@ -553,9 +553,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-08T10:17:58.609Z",
-        "finishedAt": "2026-08-08T10:18:01.283Z",
-        "elapsedMs": 1366
+        "postedAt": "2026-08-08T10:21:11.113Z",
+        "finishedAt": "2026-08-08T10:21:13.779Z",
+        "elapsedMs": 1361
       },
       "result": {
         "answer": true,
@@ -563,8 +563,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-msk801e9",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-08T10:17:57.903Z\nAgent coder joined #browser-e2e-msk801e9.\nsystem\n[SYSTEM]\n2026-08-08T10:17:57.925Z\nChannel #browser-e2e-msk801e9 created.\nyou\n[USER]\n2026-08-08T10:17:58.611Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-08T10:18:00.463Z\nHello! I've written `round2.md` into my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Ro"
+      "channelName": "browser-e2e-msk845xa",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-08T10:21:10.392Z\nAgent coder joined #browser-e2e-msk845xa.\nsystem\n[SYSTEM]\n2026-08-08T10:21:10.417Z\nChannel #browser-e2e-msk845xa created.\nyou\n[USER]\n2026-08-08T10:21:11.111Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-08T10:21:13.312Z\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
     },
     "errors": {
       "netFailures": [],
@@ -597,7 +597,7 @@
   "navFlow": {
     "url": "http://localhost:3333/",
     "tabInfo": {
-      "id": "3F82FD7509FF84E5BC070E3A9828FAF6",
+      "id": "0F8029BEED57BA2B27DF47AAD1A384F4",
       "created": true
     },
     "flow": {
@@ -634,24 +634,24 @@
   "mobileChannelFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "C0873DF1461209AC16704ABFA3DB27CA",
+      "id": "A301A67265DC64AE1EE7966629AA5619",
       "created": true
     },
-    "channelName": "browser-e2e-mobile-msk804kf",
+    "channelName": "browser-e2e-mobile-msk8493e",
     "flow": {
       "steps": [
         "dashboard-layout",
         "member-debug"
       ],
       "timings": {
-        "elapsedMs": 1690
+        "elapsedMs": 1681
       },
       "result": {
         "layoutOk": true,
         "memberDebugReachable": true,
         "overflowAfterDebug": true
       },
-      "channelName": "browser-e2e-mobile-msk804kf",
+      "channelName": "browser-e2e-mobile-msk8493e",
       "layout": {
         "noHorizontalOverflow": true,
         "stacked": true,
@@ -678,7 +678,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "08B9D0FBB8CA25D5044CB7060C59DC22",
+      "id": "9DE004D06E073FCABF9BA20C8C69B120",
       "created": true
     },
     "flow": {
@@ -702,15 +702,15 @@
         "connection-fixture-deleted"
       ],
       "timings": {
-        "postedAt": "2026-08-08T10:18:05.704Z",
-        "finishedAt": "2026-08-08T10:18:09.721Z",
-        "elapsedMs": 4583,
-        "connectionSentAt": "2026-08-08T10:18:13.219Z",
-        "connectionFinishedAt": "2026-08-08T10:18:14.023Z",
-        "connListSentAt": "2026-08-08T10:18:14.045Z",
-        "connListFinishedAt": "2026-08-08T10:18:14.848Z",
-        "overrideSentAt": "2026-08-08T10:18:14.967Z",
-        "overrideFinishedAt": "2026-08-08T10:18:15.772Z"
+        "postedAt": "2026-08-08T10:21:18.224Z",
+        "finishedAt": "2026-08-08T10:21:21.444Z",
+        "elapsedMs": 3788,
+        "connectionSentAt": "2026-08-08T10:21:24.932Z",
+        "connectionFinishedAt": "2026-08-08T10:21:25.739Z",
+        "connListSentAt": "2026-08-08T10:21:25.757Z",
+        "connListFinishedAt": "2026-08-08T10:21:26.561Z",
+        "overrideSentAt": "2026-08-08T10:21:26.675Z",
+        "overrideFinishedAt": "2026-08-08T10:21:27.479Z"
       },
       "result": {
         "persisted": true,
@@ -726,10 +726,10 @@
         "fixtureModel": "ds4-flash",
         "connListNotCatalog": true,
         "connListOptionSeen": true,
-        "connListModel": "e2e-conn-list-msk8061m",
+        "connListModel": "e2e-conn-list-msk84akz",
         "connListModelSentOnConverse": true,
         "connListUpstreamHit": true,
-        "connListUpstreamModel": "e2e-conn-list-msk8061m",
+        "connListUpstreamModel": "e2e-conn-list-msk84akz",
         "connListUpstreamAuthOk": true,
         "connListReplySeen": true,
         "connectionReplySeen": true,
@@ -748,27 +748,27 @@
         "connectionCleanup": "deleted"
       },
       "fixtureId": null,
-      "fixtureName": "e2e-session-msk8061m",
+      "fixtureName": "e2e-session-msk84akz",
       "fixtureModel": "ds4-flash",
       "fixtureLive": true,
       "fixtureModels": [
-        "e2e-conn-list-msk8061m"
+        "e2e-conn-list-msk84akz"
       ],
-      "createdAt": "2026-08-08T10:18:04.962Z",
-      "sentText": "Hello from sessions E2E (msk807er)",
+      "createdAt": "2026-08-08T10:21:17.482Z",
+      "sentText": "Hello from sessions E2E (msk84bym)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (msk807er)\nAGENT\nHello! 👋 I'm the coder agent here, ready to help.\n\nI've checked the channel project folder and my own workspace — both are currently empty, so we're starting fresh.\n\nWhat would you like to work on? For example:\n- **Audit tasks** — reviewing mobile app code, configs, or manifests\n- **Writing/editing files** — reports, scripts, or documentation\n- **Explo",
+      "threadSnippet": "YOU\nHello from sessions E2E (msk84bym)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. I can see the project folder and my workspace are currently empty — no files or tasks yet.\n\nWhat would you like to work on? I can:\n- Explore/manage files in the project folder\n- Write or read code/docs\n- Post updates to the channel\n\nJust let me know what you need!",
       "autoTitleSeen": true,
-      "renamedTitle": "Renamed msk80b1r",
+      "renamedTitle": "Renamed msk84ezg",
       "historySeen": true,
       "titleAfterReload": true,
       "connListNotCatalog": true,
       "connectionSelected": true,
       "modelDeferredToConnection": true,
       "connectionNoteShown": true,
-      "connectionMessage": "Via saved connection (msk80d82)",
+      "connectionMessage": "Via saved connection (msk84h5e)",
       "connectionReplyError": false,
-      "connectionThreadSnippet": "YOU\nHello from sessions E2E (msk807er)\nAGENT\nYOU\n{}\nYOU\n{\"work\":{}}\nAGENT\nYOU\n{}\nAGENT\nHello! 👋 I'm the coder agent here, ready to help.\n\nI've checked the channel project folder and my own workspace — both are currently empty, so we're starting fresh.\n\nWhat would you like to work on? For example:\n-",
+      "connectionThreadSnippet": "YOU\nHello from sessions E2E (msk84bym)\nAGENT\nYOU\n{}\nYOU\n{\"work\":{}}\nAGENT\nYOU\n{}\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. I can see the project folder and my workspace are currently empty — no files or tasks yet.\n\nWhat would you like to work on? I can:\n- Explore/manage files in the projec",
       "upstreamHit": true,
       "upstreamModel": "ds4-flash",
       "upstreamAuthOk": true,
@@ -776,11 +776,11 @@
       "connectionReplySeen": true,
       "connectionIdSent": true,
       "modelOmittedFromConverse": true,
-      "converseUrl": "http://10.0.151.7:5555/api/agent/sessions/3914c6c9-dc0b-4c99-8447-3b1f2c2c1fef/converse",
+      "converseUrl": "http://10.0.151.7:5555/api/agent/sessions/fb3d9f8c-6b47-46b7-aad8-7c33ee29e424/converse",
       "connListOptionSeen": true,
-      "connListMessage": "Via connection model list (msk80dxn)",
+      "connListMessage": "Via connection model list (msk84hv2)",
       "connListUpstreamHit": true,
-      "connListUpstreamModel": "e2e-conn-list-msk8061m",
+      "connListUpstreamModel": "e2e-conn-list-msk84akz",
       "connListUpstreamAuthOk": true,
       "connListReplySeen": true,
       "connListModelSentOnConverse": true,
@@ -808,22 +808,22 @@
   "filesFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "F254650096CEEEA0C8F7E08053253A73",
+      "id": "4D30657996F30053E59C59B29E53E498",
       "created": true
     },
     "flow": {
       "steps": [
-        "created browser-e2e-files-msk80gee/hello.txt",
-        "created .dot-msk80gee",
+        "created browser-e2e-files-msk84k9k/hello.txt",
+        "created .dot-msk84k9k",
         "root-lists-folder-and-dotfile",
         "navigated-into-folder",
         "downloaded-hello.txt",
         "deleted-hello.txt",
-        "deleted browser-e2e-files-msk80gee",
-        "deleted .dot-msk80gee"
+        "deleted browser-e2e-files-msk84k9k",
+        "deleted .dot-msk84k9k"
       ],
       "timings": {
-        "elapsedMs": 5631
+        "elapsedMs": 5658
       },
       "result": {
         "created": true,
@@ -831,11 +831,11 @@
         "deleted": true
       },
       "scope": "agent:coder",
-      "createdAt": "2026-08-08T10:18:16.821Z",
-      "folder": "browser-e2e-files-msk80gee",
-      "dotfile": ".dot-msk80gee",
-      "file": "browser-e2e-files-msk80gee/hello.txt",
-      "content": "hello from files e2e msk80gee",
+      "createdAt": "2026-08-08T10:21:28.456Z",
+      "folder": "browser-e2e-files-msk84k9k",
+      "dotfile": ".dot-msk84k9k",
+      "file": "browser-e2e-files-msk84k9k/hello.txt",
+      "content": "hello from files e2e msk84k9k",
       "contentSeen": true,
       "realDownload": "ok",
       "downloadVerified": true,
@@ -858,7 +858,7 @@
   "htmlFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "790F9F2F4278FB585C0F64177014526C",
+      "id": "B005BDFC383BE2438C5CF20A77E28525",
       "created": true
     },
     "flow": {
@@ -869,7 +869,7 @@
         "deleted-view.html"
       ],
       "timings": {
-        "elapsedMs": 6490
+        "elapsedMs": 6538
       },
       "result": {
         "createdViaUi": true,
@@ -878,16 +878,16 @@
         "deletedViaUi": true
       },
       "scope": "agent:coder",
-      "folder": "browser-e2e-html-msk80l8u",
-      "file": "browser-e2e-html-msk80l8u/view.html",
-      "marker": "html-view-msk80l8u",
-      "content": "<!doctype html><html><head><meta charset=\"utf-8\"><title>HTML view E2E msk80l8u</title></head><body><h1 id=\"marker\">html-view-msk80l8u</h1><p>viewed-by-link</p></body></html>",
+      "folder": "browser-e2e-html-msk84p4i",
+      "file": "browser-e2e-html-msk84p4i/view.html",
+      "marker": "html-view-msk84p4i",
+      "content": "<!doctype html><html><head><meta charset=\"utf-8\"><title>HTML view E2E msk84p4i</title></head><body><h1 id=\"marker\">html-view-msk84p4i</h1><p>viewed-by-link</p></body></html>",
       "viewHeaders": {
         "contentType": "text/html; charset=utf-8",
         "disposition": "inline; filename=\"view.html\"",
         "csp": "sandbox"
       },
-      "proxyHref": "http://localhost:3333/api/files/view?scope=agent%3Acoder&path=browser-e2e-html-msk80l8u%2Fview.html",
+      "proxyHref": "http://localhost:3333/api/files/view?scope=agent%3Acoder&path=browser-e2e-html-msk84p4i%2Fview.html",
       "newTabVerified": true
     },
     "errors": {
@@ -903,7 +903,7 @@
   "bucketsFlow": {
     "url": "http://localhost:3333/buckets",
     "tabInfo": {
-      "id": "1289C185A1CD5E338E4F5F2629E8FC81",
+      "id": "6C44F1CB6C70E826B0C634BC148308CF",
       "created": true
     },
     "flow": {
@@ -915,7 +915,7 @@
         "persisted-after-reload"
       ],
       "timings": {
-        "elapsedMs": 5115
+        "elapsedMs": 5214
       },
       "result": {
         "createdViaUi": true,
@@ -925,9 +925,9 @@
         "downloadVerified": true,
         "persistedAfterReload": true
       },
-      "bucket": "browser-e2e-bucket-msk80qgg",
-      "docName": "notes-msk80qgg.txt",
-      "docBody": "hello from buckets e2e msk80qgg",
+      "bucket": "browser-e2e-bucket-msk84tzx",
+      "docName": "notes-msk84tzx.txt",
+      "docBody": "hello from buckets e2e msk84tzx",
       "scope": "agent:coder",
       "duplicateRejected": true,
       "uploadedViaUi": true,
@@ -943,7 +943,7 @@
           "status": 409
         },
         {
-          "url": "http://10.0.151.7:5555/api/buckets/192d2032-32b5-4a18-a480-0041ee1c7bad/documents",
+          "url": "http://10.0.151.7:5555/api/buckets/cdfd2e63-34c0-4080-972d-e7015100d5af/documents",
           "status": 409
         }
       ],
@@ -956,7 +956,7 @@
   "cronFlow": {
     "url": "http://localhost:3333/cron",
     "tabInfo": {
-      "id": "C8F9FF976DABAC1B0D8BBBD7B23A4EBA",
+      "id": "259E77ADD7EFFE8A2FF41A7C3D49627A",
       "created": true
     },
     "flow": {
@@ -969,7 +969,7 @@
         "deleted-job"
       ],
       "timings": {
-        "elapsedMs": 4035
+        "elapsedMs": 4054
       },
       "result": {
         "createdViaUi": true,
@@ -981,8 +981,8 @@
         "resumed": true,
         "deletedViaUi": true
       },
-      "jobId": "47189d51-e8ee-4e54-9a3d-f76882f862be",
-      "jobName": "browser-e2e-cron-msk80uzp",
+      "jobId": "7222e202-dc74-4b33-8c0c-1e044330a450",
+      "jobName": "browser-e2e-cron-msk84yn9",
       "createdViaUi": true,
       "runStatus": "done",
       "runTerminal": true,
@@ -1005,7 +1005,7 @@
   "skillsFlow": {
     "url": "http://localhost:3333/skills",
     "tabInfo": {
-      "id": "8253B4F9A2F808D0011CA4F6FADBA339",
+      "id": "128E340FAF015A14E32C1E46AEC0405E",
       "created": true
     },
     "flow": {
@@ -1018,7 +1018,7 @@
         "deleted-skill"
       ],
       "timings": {
-        "elapsedMs": 3401
+        "elapsedMs": 3449
       },
       "result": {
         "createdViaUi": true,
@@ -1029,8 +1029,8 @@
         "reinstalledViaUi": true,
         "deletedViaUi": true
       },
-      "skillId": "98410fcf-52b2-4abf-a46b-ade8601fa1e0",
-      "skillName": "browser-e2e-skill-msk80y7k",
+      "skillId": "0613945b-5250-4af4-979f-f67d4b5f5883",
+      "skillName": "browser-e2e-skill-msk8529q",
       "createdViaUi": true,
       "persistedAfterReload": true,
       "editedViaUi": true,
@@ -1080,7 +1080,7 @@
         "autoProbeUpstreamAuthOk": true,
         "autoProbeUpstreamModel": "ds4-flash",
         "autoProbeUpstreamMaxTokens": 1,
-        "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 3 ms",
+        "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 7 ms",
         "autoEditReplaysProbe": true,
         "modelsFetchStoredKeyOk": true,
         "modelsFetchStoredKeyAuthOk": true,
@@ -1089,9 +1089,9 @@
         "modelsFetchDeadGraceful": true,
         "autoProbePersistedServerSide": true,
         "autoProbePersistedAfterReload": true,
-        "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 3 ms · probed 06:18 PM",
+        "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 7 ms · probed 06:21 PM",
         "failureWithStatusMetrics": true,
-        "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 6 ms",
+        "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 3 ms",
         "failurePersistedServerSide": true,
         "failurePersistedAfterReload": true,
         "statusCleanup": "clean",
@@ -1105,7 +1105,7 @@
       "formTestGracefulFailure": true,
       "cancelPreservedUrl": true,
       "patchBodies": [
-        "{\"displayName\":\"Renamed msk812bp\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000,\"models\":[]}"
+        "{\"displayName\":\"Renamed msk856ec\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000,\"models\":[]}"
       ],
       "keyNotSentOnPatch": true,
       "keyDisabledBeforeCheck": false,
@@ -1115,7 +1115,7 @@
       "testResultText": "Connection failed: fetch failed",
       "testGracefulFailure": true,
       "autoProbeRowSeen": true,
-      "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 3 ms",
+      "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 7 ms",
       "autoProbeBannerSeen": true,
       "autoProbeUpstreamHit": true,
       "autoProbeUpstreamAuthOk": true,
@@ -1129,9 +1129,9 @@
       "modelsFetchDeadGraceful": true,
       "autoProbePersistedServerSide": true,
       "autoProbePersistedAfterReload": true,
-      "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 3 ms · probed 06:18 PM",
+      "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 7 ms · probed 06:21 PM",
       "failureWithStatusMetrics": true,
-      "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 6 ms",
+      "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 3 ms",
       "failurePersistedServerSide": true,
       "failurePersistedAfterReload": true,
       "cleanup": "clean",

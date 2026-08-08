@@ -1,3 +1,17 @@
+## Round 2026-08-08 — autonomous iteration round 58 (tag `round-58`)
+
+### Changed
+- **No application code changed** — verification round against a clean
+  worktree at tag `round-57`; full gate re-verified green end to end.
+
+### Test status
+- Backend unit 146/146 + API E2E 107/107; backend + frontend lint/tsc clean;
+  frontend `next build` clean; docs drift guard passes (64 routes vs 63 docs
+  rows); browser E2E exit 0 (21 route probes + all journeys, zero checked
+  console/network/HTTP errors); live smoke 200s; baseline audited clean
+  (2 default channels only, no fixture rows/folders). Browser E2E report +
+  screenshots refreshed against this round's run.
+
 ## Round 2026-08-08 — autonomous iteration round 57 (tag `round-57`)
 
 ### Fixed
