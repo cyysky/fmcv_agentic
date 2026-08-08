@@ -102,6 +102,17 @@
   flex-wrap: wrap;
 }
 
+.overviewFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.overviewFilterActive {
+  outline: 2px solid #2563eb !important;
+  outline-offset: 1px;
+}
+
 .headerActions {
   display: flex;
   gap: 0.6rem;
@@ -461,6 +472,10 @@
 
   .overviewStat {
     color: #d1d5db;
+  }
+
+  .overviewFilterActive {
+    outline-color: #60a5fa !important;
   }
 
   .errorBanner {

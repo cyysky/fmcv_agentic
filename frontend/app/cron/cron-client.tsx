@@ -67,6 +67,7 @@ interface CronOverview {
   now: string;
   leases: CronOverviewLease[];
   events: CronOverviewEvent[];
+  eventGroups: string[];
   runs: {
     total: number;
     lastHour: number;
@@ -142,6 +143,8 @@ export default function CronPanel() {
   const [schedulerError, setSchedulerError] = useState(false);
   const [overview, setOverview] = useState<CronOverview | null>(null);
   const [overviewError, setOverviewError] = useState(false);
+  // Round 73: which lease group's transition events to show (null = all).
+  const [eventGroupFilter, setEventGroupFilter] = useState<string | null>(null);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CronJobRow | null>(null);
@@ -179,7 +182,8 @@ export default function CronPanel() {
 
   // Scheduler/lease status (Round 66) + cluster overview (Round 69):
   // refresh every 5 s so lease failover and run throughput stay current
-  // without a page reload.
+  // without a page reload. Round 73: a per-group event filter re-fetches
+  // the overview immediately and the poll keeps the filtered view fresh.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -197,7 +201,11 @@ export default function CronPanel() {
     };
     const loadOverview = async () => {
       try {
-        const res = await apiFetch("/cron/overview");
+        const res = await apiFetch(
+          eventGroupFilter
+            ? `/cron/overview?group=${encodeURIComponent(eventGroupFilter)}`
+            : "/cron/overview",
+        );
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as CronOverview;
         if (!cancelled) {
@@ -218,7 +226,7 @@ export default function CronPanel() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [eventGroupFilter]);
 
   // Two-click delete disarm after a few seconds.
   useEffect(() => {
@@ -526,6 +534,42 @@ export default function CronPanel() {
           </div>
           <div className={styles.overviewRow}>
             <span className={styles.overviewLabel}>Transitions:</span>
+            {overview.eventGroups.length > 1 && (
+              <span
+                className={styles.overviewFilter}
+                data-testid="overview-event-filter"
+              >
+                <button
+                  type="button"
+                  className={`${styles.btnGhost} ${
+                    eventGroupFilter === null
+                      ? styles.overviewFilterActive
+                      : ""
+                  }`}
+                  aria-pressed={eventGroupFilter === null}
+                  data-event-group="all"
+                  onClick={() => setEventGroupFilter(null)}
+                >
+                  All
+                </button>
+                {overview.eventGroups.map((group) => (
+                  <button
+                    key={group}
+                    type="button"
+                    className={`${styles.btnGhost} ${
+                      eventGroupFilter === group
+                        ? styles.overviewFilterActive
+                        : ""
+                    }`}
+                    aria-pressed={eventGroupFilter === group}
+                    data-event-group={group}
+                    onClick={() => setEventGroupFilter(group)}
+                  >
+                    {group}
+                  </button>
+                ))}
+              </span>
+            )}
             {overview.events.length === 0 ? (
               <span className={styles.schedulerMeta}>
                 none recorded yet

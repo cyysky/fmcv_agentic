@@ -86,6 +86,9 @@ export interface CronOverview {
   now: string;
   leases: CronOverviewLease[];
   events: CronOverviewEvent[];
+  /** Lease groups that have transition history, for per-group filtering
+   *  (Round 73). */
+  eventGroups: string[];
   runs: {
     total: number;
     lastHour: number;
@@ -603,17 +606,22 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * adds recent lease transition events so failover history (acquired/lost,
    * previous owner, timestamp) is visible alongside current ownership.
    */
-  async overview(): Promise<CronOverview> {
+  async overview(group?: string): Promise<CronOverview> {
     const now = new Date();
     const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-    const [leases, events, total, lastHour, byStatus, topJobs] =
+    const [leases, events, eventGroups, total, lastHour, byStatus, topJobs] =
       await Promise.all([
         this.prisma.cronSchedulerLease.findMany({
           orderBy: { schedulerGroup: 'asc' },
         }),
         this.prisma.cronSchedulerEvent.findMany({
+          ...(group ? { where: { schedulerGroup: group } } : {}),
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           take: OVERVIEW_RECENT_EVENTS,
+        }),
+        this.prisma.cronSchedulerEvent.groupBy({
+          by: ['schedulerGroup'],
+          orderBy: { schedulerGroup: 'asc' },
         }),
         this.prisma.cronRun.count(),
         this.prisma.cronRun.count({
@@ -657,6 +665,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         previousOwner: event.previousOwner,
         createdAt: event.createdAt.toISOString(),
       })),
+      eventGroups: eventGroups.map((row) => row.schedulerGroup),
       runs: {
         total,
         lastHour,

@@ -46,6 +46,7 @@ function prismaDouble(): {
   const cronSchedulerEvent: MockStore = {
     create: jest.fn(async () => ({ id: 'evt-1' })),
     findMany: jest.fn(async () => []),
+    groupBy: jest.fn(async () => []),
   };
   const cronRun: MockStore = {
     create: jest.fn(async () => ({ id: 'run-1' })),
@@ -505,6 +506,10 @@ describe('CronService', () => {
         createdAt: eventAt,
       },
     ]);
+    prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
+      { schedulerGroup: 'default' },
+      { schedulerGroup: 'e2e' },
+    ]);
     const overview = await service.overview();
     expect(overview.leases).toEqual([
       expect.objectContaining({
@@ -538,10 +543,17 @@ describe('CronService', () => {
         createdAt: '2026-08-08T12:00:00.000Z',
       },
     ]);
+    expect(overview.eventGroups).toEqual(['default', 'e2e']);
     expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: OVERVIEW_RECENT_EVENTS,
+      }),
+    );
+    expect(prisma.cronSchedulerEvent.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['schedulerGroup'],
+        orderBy: { schedulerGroup: 'asc' },
       }),
     );
     expect(prisma.cronRun.groupBy).toHaveBeenCalledWith(
@@ -556,6 +568,24 @@ describe('CronService', () => {
         by: ['cronJobId'],
         orderBy: { _count: { cronJobId: 'desc' } },
         take: 5,
+      }),
+    );
+  });
+
+  it('filters overview transition events per lease group', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
+      { schedulerGroup: 'default' },
+      { schedulerGroup: 'e2e' },
+    ]);
+    const overview = await service.overview('e2e');
+    expect(overview.events).toEqual([]);
+    expect(overview.eventGroups).toEqual(['default', 'e2e']);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { schedulerGroup: 'e2e' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: OVERVIEW_RECENT_EVENTS,
       }),
     );
   });

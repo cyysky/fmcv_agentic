@@ -3168,6 +3168,93 @@ async function cronFlow() {
     flow.steps.push("overview");
     await screenshot(c, "cron-overview.png");
 
+    // 2f. Per-group transition filter (Round 73): seed one synthetic event
+    //     for a second lease group so the Transitions line gains a filter
+    //     control, then prove the group button narrows the list and All
+    //     restores it. The synthetic row is deleted in cronCleanup.
+    const syncEventId = `browser-e2e-event-${Date.now().toString(36)}`;
+    const syncEventGroup = `e2e-${Date.now().toString(36)}`;
+    execFileSync(
+      "docker",
+      ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c",
+        `INSERT INTO cron_scheduler_events (id, "schedulerGroup", owner, event, "previousOwner", "createdAt")
+         VALUES ('${syncEventId}', '${syncEventGroup}', 'replica-x', 'acquired', null, now());`],
+      { encoding: "utf8", timeout: 15000 },
+    );
+    flow.syntheticEventId = syncEventId;
+    flow.syntheticEventGroup = syncEventGroup;
+    const filterSeen = await waitFor(
+      c,
+      `!!document.querySelector('[data-testid="overview-event-filter"]')`,
+      15000,
+      500,
+      "event group filter",
+    );
+    if (!filterSeen) throw new Error("cron flow: event group filter never appeared");
+    const groupClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector(${JSON.stringify(
+          `[data-testid="overview-event-filter"] [data-event-group="${syncEventGroup}"]`,
+        )});
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!groupClicked) throw new Error("cron flow: event group button missing");
+    const filteredTransitions = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const text = box.innerText;
+        return text.includes(${JSON.stringify(`${syncEventGroup} · acquired`)}) &&
+          !text.includes("default · acquired")
+          ? "filtered"
+          : null;
+      })()`,
+      15000,
+      500,
+      "filtered transitions",
+    );
+    if (filteredTransitions !== "filtered") {
+      throw new Error("cron flow: event group filter did not narrow transitions");
+    }
+    const allClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector(
+          '[data-testid="overview-event-filter"] [data-event-group="all"]',
+        );
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!allClicked) throw new Error("cron flow: All filter button missing");
+    const allTransitions = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const text = box.innerText;
+        return text.includes(${JSON.stringify(`${syncEventGroup} · acquired`)}) &&
+          text.includes("default · acquired")
+          ? "all"
+          : null;
+      })()`,
+      15000,
+      500,
+      "all transitions restored",
+    );
+    if (allTransitions !== "all") {
+      throw new Error("cron flow: All filter did not restore both groups");
+    }
+    flow.overviewFiltered = true;
+    flow.steps.push("overview-event-filter");
+    await screenshot(c, "cron-overview-event-filter.png");
+
     // 3. Rename through the UI.
     const editClicked = await evalJs(c, rowBtnExpr(jobName, "Edit"));
     if (!editClicked) throw new Error("cron flow: Edit button missing");
@@ -3281,6 +3368,7 @@ async function cronFlow() {
       runNoticeSeen: true,
       historyShown: true,
       historyPaged: true,
+      overviewFiltered: true,
       editedViaUi: true,
       paused: true,
       resumed: true,
@@ -3318,6 +3406,24 @@ async function cronCleanup(flow) {
     if (!deleted) throw new Error("delete refused while running after retries");
     const check = await fetch(`${API}/cron/${flow.jobId}`);
     detail = check.status === 404 ? "clean" : `leftover (HTTP ${check.status})`;
+    // Round 73: remove the synthetic second-group transition event.
+    if (flow.syntheticEventId) {
+      const eventId = String(flow.syntheticEventId).replace(/'/g, "''");
+      try {
+        const removed = execFileSync(
+          "docker",
+          ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+            `DELETE FROM cron_scheduler_events WHERE id = '${eventId}' RETURNING id`],
+          { encoding: "utf8", timeout: 15000 },
+        ).trim();
+        const removedLine = removed.split(/\r?\n/)[0];
+        if (removedLine !== eventId && detail === "clean") {
+          detail = "error: synthetic event missing at cleanup";
+        }
+      } catch (err) {
+        if (detail === "clean") detail = `error: synthetic event cleanup: ${err.message}`;
+      }
+    }
   } catch (err) {
     detail = `error: ${err.message}`;
     log(`  cleanup: cron FAILED: ${err.message}`);

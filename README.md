@@ -108,7 +108,10 @@ and coordinate multi-agent teams in Slack-style channels.
   The page also shows a cluster overview panel with every
   scheduler lease group, the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
-  auditable after the fact), and aggregate run throughput.
+  auditable after the fact), and aggregate run throughput; when more than
+  one lease group has transition history, the Transitions line gains
+  All/group filter buttons so events stay scoped to a single group
+  (the API's `?group=` filter keeps the 5 s refresh scoped too).
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, message, model,
@@ -218,7 +221,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
-| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs) |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group and the payload lists `eventGroups` for the filter UI |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -451,7 +454,9 @@ node scripts/verify-rest-docs.mjs
   to prove histories deeper than one page work: reopen History, assert 20
   rows on page 1 with an Older button, page to the final 3-row page and back
   with Newer, asserts the cluster overview panel shows an
-  active lease group plus the job's run in the throughput stats, then
+  active lease group plus the job's run in the throughput stats, seeds a
+  synthetic second-group transition event and proves the Transitions
+  All/group filter narrows the list to that group and back to all, then
   collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
   deletes it with the two-click confirm (fixture removed server-side

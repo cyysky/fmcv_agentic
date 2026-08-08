@@ -49,6 +49,7 @@ interface CronOverviewRow {
     previousOwner: string | null;
     createdAt: string;
   }>;
+  eventGroups: string[];
   runs: {
     total: number;
     lastHour: number;
@@ -322,6 +323,8 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     // Round 71: recent lease transition events ride along. This suite never
     // fails over (single local replica, no transitions), so it is additive.
     expect(Array.isArray(overview.events)).toBe(true);
+    // Round 73: per-group event history is advertised for filtering.
+    expect(overview.eventGroups).toEqual(expect.arrayContaining(['default']));
     // The job behind this suite has three terminal runs at this point.
     expect(overview.runs.total).toBeGreaterThanOrEqual(3);
     expect(overview.runs.lastHour).toBeGreaterThanOrEqual(3);
@@ -330,6 +333,27 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     if (!jobStat)
       throw new Error('overview: this suite job missing from per-job stats');
     expect(jobStat.runCount).toBeGreaterThanOrEqual(3);
+  });
+
+  it('filters overview transition events per lease group', async () => {
+    const all = json<CronOverviewRow>(
+      await http().get('/api/cron/overview').expect(200),
+    );
+    const group = all.eventGroups[0] ?? 'default';
+    const filtered = json<CronOverviewRow>(
+      await http()
+        .get(`/api/cron/overview?group=${encodeURIComponent(group)}`)
+        .expect(200),
+    );
+    expect(filtered.events.every((evt) => evt.group === group)).toBe(true);
+    expect(filtered.eventGroups).toEqual(all.eventGroups);
+    const none = json<CronOverviewRow>(
+      await http()
+        .get('/api/cron/overview?group=no-such-group-e2e')
+        .expect(200),
+    );
+    expect(none.events).toEqual([]);
+    expect(none.eventGroups).toEqual(all.eventGroups);
   });
 
   it('404s running an unknown job', async () => {
