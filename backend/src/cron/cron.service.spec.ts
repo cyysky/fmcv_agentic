@@ -250,6 +250,18 @@ describe('CronService', () => {
     );
     expect(prisma.cronJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({
+          id: 'job-1',
+          OR: [
+            { lastRunStatus: { not: 'running' } },
+            { lastRunStatus: null },
+          ],
+        }),
+        data: expect.objectContaining({ lastRunStatus: 'running' }),
+      }),
+    );
+    expect(prisma.cronJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
         where: { id: 'job-1', lastRunStatus: 'running' },
         data: expect.objectContaining({ lastRunStatus: 'done' }),
       }),
@@ -353,7 +365,10 @@ describe('CronService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           enabled: true,
-          lastRunStatus: { not: 'running' },
+          OR: [
+            { lastRunStatus: { not: 'running' } },
+            { lastRunStatus: null },
+          ],
         }),
       }),
     );

@@ -30,6 +30,15 @@ export const MAX_RUN_MESSAGE = 500;
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Terminal status written by this service when a run ends. */
 export const STATUS_RUNNING = 'running';
+/**
+ * SQL-safe "not currently running" filter. Postgres evaluates
+ * `NOT ("lastRunStatus" = 'running')` as NULL on never-run rows, so Prisma's
+ * plain `{ not }` filter silently excludes fresh jobs with a NULL status.
+ * Match both non-running and never-run rows explicitly.
+ */
+const NOT_RUNNING_FILTER = {
+  OR: [{ lastRunStatus: { not: STATUS_RUNNING } }, { lastRunStatus: null }],
+};
 
 /** Parse `schedule` as a 5-field cron expression and return its next
  *  occurrence strictly after `from`. Throws a BadRequestException with a
@@ -286,12 +295,14 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       where: {
         enabled: true,
         nextRunAt: { lte: new Date(now) },
-        lastRunStatus: { not: STATUS_RUNNING },
+        ...NOT_RUNNING_FILTER,
       },
       select: { id: true },
     });
     for (const { id } of due) {
-      void this.executeJob(id);
+      this.executeJob(id).catch((err) => {
+        this.logger.warn(`Could not fire cron job ${id}: ${(err as Error).message}`);
+      });
     }
   }
 
@@ -306,7 +317,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     const claimed = await this.prisma.cronJob.updateMany({
       where: {
         id,
-        lastRunStatus: { not: STATUS_RUNNING },
+        ...NOT_RUNNING_FILTER,
       },
       data: {
         lastRunAt: new Date(),
