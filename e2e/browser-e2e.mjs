@@ -4473,6 +4473,23 @@ async function skillsCleanup(flow) {
 
 
 
+/** Pre-run reads used by stale sweeps retry the list fetch a few times:
+ *  right after a container recreate the backend can still be starting and
+ *  node's fetch may fail at the network level (ECONNREFUSED), which is not a
+ *  product regression. Callers still check `res.ok` and report HTTP errors. */
+async function fetchReady(path, label) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      const res = await fetch(path);
+      if (res.ok || res.status >= 400) return res;
+    } catch {
+      // network-level failure (e.g. backend not listening yet) — retry below
+    }
+    await delay(2000);
+  }
+  throw new Error(`${label} -> fetch failed after 5 attempts`);
+}
+
 /** Pre-run garbage collection: delete rows/folders this script itself creates
  *  that were left behind by an earlier interrupted run (killed tabs, failed
  *  rounds, host restarts). Only fixture names/prefixes are matched — real
@@ -4486,7 +4503,7 @@ async function staleSweep() {
       String(name ?? "").startsWith(p),
     );
   try {
-    const res = await fetch(`${API}/channels`);
+    const res = await fetchReady(`${API}/channels`, "list channels");
     if (!res.ok) throw new Error(`list channels -> HTTP ${res.status}`);
     const channels = await res.json();
     for (const ch of Array.isArray(channels) ? channels : []) {
@@ -4501,7 +4518,7 @@ async function staleSweep() {
     log(`  stale sweep: channels FAILED: ${err.message}`);
   }
   try {
-    const res = await fetch(`${API}/agent/sessions`);
+    const res = await fetchReady(`${API}/agent/sessions`, "list sessions");
     if (!res.ok) throw new Error(`list sessions -> HTTP ${res.status}`);
     const sessions = await res.json();
     for (const s of Array.isArray(sessions) ? sessions : []) {
@@ -4518,7 +4535,7 @@ async function staleSweep() {
     log(`  stale sweep: sessions FAILED: ${err.message}`);
   }
   try {
-    const res = await fetch(`${API}/connections`);
+    const res = await fetchReady(`${API}/connections`, "list connections");
     if (!res.ok) throw new Error(`list connections -> HTTP ${res.status}`);
     const conns = await res.json();
     for (const c of Array.isArray(conns) ? conns : []) {
@@ -4533,7 +4550,7 @@ async function staleSweep() {
     log(`  stale sweep: connections FAILED: ${err.message}`);
   }
   try {
-    const res = await fetch(`${API}/cron`);
+    const res = await fetchReady(`${API}/cron`, "list cron");
     if (!res.ok) throw new Error(`list cron -> HTTP ${res.status}`);
     const jobs = await res.json();
     for (const j of Array.isArray(jobs) ? jobs : []) {
@@ -4604,7 +4621,7 @@ async function staleSweep() {
     log(`  stale sweep: buckets FAILED: ${err.message}`);
   }
   try {
-    const res = await fetch(`${API}/skills`);
+    const res = await fetchReady(`${API}/skills`, "list skills");
     if (!res.ok) throw new Error(`list skills -> HTTP ${res.status}`);
     const skills = await res.json();
     for (const sk of Array.isArray(skills) ? skills : []) {
@@ -4619,7 +4636,7 @@ async function staleSweep() {
     log(`  stale sweep: skills FAILED: ${err.message}`);
   }
   try {
-    const res = await fetch(`${API}/agent/workspaces`);
+    const res = await fetchReady(`${API}/agent/workspaces`, "workspaces");
     if (!res.ok) throw new Error(`workspaces -> HTTP ${res.status}`);
     // Remove file-manager fixtures left by interrupted files/html journeys.
     const ws = await fetch(`${API}/agent/workspaces`);
