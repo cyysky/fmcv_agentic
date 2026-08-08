@@ -1,67 +1,79 @@
-# ROUND 22 — 2026-08-08 (autonomous iteration round 22)
+# ROUND 23 — 2026-08-08 (autonomous iteration round 23)
 
-User instruction: **read on loop.md and do works**. This round landed
-per-connection model lists (Round 21's top focus): Settings can store a
-provider-specific model list per connection, the agent model picker treats
-those ids as first-class overrides, and non-catalog ids reach the endpoint
-verbatim instead of silently falling back to the catalog default.
+User instruction: **read on loop.md and do works**. This round landed the
+three Round-22 focus items: probe results are persisted server-side so
+`/settings` shows known health after a reload, connections gain a Fetch
+Models action (GET the provider's `/models`) with case-insensitive dedupe,
+and the browser E2E now sweeps stale fixtures before every run. Mid-round,
+`DIRECTION.md` started carrying human direction (managed document buckets,
+cron jobs, agent skills) — that direction becomes the next round's primary
+goal.
 
 ## What changed this round
 
-- **Connection model lists** — `Connection.models String[]` (migration
-  `20260808060737_add_connection_models`) with a Settings textarea (one
-  provider model id per line) that round-trips on create/edit; backend trims,
-  drops blanks, and de-dupes the list, an empty array clears it, and
-  malformed lists (non-array, non-string, > 50 ids, > 200-char ids) are 400s.
-- **First-class provider models in the picker** — with a connection selected,
-  the agent model picker shows the connection default, every id from the
-  connection's `models` list, and the catalog models; picking a connection
-  model sends `model` + `connectionId` on the wire (per-turn override).
-- **Raw model ids sent verbatim** — `resolveWireModel` maps catalog ids to
-  their `provider_model` and passes everything else (e.g. a connection-list
-  id) through unchanged; pinned sessions store the user's chosen id verbatim.
-- **Browser E2E** — the sessions journey proves the connection-model path
-  against the hermetic fake upstream: the fixture row's non-catalog id is
-  absent from the default-gateway picker, appears after the connection is
-  selected, drives a real turn with the fixture's bearer key, and reports the
-  raw id at the upstream (new gated flags `connList*`).
-- **Housekeeping** — removed 10 stale "New session" rows and 1 leftover
-  connection fixture (with a stored API key) left by earlier interrupted
-  browser-E2E runs; verified no stray localhost tabs after the run; fixed a
-  duplicate CHANGELOG heading. A stray `.gitignore` rule that would have
-  untracked `e2e/screenshots/` was reverted so screenshots stay committed as
-  round evidence, consistent with all previous rounds.
+- **Persisted probe results** — `Connection` stores the last live probe
+  (`lastProbeAt/Ok/Status/LatencyMs/Model/Message`; migration
+  `20260808063438_add_connection_probe`); `test(id)` writes the outcome back,
+  `/settings` renders a `probed HH:MM` marker after reload, and failed probes
+  that returned an HTTP status keep the `HTTP <status> · <ms>` metrics row.
+- **Model discovery** — `GET /api/connections/:id/models` (stored key) and
+  `POST /api/connections/models/fetch` (draft values) fetch `{baseUrl}/models`
+  with a 50-id cap; ids are trimmed and de-duped case-insensitively
+  (first-seen casing wins); non-OK responses, non-JSON bodies, and dead
+  endpoints return a graceful `{ ok: false, message, status? }`.
+- **Settings Fetch Models button** — hydrates the Models textarea from the
+  provider via the stored key, or from the form's draft values before save;
+  dead/invalid endpoints show the reason inline.
+- **Browser E2E** — new pre-run `staleSweep()` deletes fixture channels /
+  sessions / connections left by interrupted runs; the settings journey now
+  proves persisted probe + reload (`probed HH:MM`), failure-with-status
+  metrics persisted, Fetch Models via stored-key and draft paths (Bearer auth
+  asserted), case-variant dedupe, and graceful dead-endpoint failure.
+- **Gateway key restored** — the backend container's `AGENT_API_KEY` was
+  empty, so default-gateway turns 401'd and the sessions journey stalled. The
+  key is now supplied from the local Codex provider config at container start
+  (`AGENT_API_KEY` is injected per-run; nothing secret is committed).
+- **Docs** — README REST table gained the two model-fetch endpoints and the
+  connections section describes persisted probes + Fetch Models; CHANGELOG
+  gained the Round 23 entry. The working tree's `DIRECTION.md` (human
+  direction) and README reference-table updates are preserved and committed
+  with this handoff.
 
 ## Test status
 
-- Unit: **84 passed / 11 suites** (`npm test`).
-- API E2E: **58 passed / 7 suites** (`npm run test:e2e`, real Postgres).
+- Unit: **94 passed / 11 suites** (`npm test`).
+- API E2E: **65 passed / 7 suites** (`npm run test:e2e`, real Postgres).
 - Backend: `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
-  `eslint` clean (0 warnings); `prisma generate` + migration status clean.
-- Browser E2E: exit 0, zero console/network errors on all routes and the
-  nav/channel/files/settings/sessions journeys; `e2e/report.json` +
-  screenshots refreshed against freshly rebuilt images (migration applied);
-  fixture connections/sessions cleaned up server-side (`connections: 0,
-  sessions: 0` after the run + housekeeping).
+  `eslint` clean; migration applied on the running DB.
+- Browser E2E: exit 0, zero console/network errors on all 12 route probes and
+  the nav/channel/files/settings/sessions journeys (incl. the new settings
+  assertions and stale sweep); `e2e/report.json` + screenshots refreshed.
+- Note: rerunning the browser E2E requires the backend container to be started
+  with a working `AGENT_API_KEY` (empty by default in docker-compose).
 
 ## Known issues / open tickets
 
-- None blocking. The connection-model list is a manual textarea list (no
-  `/models` discovery yet); dedupe is case-sensitive; the picker omits a
-  catalog duplicate when the same id is also in the connection list (the
-  connection's raw id wins) — both are documented semantics, not blockers.
+- `AGENT_API_KEY` is empty by default; the backend must be started with a key
+  or default-gateway turns/session titles fail with upstream 401. The key is
+  deliberately not committed (sourced locally, e.g. from
+  `~/.codex/config.toml`'s vrs provider token).
+- No other blockers. Persisted-probe and model-discovery semantics for
+  non-standard providers (non-OpenAI `/models` shapes) are best-effort.
+- `DIRECTION.md` now lists three larger feature tracks; none started yet.
 
 ## Next round focus
 
-1. **Probe polish follow-ups** (Round 21's #3) — surface the probe metrics
-   line in a row even when a previous probe is stale, or persist the last
-   probe result server-side so a reload of `/settings` still shows known
-   health.
-2. **Model discovery / editable validation** — add a "fetch models" action
-   (GET the provider's `/models` where available) or validate connection
-   model ids against a documented endpoint; consider case-insensitive
-   de-dupe/conflict handling between the connection list and the catalog.
-3. **Housekeeping rhythm** — keep the API-E2E and browser-E2E suites wired
-   into the round loop with a short smoke check of stale-session cleanup in
-   the browser script itself (it already deletes its own fixtures; an
-   explicit pre-run stale sweep would make failed-run leftovers impossible).
+1. **Managed document buckets** (DIRECTION.md item 1) — unique bucket names,
+   read-only buckets mapped to a project or agent folder, many buckets per
+   folder, managed documents (PDF/text/video/audio) inside buckets; plan →
+   schema/API → UI → tests → E2E, kept small and committable.
+2. **Cron jobs** (DIRECTION.md item 2) — create/manage cron jobs (schedule +
+   recurring task runner).
+3. **Agent skills** (DIRECTION.md item 3) — agents can create, install, and
+   use skills.
+
+Round summary: **Round 23: probe persistence + provider model discovery landed
+and verified end-to-end, browser E2E green with stale-fixture sweep.** Tests:
+94 unit + 65 API E2E passed / 0 failed; browser E2E exit 0, zero console/network
+errors. Committed as see git tag `round-23` (commits in this handoff). Next: managed document buckets · cron jobs ·
+agent skills. Exit checked: none — continuing (human direction active).

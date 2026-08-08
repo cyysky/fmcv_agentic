@@ -1,3 +1,54 @@
+## Round 2026-08-08 — autonomous iteration round 23 (tag `round-23`)
+
+### Added
+- **Persisted probe results** — the `Connection` row now stores the last live
+  probe outcome (`lastProbeAt`, `lastProbeOk`, `lastProbeStatus`,
+  `lastProbeLatencyMs`, `lastProbeModel`, `lastProbeMessage`; migration
+  `20260808063438_add_connection_probe`). `test(id)` writes the result back to
+  the row, so reloading `/settings` still shows a connection's known health —
+  the UI marks it with a `probed HH:MM` line — and failed probes that returned
+  an HTTP status keep the `HTTP <status> · <ms>` metrics row.
+- **Model discovery** — two new endpoints fetch a provider's model list via
+  `GET {baseUrl}/models` (stored row: `GET /api/connections/:id/models`; draft
+  form values: `POST /api/connections/models/fetch`), using the stored or
+  entered bearer key. Results are trimmed, de-duped case-insensitively
+  (first-seen casing wins), and capped at 50 ids (`truncated: true` beyond
+  that); non-OK responses and dead endpoints return a graceful
+  `{ ok: false, message, status? }` result instead of an exception.
+- **Settings Fetch Models button** — hydrates the Models textarea from the
+  provider when the row has a stored key, and for unsaved form values (key
+  entry) before save; dead endpoints show the reason inline.
+- **Browser E2E** — new pre-run `staleSweep()` deletes fixture channels /
+  sessions / connections left over from interrupted runs so failed-run
+  leftovers are impossible, and the settings journey now proves: persisted
+  probe survives reload (`probed HH:MM`), failure-with-status metrics
+  (`HTTP 401 · N ms`) persist server-side, Fetch Models works through both the
+  stored-key and draft paths (Bearer auth asserted on the fake upstream),
+  case-variant model ids (`llama-3.1-70b` vs `LLAMA-3.1-70B`) dedupe to one,
+  and a dead `/models` endpoint fails gracefully.
+
+### Fixed
+- Settings no longer loses known-health information across reloads, and a
+  failed probe with an HTTP status shows its metrics instead of a bare error
+  message.
+- Browser E2E did not auto-clean fixtures from a run that died mid-session;
+  the new sweep removes them before every run and reports any leftover
+  fixture folders it cannot delete.
+
+### Test status
+- Unit **94 passed / 11 suites** (84 → +10: probe persistence, model fetch
+  stored/draft success + auth failure + unreachable + non-JSON body, 50-cap
+  truncation, case-insensitive dedupe, 404 unknown id, draft URL validation).
+- API E2E **65 passed / 7 suites** (58 → +7: lastProbe round trip +
+  normalization, models fetch stored/draft/401/unreachable/validation).
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean (0 warnings); `prisma migrate` applied on the running DB.
+- Browser E2E all green (exit 0, zero console/network errors): 12 route
+  probes, nav/channel/files journeys, extended settings journey (persisted
+  probe + Fetch Models + failure metrics), and the sessions journey with the
+  default gateway key restored (`AGENT_API_KEY` supplied from the local
+  provider config; not committed).
+
 ## Round 2026-08-08 — autonomous iteration round 22 (tag `round-22`)
 
 ### Added

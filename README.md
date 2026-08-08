@@ -43,7 +43,13 @@ and coordinate multi-agent teams in Slack-style channels.
   replays the row's last-known probe result until a probed value changes.
   Saving values that were never probed auto-runs a probe of the persisted row
   (client-side, best-effort — the save is never blocked by a slow endpoint)
-  and reports the result in the success banner. A connection can also carry a
+  and reports the result in the success banner. Probe results are persisted
+  server-side, so reloading `/settings` still shows a row's known health (`probed HH:MM`
+  marker) even after the endpoint goes stale, and failed probes that returned an HTTP
+  status still render the metrics line. A **Fetch Models** button hydrates the Models
+  textarea from the provider's `GET /models` (stored key, or draft values before save),
+  de-duping case-insensitively and capping at 50 ids; dead or invalid endpoints fail
+  gracefully with the row/textbox showing the reason. A connection can also carry a
   **Models** list (one provider model id per line) so non-catalog providers
   are first-class in the agent model picker. Editing never replays the
   masked key back over the stored secret, and an explicit "Clear stored API
@@ -92,7 +98,9 @@ Connections:
 | PATCH  | `/api/connections/:id` | update        |
 | DELETE | `/api/connections/:id` | delete        |
 | POST   | `/api/connections/:id/test` | live connectivity probe (one-token chat/completions with the stored key) |
+| GET    | `/api/connections/:id/models` | fetch provider models via the stored row (GET `{baseUrl}/models`, stored key) |
 | POST   | `/api/connections/test`      | same probe against unsaved form values (test before save)               |
+| POST   | `/api/connections/models/fetch` | fetch provider models against unsaved form values (draft key)          |
 
 Agent:
 
