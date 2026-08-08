@@ -1,3 +1,25 @@
+## Round 2026-08-08 — autonomous iteration round 33 (tag `round-33`)
+
+### Added
+- **Full verification sweep (no production changes)** — re-ran every gate
+  against the live compose stack: backend unit 145/14, API E2E 105/10,
+  build/tsc/eslint clean on both sides, frontend production build clean, and
+  the CDP browser E2E re-recorded `e2e/report.json` + screenshots (exit 0,
+  21 routes, 9 journeys, zero console/network/HTTP errors; fixtures cleaned).
+- **Live-state smoke check** — GET smoke over connections/skills/cron/buckets/
+  workspaces and a DB row audit confirmed zero leftover round fixtures.
+
+### Changed
+- No code or test changes; Round 33 is a pure verification round.
+- Handoff (`ROUND.md`) notes pre-existing dev leftovers (older debug channels
+  and empty project folders from earlier rounds) left untouched, since they
+  are outside the loop's fixture-cleaning scope.
+
+### Known issues / accepted limitations
+- Unchanged from round 32: CSP `sandbox` inline-preview limits, in-process
+  scheduler / in-memory skills install state, read-only buckets, and the
+  parallel-session fixture-name collision hazard.
+
 ## Round 2026-08-08 — autonomous iteration round 32 (tag `round-32`)
 
 ### Added
