@@ -1,35 +1,44 @@
-# Round 111 — connections service coverage to 100% lines (2026-08-09)
+# Round 112 — cron service coverage to 100% lines (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 110's next-focus item 1: lifted `connections.service.ts`
-from 87.27% to 100% lines (96.66% stmts / 83.33% branch / 90.9% funcs).
+executed Round 111's next-focus item 1: lifted `cron.service.ts` from
+93.27% to **100% lines** (98.75% stmts / 83.75% branch / 100% funcs) by
+extending `cron.service.spec.ts` with 13 new failure-path and timer tests.
 
 ## What changed this round
 
-- **`findAll` coverage** — returns every stored row (masked) ordered by
-  `createdAt` asc.
-- **`findOne` coverage** — returns the masked row for a known id and 404s
-  for unknown ids.
-- **`update` coverage** — all present fields are normalized into the update
-  payload (`baseUrl` trailing-slash trim, `concurrentConnections`,
-  `defaultParameters` passthrough), an empty payload is rejected as
-  BadRequest, and `ensureExists` is exercised on both count sides.
-- **`remove` coverage** — deletes an existing connection via id and 404s
-  for unknown ids after the count pre-check (line 338 `ensureExists`
-  NotFound path).
+- **Boot best-effort failures** — legacy lease sweep, interrupted-run
+  recovery, startup cache load, and per-job recompute keep `onModuleInit()`
+  from crashing; each logs its warning.
+- **Create rethrow** — a non-unique/unknown create failure propagates the
+  original error untouched rather than being mislabeled as taken.
+- **Standby lease path** — a failed previous-owner lookup is tolerated in
+  standby, and a lease-transition event write failure is logged without
+  blocking the beat.
+- **Due-tick fire failure** — a claim failure inside the tick is logged via
+  the per-job rejection handler instead of taking the scheduler down.
+- **Re-entrant runNow** — a second `runNow` on this replica rejects with
+  `already running` while the first is in flight, then the first completes.
+- **recordResult fallbacks** — a DB-row lookup failure at record time falls
+  back to `null` and the run result is still persisted/returned; a failed
+  `cronRun.create` and a failed prune are both logged and never mask the
+  caller's result.
+- **Ticker interval** — fake timers prove the 1s ticker really fires
+  `tick()` (standby path: `lastTickAt` updated, previous-owner lookup
+  performed).
 
 ## Test status
 
 - Fast verify `verify.mjs`: green on the final tree — REST docs guard
-  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 243
-  tests passed** (+4 this round), backend lint + types, frontend types +
-  lint.
-- Coverage run green: `connections.service.ts` **87.27% → 100% lines**
-  (96.66% stmts / 83.33% branch / 90.9% funcs); remaining uncovered
-  statements are nullish-spread sides on optional create/update fields,
-  the `mask` non-key side, and constructor statements that real rows
-  always exercise on the taken branch. `buckets.service.ts`,
-  `files.service.ts`, `workspace.service.ts`, `channel-job.service.ts` and
+  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 256
+  tests passed** (+13 this round; `cron.service.spec.ts` alone 55/55),
+  backend lint + types, frontend types + lint.
+- Coverage run green: `cron.service.ts` **93.27% → 100% lines** (98.75%
+  stmts / 83.75% branch / 100% funcs); the only remaining uncovered hits
+  are 3 partial-line statements (the `NotFoundException` throw side in
+  `refreshed()`, plus two short-expression sides on already-covered lines).
+  `buckets.service.ts`, `files.service.ts`, `workspace.service.ts`,
+  `connections.service.ts`, `channel-job.service.ts` and
   `workspace-tools.ts` stay at 100% lines; `channel.service.ts` stays
   99.04% (dead `SLUG_RE` guard).
 - Full build gate not re-run (test-only change, no runtime code touched):
@@ -49,20 +58,19 @@ from 87.27% to 100% lines (96.66% stmts / 83.33% branch / 90.9% funcs).
   construction; decide in a runtime round whether to delete it or keep it
   as defense-in-depth (bundle with the unreachable safeResolve probe
   guard).
-- **Open** — remaining service coverage: `base-agent.service.ts` 74.92%
-  lines (larger surface, runtime-critical), `cron.service.ts` 93.27%,
-  `skills.service.ts` 95.45%, `prisma.service.ts` 50% (trivial
-  constructor-only file), `app.service.ts` 100%.
+- **Open** — remaining service coverage: `skills.service.ts` 95.45%,
+  `base-agent.service.ts` 74.92% (larger surface, runtime-critical),
+  `prisma.service.ts` 50% (trivial constructor-only file); all other
+  services at 100% lines.
 
 ## Next round focus
 
-1. **Cover `cron.service.ts`** — smallest practical target at 93.27% lines
-  (uncovered: 252, 266, 278, 286, 293, 338, 538, 562, 582-583, 594, 665,
-  699-702, 706); extend `cron.service.spec.ts` and re-run fast verify +
-  coverage. (`skills.service.ts` 95.45% is the follow-up.)
-2. **Decide the dead-guard cleanup bundle** — remove/keep `SLUG_RE` and the
-  unreachable safeResolve probe guard together; needs the full build + API
-  E2E + browser gates, best bundled with a real frontend/backend change.
-3. **Keep the gates current** — re-run `verify --build --api-e2e` + both
-  browser modes after any frontend change; /agent baseline stays 484 KB /
-  33.6 KB headroom.
+1. **Cover `skills.service.ts`** — smallest practical target left at
+   ~95.45% lines; extend `skills.service.spec.ts`, then re-run fast verify
+   + coverage. (`base-agent.service.ts` 74.92% is the larger follow-up.)
+2. **Cover `base-agent.service.ts`** — biggest remaining gap at 74.92%
+   lines and runtime-critical; plan by endpoint/guard before writing tests
+   (larger surface, many branch sides).
+3. **Decide the dead-guard cleanup bundle** — remove/keep `SLUG_RE` and the
+   unreachable safeResolve probe guard together; needs the full build + API
+   E2E + browser gates, best bundled with a real frontend/backend change.

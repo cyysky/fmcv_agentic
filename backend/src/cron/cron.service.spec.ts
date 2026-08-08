@@ -7,6 +7,7 @@ import { CronJob, Prisma } from '@prisma/client';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CRON_TICK_MS,
   CronService,
   MAX_RUN_HISTORY,
   MAX_RUN_MESSAGE,
@@ -991,6 +992,189 @@ describe('CronService', () => {
     const next = nextCronRun('*/5 * * * *', from);
     expect(next.toISOString()).toBe('2026-08-08T00:05:00.000Z');
     expect(() => nextCronRun('61 * * * *', from)).toThrow(BadRequestException);
+  });
+
+  describe('failure paths', () => {
+    it('keeps booting when the legacy lease sweep fails', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockRejectedValueOnce(new Error('sweep down'));
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      service.onModuleDestroy();
+    });
+
+    it('keeps booting when the interrupted-run recovery fails', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronJob.updateMany.mockRejectedValueOnce(
+        new Error('recover down'),
+      );
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      service.onModuleDestroy();
+    });
+
+    it('keeps booting when the startup job cache load fails', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronJob.findMany.mockRejectedValueOnce(new Error('load down'));
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      service.onModuleDestroy();
+    });
+
+    it('logs but survives a recompute failure for an enabled boot job', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronJob.findMany.mockResolvedValue([row()]);
+      prisma.cronJob.update.mockRejectedValueOnce(new Error('reschedule down'));
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      service.onModuleDestroy();
+    });
+
+    it('rethrows non-unique create errors untouched', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.cronJob.create.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.create(createDto)).rejects.toThrow('db down');
+    });
+
+    it('tolerates a failed previous-owner lookup while standing by', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockResolvedValue(0);
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await service.onModuleInit();
+      service.onModuleDestroy();
+      prisma.cronSchedulerLease.findUnique.mockRejectedValueOnce(
+        new Error('owner down'),
+      );
+      await (service as unknown as { tick(): Promise<void> }).tick();
+      expect(prisma.cronSchedulerLease.findUnique).toHaveBeenCalled();
+    });
+
+    it('logs when a lease-transition event write fails', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockResolvedValue(0); // startup: standby
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await service.onModuleInit();
+      service.onModuleDestroy();
+      await (service as unknown as { tick(): Promise<void> }).tick();
+      // Next beat: lease race won, transition write fails.
+      prisma.$executeRaw.mockResolvedValueOnce(1);
+      prisma.cronSchedulerEvent.create.mockRejectedValueOnce(
+        new Error('event down'),
+      );
+      await expect(
+        (service as unknown as { tick(): Promise<void> }).tick(),
+      ).resolves.toBeUndefined();
+      expect(prisma.cronSchedulerEvent.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('logs and does not crash when firing a due job fails', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockResolvedValue(0); // startup: standby
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await service.onModuleInit();
+      service.onModuleDestroy();
+      prisma.$executeRaw.mockResolvedValueOnce(1); // takeover
+      prisma.cronJob.findMany.mockResolvedValueOnce([{ id: 'job-1' }]);
+      prisma.cronJob.findUnique.mockRejectedValueOnce(new Error('claim down'));
+      await expect(
+        (service as unknown as { tick(): Promise<void> }).tick(),
+      ).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(prisma.cronJob.findUnique).toHaveBeenCalled();
+    });
+
+    it('rejects re-entrant runs of the same job on this replica', async () => {
+      const { service, prisma, agent } = makeSvc();
+      prisma.cronJob.create.mockResolvedValue(row());
+      prisma.cronJob.findUnique.mockResolvedValue(
+        row({ lastRunStatus: 'done', lastRunMessage: 'ok', lastRunMs: 5 }),
+      );
+      let release!: () => void;
+      agent.runTurn.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({ answer: 'ok', model: 'ds4-flash' });
+          }),
+      );
+      const created = await service.create(createDto);
+      const first = service.runNow(created.id);
+      await new Promise((resolve) => setImmediate(resolve));
+      await expect(service.runNow(created.id)).rejects.toThrow(
+        'already running',
+      );
+      release();
+      await first;
+    });
+
+    it('falls back when the record-time DB row lookup fails', async () => {
+      const { service, prisma, agent } = makeSvc();
+      prisma.cronJob.findUnique
+        .mockResolvedValueOnce(row({ id: 'job-99' }))
+        .mockRejectedValueOnce(new Error('db down'))
+        .mockResolvedValueOnce(
+          row({
+            id: 'job-99',
+            lastRunStatus: 'done',
+            lastRunMessage: 'ok',
+            lastRunMs: 5,
+          }),
+        )
+        .mockResolvedValueOnce(
+          row({
+            id: 'job-99',
+            lastRunStatus: 'done',
+            lastRunMessage: 'ok',
+            lastRunMs: 5,
+          }),
+        );
+      agent.runTurn.mockResolvedValue({ answer: 'ok', model: 'ds4-flash' });
+      const after = await service.runNow('job-99');
+      expect(after.lastRunStatus).toBe('done');
+    });
+
+    it('logs when persisting run history fails and keeps the result', async () => {
+      const { service, prisma, agent } = makeSvc();
+      prisma.cronJob.create.mockResolvedValue(row());
+      prisma.cronJob.findUnique.mockResolvedValue(
+        row({ lastRunStatus: 'done', lastRunMessage: 'ok', lastRunMs: 5 }),
+      );
+      prisma.cronRun.create.mockRejectedValueOnce(new Error('history down'));
+      agent.runTurn.mockResolvedValue({ answer: 'ok', model: 'ds4-flash' });
+      const created = await service.create(createDto);
+      const after = await service.runNow(created.id);
+      expect(after.lastRunStatus).toBe('done');
+    });
+
+    it('logs when pruning run history fails', async () => {
+      const { service, prisma, agent } = makeSvc();
+      prisma.cronJob.create.mockResolvedValue(row());
+      prisma.cronJob.findUnique.mockResolvedValue(
+        row({ lastRunStatus: 'done', lastRunMessage: 'ok', lastRunMs: 5 }),
+      );
+      prisma.cronRun.findMany.mockRejectedValueOnce(new Error('prune down'));
+      agent.runTurn.mockResolvedValue({ answer: 'ok', model: 'ds4-flash' });
+      const created = await service.create(createDto);
+      const after = await service.runNow(created.id);
+      expect(after.lastRunStatus).toBe('done');
+    });
+
+    it('fires the scheduler tick from the ticker interval', async () => {
+      jest.useFakeTimers();
+      try {
+        const { service, prisma } = makeSvc();
+        prisma.$executeRaw.mockResolvedValue(0); // standby: no claim sweep
+        prisma.cronJob.findMany.mockResolvedValue([]);
+        await service.onModuleInit();
+        expect(
+          (service as unknown as { lastTickAt: Date }).lastTickAt,
+        ).toBeNull();
+        await jest.advanceTimersByTimeAsync(CRON_TICK_MS);
+        expect(
+          (service as unknown as { lastTickAt: Date }).lastTickAt,
+        ).toBeInstanceOf(Date);
+        expect(prisma.cronSchedulerLease.findUnique).toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 });
 
