@@ -34,12 +34,13 @@
 //   10. Mobile: all six routes re-probed at 360x640 with device metrics,
 //      asserting no horizontal overflow, nav links fit, and the agent
 //      composer / files row grid are usable
-//   10b. Buckets: create a read-only document bucket through the /buckets UI
-//      (agent folder), prove a duplicate name 409s in-page, upload a
-//      document, prove a duplicate upload 409s, download it (CDP saved bytes
-//      when available), reload and verify both bucket and document persist,
-//      then clean up (files via the files API, DB rows via psql in the
-//      compose db container — buckets expose no delete API by design)
+//   10b. Buckets: create a document bucket through the /buckets UI (agent
+//      folder), prove a duplicate name 409s in-page, upload a document,
+//      prove a duplicate upload 409s, download it (CDP saved bytes when
+//      available), reload and verify both bucket and document persist,
+//      rename the bucket through the UI and prove the document survives,
+//      then delete it via the two-click confirm (the new DELETE API backs
+//      both the UI and the server-side cleanup)
 //   10c. Cron: create a cron job through the /cron UI, run it now (waiting
 //      for a Done/Failed terminal status pill), rename it through the UI,
 //      pause/resume it, then delete it with the two-click confirm and verify
@@ -2373,10 +2374,22 @@ async function htmlCleanup(flow) {
   }
 }
 
-/** PostgreSQL helpers for bucket fixtures. Buckets expose no delete API by
- *  design (read-only), so browser-E2E fixtures are removed from the compose DB
- *  directly. These require the docker CLI + the `fmcv-db` container (the app
- *  already runs under docker compose per e2e/README.md). */
+/** PostgreSQL helpers for bucket fixtures. They are only a safety net now:
+ *  the DELETE API removes browser-E2E fixtures through the app itself, and
+ *  these psql helpers serve as the final DB check / fallback. They require
+ *  the docker CLI + the `fmcv-db` container (the app already runs under
+ *  docker compose per e2e/README.md). */
+function bucketIdByNameViaApi(name) {
+  return fetch(`${API}/buckets`)
+    .then((res) => {
+      if (!res.ok) throw new Error(`list buckets -> HTTP ${res.status}`);
+      return res.json();
+    })
+    .then((rows) =>
+      (Array.isArray(rows) ? rows : []).find((b) => b.name === name)?.id ?? null,
+    );
+}
+
 function bucketRowsByNameLike(pattern) {
   const out = execFileSync(
     "docker",
@@ -2607,6 +2620,83 @@ async function bucketsFlow() {
     await evalJs(c, jsClick("All buckets", false));
     await delay(200);
 
+    // 7. Rename the bucket through the UI: the row keeps working and the
+    //    uploaded document must survive under the renamed folder.
+    const renamedName = `${bucket}-renamed`;
+    const renameClicked = await evalJs(c, rowBtnExpr(bucket, "Rename"));
+    if (!renameClicked) throw new Error("buckets flow: Rename button missing");
+    const renameInput = await waitFor(
+      c,
+      `!!document.querySelector('input[aria-label="New bucket name"]')`,
+      10000, 400, "rename input",
+    );
+    if (!renameInput) throw new Error("buckets flow: rename input never appeared");
+    const typed = await evalJs(
+      c,
+      jsSetInput('input[aria-label="New bucket name"]', renamedName),
+    );
+    if (typed !== renamedName) throw new Error("buckets flow: rename input not editable");
+    await delay(150);
+    const saved = await evalJs(c, jsClick("Save", true));
+    if (!saved) throw new Error("buckets flow: Save button missing");
+    const renamedRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${renamedName}"]`)})`,
+      15000, 500, "renamed bucket row",
+    );
+    if (!renamedRow) throw new Error("buckets flow: renamed bucket never listed");
+    const renameNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify("Renamed bucket")}) ?? false`,
+      5000, 300, "rename notice",
+    );
+    if (!renameNotice) throw new Error("buckets flow: rename success notice missing");
+    await evalJs(c, `(() => {
+      const li = document.querySelector(${JSON.stringify(`[data-name="${renamedName}"]`)});
+      const b = li && li.querySelector("button");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    const renamedDoc = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${docName}"]`)})`,
+      15000, 500, "document after rename",
+    );
+    if (!renamedDoc) throw new Error("buckets flow: document missing after rename");
+    flow.renamedBucket = renamedName;
+    flow.steps.push("renamed-bucket");
+    await screenshot(c, "buckets-renamed.png");
+    await evalJs(c, jsClick("All buckets", false));
+    await delay(200);
+
+    // 8. Delete the renamed bucket with the two-click confirm (and prove the
+    //    server-side DELETE through the UI).
+    const deleteArm = await evalJs(c, rowBtnExpr(renamedName, "Delete"));
+    if (!deleteArm) throw new Error("buckets flow: Delete button missing");
+    const confirmArmed = await waitFor(
+      c,
+      `!![...document.querySelectorAll(${JSON.stringify(`[data-name="${renamedName}"] button`)})].find((b) => b.textContent.trim() === "Confirm delete")`,
+      10000, 400, "confirm delete",
+    );
+    if (!confirmArmed) throw new Error("buckets flow: delete confirm never armed");
+    const confirmed = await evalJs(c, rowBtnExpr(renamedName, "Confirm delete"));
+    if (!confirmed) throw new Error("buckets flow: Confirm delete button missing");
+    const deleteNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify("Deleted bucket")}) ?? false`,
+      10000, 400, "delete notice",
+    );
+    if (!deleteNotice) throw new Error("buckets flow: delete success notice missing");
+    const rowGone = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-name="${renamedName}"]`)})`,
+      10000, 400, "row gone",
+    );
+    if (!rowGone) throw new Error("buckets flow: deleted row still listed");
+    flow.steps.push("deleted-bucket");
+    await screenshot(c, "buckets-deleted.png");
+
     flow.result = {
       createdViaUi: true,
       duplicateRejected: true,
@@ -2614,6 +2704,8 @@ async function bucketsFlow() {
       duplicateUploadRejected: true,
       downloadVerified: true,
       persistedAfterReload: true,
+      renamedViaUi: true,
+      deletedViaUi: true,
     };
     flow.timings.elapsedMs = Date.now() - started;
     log(`  buckets journey done in ${flow.timings.elapsedMs}ms`);
@@ -2626,27 +2718,39 @@ async function bucketsFlow() {
   }
 }
 
-/** Server-side cleanup + verification for the buckets journey: physical files
- *  via the files API (agent scope) and DB rows via psql in the compose DB
- *  container (buckets deliberately expose no delete endpoint). */
+/** Server-side cleanup + verification for the buckets journey. The journey
+ *  itself ends with a UI delete, so cleanup deletes any leftover fixture
+ *  through the DELETE API (with the psql row check as the final authority on
+ *  whether anything still exists in the DB). */
 async function bucketsCleanup(flow) {
   if (!flow?.bucket) return "none";
-  const detail = { files: null, db: null, verified: null };
+  const detail = { api: null, files: null, db: null, verified: null };
+  const names = [...new Set([flow.bucket, flow.renamedBucket].filter(Boolean))];
+  try {
+    const scope = flow.scope && flow.scope.startsWith("agent:") ? flow.scope : null;
+    for (const name of names) {
+      const id = await bucketIdByNameViaApi(name);
+      if (!id) continue;
+      const del = await fetch(`${API}/buckets/${id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete bucket ${name} -> HTTP ${del.status}`);
+    }
+    detail.api = "clean";
+  } catch (err) {
+    detail.api = `error: ${err.message}`;
+    log(`  cleanup: bucket API FAILED: ${err.message}`);
+  }
   try {
     const scope = flow.scope && flow.scope.startsWith("agent:") ? flow.scope : null;
     if (!scope) {
       detail.files = `error: no agent scope (${flow.scope})`;
     } else {
-      const rels = [];
-      if (flow.docName) rels.push(`${flow.bucket}/${flow.docName}`);
-      rels.push(flow.bucket);
-      for (const rel of rels) {
+      for (const name of names) {
         const r = await fetch(
-          `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(rel)}`,
+          `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(name)}`,
           { method: "DELETE" },
         );
         if (r.status >= 400 && r.status !== 404) {
-          throw new Error(`delete ${rel} -> HTTP ${r.status}`);
+          throw new Error(`delete folder ${name} -> HTTP ${r.status}`);
         }
       }
       detail.files = "clean";
@@ -2656,7 +2760,13 @@ async function bucketsCleanup(flow) {
     log(`  cleanup: bucket files FAILED: ${err.message}`);
   }
   try {
-    detail.db = deleteBucketRowsFor(flow.bucket);
+    const dbStates = names.map((name) =>
+      deleteBucketRowsFor(name).replace("deleted", "cleaned-up"),
+    );
+    detail.db =
+      dbStates.length > 0 && dbStates.every((s) => s === "already-gone" || s === "cleaned-up")
+        ? "clean"
+        : dbStates.join(",");
   } catch (err) {
     detail.db = `error: ${err.message}`;
     log(`  cleanup: bucket DB FAILED: ${err.message}`);
@@ -2665,15 +2775,16 @@ async function bucketsCleanup(flow) {
     const res = await fetch(`${API}/buckets`);
     if (!res.ok) throw new Error(`list -> HTTP ${res.status}`);
     const body = await res.json();
-    const leftover = (Array.isArray(body) ? body : []).find((b) => b.name === flow.bucket);
+    const leftover = (Array.isArray(body) ? body : []).find((b) => names.includes(b.name));
     detail.verified = leftover ? "leftover" : "clean";
   } catch (err) {
     detail.verified = `error: ${err.message}`;
     log(`  cleanup: bucket verify FAILED: ${err.message}`);
   }
   const ok =
+    detail.api === "clean" &&
     detail.files === "clean" &&
-    (detail.db === "deleted" || detail.db === "already-gone") &&
+    detail.db === "clean" &&
     detail.verified === "clean";
   if (!ok) log(`  cleanup: buckets not clean (${JSON.stringify(detail)})`);
   return ok ? "clean" : `error: ${JSON.stringify(detail)}`;
@@ -3286,13 +3397,13 @@ async function staleSweep() {
   try {
     const rows = bucketRowsByNameLike("browser-e2e-bucket-%");
     for (const row of rows) {
-      if (row.folderType === "agent" && row.folderName) {
-        const del = await fetch(
-          `${API}/files/delete?scope=${encodeURIComponent(`agent:${row.folderName}`)}&path=${encodeURIComponent(row.name)}`,
-          { method: "DELETE" },
-        );
+      // Prefer the app's own DELETE endpoint; fall back to psql when the
+      // deployed backend predates it.
+      const id = bucketIdByName(row.name);
+      if (id) {
+        const del = await fetch(`${API}/buckets/${id}`, { method: "DELETE" });
         if (del.status >= 400 && del.status !== 404) {
-          throw new Error(`delete bucket folder ${row.name} -> HTTP ${del.status}`);
+          throw new Error(`delete bucket ${row.name} -> HTTP ${del.status}`);
         }
       }
       deleteBucketRowsFor(row.name);
@@ -4561,9 +4672,11 @@ async function main() {
     !bfl.flow.result?.uploadedViaUi ||
     !bfl.flow.result?.duplicateUploadRejected ||
     !bfl.flow.result?.downloadVerified ||
-    !bfl.flow.result?.persistedAfterReload
+    !bfl.flow.result?.persistedAfterReload ||
+    !bfl.flow.result?.renamedViaUi ||
+    !bfl.flow.result?.deletedViaUi
   ) {
-    failures.push(`buckets flow: create/upload/download/reload not verified (${JSON.stringify(bfl && bfl.flow)})`);
+    failures.push(`buckets flow: create/upload/download/reload/rename/delete not verified (${JSON.stringify(bfl && bfl.flow)})`);
   }
   if (bfl && bfl.cleanup !== "clean") {
     failures.push(`buckets flow: cleanup not verified (${bfl.cleanup})`);

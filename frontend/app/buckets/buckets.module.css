@@ -79,6 +79,21 @@
   background: #f3f4f6;
 }
 
+.btnDanger {
+  background: transparent;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+.btnDanger:hover {
+  background: #fef2f2;
+}
+
+.btnDanger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .errorBanner {
   display: block;
   width: 100%;
@@ -266,6 +281,18 @@ span.rowName {
   display: flex;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+
+.renameForm {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.renameForm .input {
+  min-width: 180px;
+  max-width: 260px;
 }
 
 .muted {

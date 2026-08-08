@@ -101,6 +101,12 @@ export default function BucketsPanel() {
   const [selected, setSelected] = useState<BucketDetail | null>(null);
   const [detailBusy, setDetailBusy] = useState(false);
 
+  const [renaming, setRenaming] = useState<BucketRow | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadKey, setUploadKey] = useState(0);
@@ -201,6 +207,13 @@ export default function BucketsPanel() {
     };
   }, [reloadKey, selected?.id]);
 
+  // Two-click delete disarm after a few seconds.
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const timer = setTimeout(() => setConfirmDeleteId(null), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmDeleteId]);
+
   const resetDraft = () => {
     setDraft({
       name: "",
@@ -243,6 +256,59 @@ export default function BucketsPanel() {
     setSelected({ ...bucket, documents: [] });
     setError(null);
     setNotice(null);
+  };
+
+  const startRename = (bucket: BucketRow) => {
+    setRenaming(bucket);
+    setRenameDraft(bucket.name);
+    setError(null);
+    setNotice(null);
+  };
+
+  const submitRename = async (bucket: BucketRow) => {
+    const name = renameDraft.trim();
+    setRenameBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      if (!name) throw new Error("Bucket name is required");
+      const res = await apiFetch(`/buckets/${bucket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(await apiError(res));
+      setRenaming(null);
+      setNotice(`Renamed bucket ${bucket.name} → ${name}`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
+  const deleteBucket = async (bucket: BucketRow) => {
+    if (confirmDeleteId !== bucket.id) {
+      setConfirmDeleteId(bucket.id);
+      setError(null);
+      setNotice(null);
+      return;
+    }
+    setDeleteBusyId(bucket.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiFetch(`/buckets/${bucket.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await apiError(res));
+      setConfirmDeleteId(null);
+      setNotice(`Deleted bucket ${bucket.name}`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setDeleteBusyId(null);
+    }
   };
 
   const uploadDocument = async () => {
@@ -314,8 +380,8 @@ export default function BucketsPanel() {
       </header>
 
       <div className={styles.badge}>
-        Read-only — documents can only be added &amp; downloaded, never edited
-        or deleted
+        Documents are read-only — they can only be added &amp; downloaded;
+        buckets can be renamed or deleted
       </div>
 
       {(error || workspaceError) && (
@@ -378,8 +444,7 @@ export default function BucketsPanel() {
                   }
                 />
                 <span className={styles.help}>
-                  Unique, read-only bucket. Letters, digits, dash or underscore
-                  only.
+                  Unique bucket name. Letters, digits, dash or underscore only.
                 </span>
               </label>
               <label className={styles.field}>
@@ -465,12 +530,44 @@ export default function BucketsPanel() {
                     data-name={bucket.name}
                   >
                     <span className={styles.rowIcon}>🗂️</span>
-                    <button
-                      className={styles.rowName}
-                      onClick={() => openBucket(bucket)}
-                    >
-                      {bucket.name}
-                    </button>
+                    {renaming?.id === bucket.id ? (
+                      <form
+                        className={styles.renameForm}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void submitRename(bucket);
+                        }}
+                      >
+                        <input
+                          aria-label="New bucket name"
+                          className={styles.input}
+                          value={renameDraft}
+                          autoFocus
+                          onChange={(e) => setRenameDraft(e.target.value)}
+                        />
+                        <button
+                          type="submit"
+                          className={styles.btnPrimary}
+                          disabled={renameBusy}
+                        >
+                          {renameBusy ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.btnGhost}
+                          onClick={() => setRenaming(null)}
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                    ) : (
+                      <button
+                        className={styles.rowName}
+                        onClick={() => openBucket(bucket)}
+                      >
+                        {bucket.name}
+                      </button>
+                    )}
                     <span className={styles.rowMeta}>
                       {bucket.folderType} / {bucket.folderName}
                     </span>
@@ -479,6 +576,25 @@ export default function BucketsPanel() {
                     </span>
                     <span className={styles.rowMeta}>
                       {formatTime(bucket.createdAt)}
+                    </span>
+                    <span className={styles.rowActions}>
+                      <button
+                        className={styles.btnGhost}
+                        onClick={() => startRename(bucket)}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        className={styles.btnDanger}
+                        onClick={() => void deleteBucket(bucket)}
+                        disabled={deleteBusyId === bucket.id}
+                      >
+                        {confirmDeleteId === bucket.id
+                          ? "Confirm delete"
+                          : deleteBusyId === bucket.id
+                            ? "Deleting…"
+                            : "Delete"}
+                      </button>
                     </span>
                   </li>
                 );

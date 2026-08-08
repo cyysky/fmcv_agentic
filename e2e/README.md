@@ -125,10 +125,11 @@ Environment overrides:
    temp file, proves a duplicate upload 409s (documents are immutable),
    downloads the document and verifies the saved-to-disk bytes via CDP
    `Browser.setDownloadBehavior`, then reloads the page and proves the
-   bucket and document survived. Fixtures are cleaned up
-   server-side afterwards: physical files through the files API and the DB
-   rows through psql inside the compose `fmcv-db` container (buckets expose no
-   delete endpoint by design — read-only).
+   bucket and document survived, renames the bucket through the UI and
+   proves the document persists under the new name, then deletes the bucket
+   via the two-click confirm. Server-side cleanup afterwards uses the new
+   `DELETE /api/buckets/:id` endpoint; the psql helpers only remain as a
+   final DB verification/fallback.
 9. **Skills journey**: on `/skills`, the script creates a skill through
    the UI (slug-form fixture name, description, markdown instructions) with
    the **Install now** box checked, verifies the row + Installed pill +
@@ -181,10 +182,11 @@ Failures print the failing routes/checks and the collected errors in
   backend; the run usually finishes in a few seconds.
 - Navigation aborts (`net::ERR_ABORTED`) are ignored as noise — they are the
   old document being discarded when the script navigates.
-- The bucket journey needs the docker CLI and the `fmcv-db` container for its
-  final DB cleanup (buckets are read-only by design and expose no delete API);
-  if docker is unavailable the sweep and cleanup report an error rather than
-  silently leaving fixture rows behind.
+- The bucket journey deletes its own fixture through `DELETE /api/buckets/:id`
+  (via the UI and in cleanup); the docker CLI + `fmcv-db` container are still
+  used by the psql fallback/verification, so if docker is unavailable the
+  sweep and cleanup report an error rather than silently leaving fixture rows
+  behind.
 - The skills journey needs no docker: skills expose a full CRUD API, so the
   fixture is deleted via `DELETE /api/skills/:id` and verified gone; the
   pre-run stale sweep removes any `browser-e2e-skill-*` leftovers the same

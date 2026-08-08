@@ -90,11 +90,11 @@ and coordinate multi-agent teams in Slack-style channels.
   the create/edit panel submits from the name field (Enter), and every
   create/save/download/delete action shows a dismissible success notice.
 - **Managed document buckets (`/buckets`)** — human-facing page over the
-  read-only buckets API: pick an agent or project folder, create a uniquely
-  named bucket, upload documents (PDF/text/video/audio/other, 100 MB cap),
-  list and download them, and keep everything after a reload. Bucket names
-  are unique, buckets are read-only (no edit/delete/overwrite endpoints),
-  and each document is stored exactly once under
+  buckets API: pick an agent or project folder, create a uniquely named
+  bucket, upload documents (PDF/text/video/audio/other, 100 MB cap), rename
+  or delete the bucket, list and download documents, and keep everything
+  after a reload. Bucket names are unique and each document is stored exactly
+  once under
   `<folder>/<bucket>/<name>` — duplicate names are rejected in-page with the
   API's 409. Backed by the REST table below.
 - **Cron jobs (`/cron`)** — human-facing page over the cron API: create a
@@ -178,14 +178,17 @@ check):
 | POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
 | DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
 
-Managed document buckets (read-only; document uploads use a multipart
-`file` field; 100 MB cap; duplicate names are 409s):
+Managed document buckets (bucket names are unique and filesystem-safe;
+documents are immutable once uploaded — a multipart `file` field, 100 MB cap,
+duplicate names are 409s):
 
 | Method | Path                                              | Purpose                             |
 |--------|---------------------------------------------------|-------------------------------------|
 | POST   | `/api/buckets`                                    | create bucket (unique `name`, `folderType` project/agent, `folderName`) |
 | GET    | `/api/buckets`                                    | list buckets (with per-bucket document counts) |
 | GET    | `/api/buckets/:id`                                | get one bucket + its documents      |
+| PATCH  | `/api/buckets/:id`                                | rename a bucket (`name`; folder moved to match) |
+| DELETE | `/api/buckets/:id`                                | delete a bucket and all its documents (folder removed) |
 | GET    | `/api/buckets/:id/documents`                      | list documents in a bucket          |
 | POST   | `/api/buckets/:id/documents`                      | upload a managed document (immutable, never overwritten) |
 | GET    | `/api/buckets/:id/documents/:documentId/download` | stream a document as an attachment  |
@@ -281,7 +284,10 @@ node scripts/verify-rest-docs.mjs
   (create/list/get mapped to project/agent folders, unknown project / unknown
   agent / invalid folder-type 400s, duplicate bucket 409 with folder
   rollback, sanitized immutable uploads with kind derivation, duplicate
-  document 409, 100 MB cap, download resolution), and the cron service
+  document 409, 100 MB cap, download resolution, rename with a real folder
+  move (+ same-name no-op, taken-name 409, pre-existing folder 409, path
+  escape 400, missing-folder recreation), delete removing folder + both row
+  types + 404 on unknown), and the cron service
   (create with normalized fields + next-run slot, invalid schedule 400,
   duplicate-name 409, unknown pinned connection 400, list/get/404, update
   slides nextRunAt on schedule change and on enable/disable, empty PATCH 400,
@@ -313,13 +319,15 @@ node scripts/verify-rest-docs.mjs
   empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
   directory/escape download 400, HTML view served inline with sandboxed
-  text/html headers, non-HTML view 415, directory/empty-path view 400), managed document buckets (14: create a
+  text/html headers, non-HTML view 415, directory/empty-path view 400), managed document buckets (18: create a
   unique bucket mapped to a project folder, duplicate bucket and invalid
   folder-type / missing-project / unknown-agent 400s, list with document
   counts, get-one with empty documents, unknown bucket 404, PDF upload with
   kind/mime/size, duplicate document name 409, missing multipart field 400,
   list after upload, download bytes + attachment headers, missing document
-  404), cron jobs (12: create + nextRunAt, duplicate name 409, invalid
+  404, rename moves the folder on disk, invalid rename 400, rename-to-taken
+  409 with the conflict bucket deleted, delete removes folder + rows + 404s),
+  cron jobs (12: create + nextRunAt, duplicate name 409, invalid
   schedule 400, list/get/404, PATCH name/schedule/enabled + nextRunAt
   semantics, empty PATCH 400, run-now drives a stubbed agent turn and
   persists done/error/message/model/duration, delete, delete-while-running
@@ -395,8 +403,10 @@ node scripts/verify-rest-docs.mjs
   proves a duplicate bucket name 409s in-page, uploads a text document,
   proves a duplicate upload 409s (immutable documents), downloads the file and
   compares the saved-to-disk bytes, reloads and proves the bucket + document
-  survived (fixtures are removed afterwards via the files API + psql in the
-  compose DB), a cron journey that creates a job through the `/cron` UI
+  survived, renames the bucket through the UI and proves the renamed row +
+  persisted document, then deletes it through the two-click confirm and
+  proves the row disappears (cleanup now runs through the new DELETE API),
+  a cron journey that creates a job through the `/cron` UI
   (fixture name, yearly schedule so the scheduler never fires mid-flow),
   verifies the row + success banner + `Next run:` line, clicks **Run now**
   and waits for the status pill to reach `Done`/`Failed` (whichever the live
