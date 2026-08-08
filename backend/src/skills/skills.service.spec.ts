@@ -75,6 +75,14 @@ describe('SkillsService', () => {
     );
   });
 
+  it('rethrows non-unique create errors untouched', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.skill.create.mockRejectedValue(new Error('db down'));
+    await expect(
+      service.create({ name: 'code-review', content: 'body' }),
+    ).rejects.toThrow('db down');
+  });
+
   it('rejects installing at creation without content', async () => {
     const { service } = makeSvc();
     await expect(
@@ -121,6 +129,15 @@ describe('SkillsService', () => {
     await expect(service.update('skill-1', { name: 'taken' })).rejects.toThrow(
       ConflictException,
     );
+  });
+
+  it('rethrows non-unique update errors untouched', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.skill.findUnique.mockResolvedValue(row());
+    prisma.skill.update.mockRejectedValue(new Error('db down'));
+    await expect(
+      service.update('skill-1', { description: 'New' }),
+    ).rejects.toThrow('db down');
   });
 
   it('deletes a skill and 404s on an unknown id', async () => {
