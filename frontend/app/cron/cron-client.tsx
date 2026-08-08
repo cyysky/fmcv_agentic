@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./cron.module.css";
 import { apiFetch, apiError, errText } from "../../lib/api";
+import { formatTime } from "../../lib/time";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -167,14 +168,6 @@ const OVERVIEW_EVENT_PAGE_SIZE = 100;
  *  this many pages so a pathologically deep failover history stays bounded;
  *  when the cap is hit the label says "first N of M" instead of "all M". */
 const OVERVIEW_EVENT_ALL_PAGE_CAP = 5;
-
-/* ------------------------------- helpers -------------------------------- */
-
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
-}
 
 function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "";

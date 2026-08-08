@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./buckets.module.css";
 import { apiFetch, apiError, errText } from "../../lib/api";
+import { formatTime } from "../../lib/time";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -55,11 +56,6 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
 const KIND_ICON: Record<DocumentKind, string> = {

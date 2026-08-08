@@ -154,7 +154,9 @@ and coordinate multi-agent teams in Slack-style channels.
   all from one responsive, dark-mode-friendly page.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
-  a per-member debug pane (event stream, steps, answer/error).
+  a per-member debug pane (event stream, steps, answer/error). Feed, session,
+  and member-status timestamps use one shared local-time formatter, so a
+  channel feed shows `8/9/2026, 1:34:38 AM` instead of raw UTC ISO.
 - **Settings UI (`/settings`)** — full CRUD for connections plus per-row
   live connectivity testing.
 

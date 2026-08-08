@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./agent.module.css";
 import { apiFetch } from "../../lib/api";
+import { formatTime, formatTimeShort } from "../../lib/time";
 
 
 interface ModelOption {
@@ -1389,7 +1390,7 @@ export default function AgentPage() {
                           </span>
                         )}
                         <span className={styles.sessionMeta}>
-                          {new Date(s.createdAt).toLocaleString()}
+                          {formatTime(s.createdAt)}
                           {connLabel(s.connectionId) && (
                             <span className={styles.sessionBadge}>
                               {connLabel(s.connectionId)}
@@ -1729,7 +1730,7 @@ export default function AgentPage() {
                           <div className={styles.chMsgLabel}>
                             <span className={styles.chMsgAuthor}>{m.author}</span>
                             <span className={styles.chMsgRole}>[{m.role}]</span>
-                            <span className={styles.chMsgTime}>{m.createdAt}</span>
+                            <span className={styles.chMsgTime}>{formatTime(m.createdAt)}</span>
                           </div>
                           <div className={styles.chMsgText}>{m.text}</div>
                         </div>
@@ -2173,7 +2174,7 @@ function MemberDebug({
         </span>
         {memberStatus.startedAt && (
           <span className={styles.mutedSmall}>
-            started {new Date(memberStatus.startedAt).toLocaleTimeString()}
+            started {formatTimeShort(memberStatus.startedAt)}
           </span>
         )}
         {memberStatus.steps != null && (

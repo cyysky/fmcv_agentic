@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import styles from "./skills.module.css";
 import { apiFetch, apiError, errText } from "../../lib/api";
+import { formatTime } from "../../lib/time";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -33,11 +34,6 @@ const EMPTY_DRAFT: SkillDraft = {
 const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /* ------------------------------- helpers -------------------------------- */
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
-}
 
 function previewLine(content: string): string {
   const first = content
