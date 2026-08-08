@@ -7,6 +7,9 @@ build/
 logs/
 .env
 .env.local
+
+# Local secrets (never commit; used only for per-round remote push)
+.secrets/
 .DS_Store
 coverage/
 npm-debug.log*

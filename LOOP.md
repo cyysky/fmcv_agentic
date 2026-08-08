@@ -43,6 +43,10 @@ Create/update `ROUND.md` with:
 - **Next round focus** (up to 3 concrete items, ordered by value).
 Then: `git add -A && git commit` (conventional message) and tag `round-N`.
 
+Push this round's commits to the remote only when `.secrets/github_pat` exists and
+is non-empty (use it in the push URL without persisting it into git config). If the
+secret is not found, skip the push — no push is required that round.
+
 ## 3. Continuation logic (decide AFTER the handoff is written)
 Proceed to the next round automatically UNLESS any exit condition is true.
 **Exit conditions (stop here):**

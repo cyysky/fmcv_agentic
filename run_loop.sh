@@ -19,6 +19,28 @@ for i in $(seq 1 "$MAX"); do
     echo ">>> Iteration $i FAILED. Stopping. Last state is in $LOGFILE" | tee -a "$LOGFILE"
     exit "$rc"
   fi
+
+  # Push this round's commits to the remote if the PAT secret exists; skip otherwise.
+  SECRET_FILE="${SECRET_FILE:-.secrets/github_pat}"
+  if [ -f "$SECRET_FILE" ] && [ -s "$SECRET_FILE" ]; then
+    REMOTE_URL="$(git remote get-url origin 2>/dev/null || true)"
+    if [ -n "$REMOTE_URL" ]; then
+      PAT="$(cat "$SECRET_FILE")"
+      CURRENT_BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || echo main)"
+      PUSH_URL="$(printf '%s' "$REMOTE_URL" | sed "s#^https://#https://x-access-token:${PAT}@#")"
+      git push "$PUSH_URL" "HEAD:refs/heads/${CURRENT_BRANCH}" 2>&1 | tee -a "$LOGFILE"
+      push_rc=${PIPESTATUS[0]}
+      if [ "$push_rc" -eq 0 ]; then
+        echo "[push=ok]" | tee -a "$LOGFILE"
+      else
+        echo "[push=failed]" | tee -a "$LOGFILE"
+      fi
+    else
+      echo "[push=skipped: remote not configured]" | tee -a "$LOGFILE"
+    fi
+  else
+    echo "[push=skipped: no secret found]" | tee -a "$LOGFILE"
+  fi
 done
 
 echo ">>> All $MAX iterations completed. Log: $LOGFILE"
