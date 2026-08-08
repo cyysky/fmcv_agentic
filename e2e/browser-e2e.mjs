@@ -676,6 +676,21 @@ async function agentChannelFlow() {
   const { tab, c } = await setupPage(url);
   try {
     wireErrorCapture(c, sink);
+    // Round 98 polling guard counter: exact `/api/channels` GET list
+    // responses (the 8s live-refresh), so hiding the tab can prove the
+    // interval stops fetching and resumes on restore.
+    sink.channelListCount = 0;
+    c.on("Network.responseReceived", (p) => {
+      if (
+        p.response &&
+        p.response.status >= 200 &&
+        p.response.status < 400 &&
+        /\/api\/channels$/.test(p.response.url) &&
+        (p.type === "Fetch" || p.type === "XHR")
+      ) {
+        sink.channelListCount += 1;
+      }
+    });
     await c.send("Page.navigate", { url });
     const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "agent ready");
     if (!ready) throw new Error("agent flow: page never loaded");
@@ -810,6 +825,65 @@ async function agentChannelFlow() {
       `  workspace viewer guard: ${flow.lazyGuard.workspaceLazyChunkCount} lazy chunk(s) fetched on open; ` +
       `panel guard: ${lazyMarkerChunks.length} marker chunk(s) deferred (${flow.lazyGuard.panelLazyChunkCount} panel-lazy, ${flow.lazyGuard.workspaceLazyChunkCount} workspace-lazy, ${flow.lazyGuard.eagerChunkCount} eager)`,
     );
+
+    // Round 98 visibility-gated polling guard: with the Channels tab open,
+    // hide the page for >2 poll intervals (17.5s vs the 8s tick) and assert
+    // no `/api/channels` list fetch fires while hidden; restoring visibility
+    // must resume the refresh on the next interval. A spare tab is used as
+    // the frontmost target so `document.visibilityState` flips for real.
+    const pollBaseline = sink.channelListCount;
+    const spare = await openTab("about:blank");
+    try {
+      // Target.activateTarget flips the browser's active target (so the
+      // other open test tabs stay exactly where they were).
+      await c.send("Target.activateTarget", { targetId: spare.id });
+      const hiddenSeen = await waitFor(
+        c,
+        `document.visibilityState === "hidden"`,
+        5000,
+        250,
+        "hidden visibilityState",
+      );
+      if (!hiddenSeen) throw new Error("agent flow: page never reported hidden");
+      // >2 poll intervals with the tab hidden: no list fetch may fire.
+      await delay(17500);
+      const hiddenCount = sink.channelListCount;
+      await c.send("Target.activateTarget", { targetId: tab.id });
+      const visibleSeen = await waitFor(
+        c,
+        `document.visibilityState === "visible"`,
+        5000,
+        250,
+        "visible visibilityState",
+      );
+      if (!visibleSeen) throw new Error("agent flow: page did not return to visible");
+      // Restored: the next 8s interval must fetch the list again.
+      await delay(9500);
+      const resumedCount = sink.channelListCount;
+      flow.pollingGuard = {
+        baseline: pollBaseline,
+        hiddenCount,
+        resumedCount,
+        hiddenWindowMs: 17500,
+        resumeWindowMs: 9500,
+        ok: hiddenCount === pollBaseline && resumedCount > hiddenCount,
+      };
+      if (!flow.pollingGuard.ok) {
+        throw new Error(
+          `agent flow: channel polling not visibility-gated (baseline ${pollBaseline}, hidden ${hiddenCount}, resumed ${resumedCount})`,
+        );
+      }
+      flow.steps.push("visibility-gated-polling");
+      log(`  visibility polling guard: hidden kept ${hiddenCount}/${pollBaseline}, resumed ${resumedCount} (${flow.pollingGuard.ok ? "ok" : "FAILED"})`);
+    } finally {
+      // Close only the spare tab (never the flow's own agent tab); it was
+      // registered in createdTabs as a belt-and-braces cleanup too.
+      await fetch(`${BASE}/json/close/${spare.id}`).catch(() => {});
+      const idx = createdTabs.indexOf(spare.id);
+      if (idx >= 0) createdTabs.splice(idx, 1);
+      await c.send("Target.activateTarget", { targetId: tab.id });
+      await c.send("Page.bringToFront");
+    }
 
     const channelName = `browser-e2e-${Date.now().toString(36)}`;
     await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));

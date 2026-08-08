@@ -468,12 +468,16 @@ node scripts/api-e2e.mjs
   dependencies; reads Next's `route-bundle-stats.json` after `next build`
   and fails the gate when any route's uncompressed first-load JS exceeds
   the budget (default 600 KB, override `FMCV_BUNDLE_BUDGET_BYTES`).
-  Measured baseline Round 93: largest first load is `/agent` at ~496 KB
+  Measured baseline Round 97: largest first load is `/agent` at ~484 KB
   — the Next/React framework baseline (~460 KB shared, ~156 KB gzipped)
   dominates while per-route app chunks stay 13-50 KB and are not
-  duplicated across routes. Round 93 lazy-split the agent sessions/channels
-  tab panels (`agent/agent-views.tsx`) out of that eager chunk (~512 KB →
-  ~496 KB); the ~23 KB panel chunk is fetched only when a tab opens.
+  duplicated across routes. Deferred chunks on `/agent` (all fetched only
+  on demand, verified by the browser E2E lazy guard): Round 93 lazy-split
+  the sessions/channels tab panels (`agent/agent-views.tsx`, ~23 KB);
+  Round 97 lazy-split the workspace viewer (`agent/workspace-viewer.tsx`,
+  ~2.3 KB) out of the page's eager atomic chunk set — the guard counts 14
+  eager / 1 workspace-lazy / 1 panel-lazy script loads. The 8 eager chunks
+  carry only the chat composer, trace viewer, and header pickers by design.
 - **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
   backend: production `src/**/*.ts` runs the strict
   `recommendedTypeChecked` rule set, while test files
