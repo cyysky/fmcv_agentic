@@ -1,47 +1,45 @@
-# Round 101 — 316 B edge chunk: investigated, not foldable (2026-08-09)
+# Round 102 — CI gate authored, push blocked by PAT scope (2026-08-09)
 
-Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 100's focus item #1 as a decision pass: whether the 316 B
-`/agent` edge chunk can be folded into the page chunk. It cannot — without
-losing the lazy split it exists to serve — so the round closes the question
-with evidence and documents the answer.
+Human direction (DIRECTION.md): none — DIRECTION.md is empty. Round 101's
+focus items were conditional/maintenance, so this round picked the clearly
+justified value work available: wiring the documented gates into GitHub
+Actions. The CI workflow was authored and validated, but the push was
+rejected because the stored PAT lacks the `workflow` scope GitHub requires
+to create/update `.github/workflows/*`. The authored CI branch is preserved
+locally; nothing is lost, and the remote main stays clean.
 
 ## What changed this round
 
-- **Identified the 316 B chunk** — `2cym9c2bsuhxj.js` is Turbopack's async
-  module-edge for `/agent`'s two `next/dynamic` loadables. It registers the
-  loader modules that fetch `agent-views.tsx` (~23 KB, sessions + channels
-  panels, Round 93 lazy split) and `workspace-viewer.tsx` (~2.3 KB, Round 97
-  lazy split) on demand; the page chunk's `loadableGenerated` modules point
-  straight at it.
-- **Proved it is a framework pattern, not agent-specific cruft** — `/cron`
-  carries its own 987 B per-route edge chunk (an apiFetch boundary), and
-  `/` has none because it has no async boundary. Tiny module-edge chunks are
-  a normal Turbopack emission wherever routes lazy-load.
-- **Decision: no fold.** Folding the edge means deleting or inlining the
-  dynamic boundaries, which would add ~25.5 KB (23 KB panels + 2.3 KB
-  workspace viewer) back to `/agent` first load — strictly worse than the
-  ~316 B uncompressed (~100 B gzipped) + one cached HTTP request the edge
-  costs. Next 16 default Turbopack exposes no chunk-merge knob, and
-  switching the build pipeline to webpack `splitChunks` for a sub-KB saving
-  is not justified. Same cost/benefit call as Round 99's picker-split no-go.
-- **README updated** — the bundle-size guard notes now explain what the
-  "tiny edge chunks" are (`/agent` = `next/dynamic` loader edge;
-  `/cron` = apiFetch boundary), so future rounds don't re-investigate.
+- **CI workflow authored and validated** (`.github/workflows/verify.yml`,
+  commit `30b789e`, branch `ci-verify`) — two jobs on every push/PR to
+  `main`: `fast-gate` runs `node scripts/verify.mjs` (REST docs guard,
+  test-count guard, backend unit 14/182, backend lint + types, frontend
+  types + lint); `bundle-gate` runs `node scripts/verify.mjs --build`
+  (adds `nest build`, `next build`, bundle-size guard, `/agent` headroom
+  guard). Node 22 + per-package `npm ci`; no Docker needed.
+- **Proved CI feasibility** — backend unit suite passes 182/182 with an
+  unreachable `DATABASE_URL`, so no Postgres sidecar is required for the
+  fast or bundle gates; workflow YAML parses with the intended jobs/steps.
+- **Push blocked (environmental, not code)** — GitHub returned
+  `refusing to allow a Personal Access Token to create or update workflow
+  .github/workflows/verify.yml without workflow scope`. The commit was
+  preserved on local branch `ci-verify` (with its README/ROUND snapshots);
+  `main` was rolled back to `578442a` and pushed clean so the remote is
+  not left in a rejected/pending state.
 
 ## Test status
 
-- No runtime code changed this round; the full
-  `verify --build --api-e2e` gate remains green from this session's Round
-  100 run: **14/182 unit, 12/123 API E2E**, bundle `/agent` 484 KB /
-  8 chunks within 600 KB, headroom 33.6 KB within 44 KB.
-- Fast `verify.mjs` re-run this round on final code: green — REST docs
-  guard (70 routes / 69 rows), test-count guard, backend unit 14/182,
-  backend lint + types, frontend types + lint.
-- Browser E2E: **not re-run this round** — no frontend runtime change
-  (same explicit skip as Round 99); Round 100's enabled + api-only runs
-  (21 route probes each, zero console/network errors) remain current
-  runtime evidence.
+- Backend unit: **14 suites / 182 tests passed** (fast gate run this
+  round; also green with unreachable `DATABASE_URL`, exactly the CI-shaped
+  environment).
+- Fast verify `verify.mjs`: green — REST docs guard (70 routes / 69 rows),
+  test-count guard, unit 14/182, backend lint/types, frontend types/lint.
+- Full build gate not re-run this round (no code change): Round 100's
+  `verify --build --api-e2e` remains green — API E2E 12/123, bundle
+  `/agent` 484 KB / 8 chunks, headroom 33.6 KB within 44 KB.
+- Browser E2E: not re-run — no frontend runtime change; Round 100 enabled +
+  api-only runs (21 route probes each, zero console/network errors) remain
+  current.
 
 ## Known issues / open tickets
 
@@ -49,18 +47,20 @@ with evidence and documents the answer.
   suites exit 0.
 - **Low** — `e2e/report.json` mirrors only the latest run; per-mode
   archives live in git history (by design).
-- **Closed this round** — the "fold the 316 B edge chunk" open question:
-  not foldable without a ~25.5 KB first-load regression; kept as-is and
-  documented in README.
+- **Blocker (needs human action)** — the stored GitHub PAT lacks
+  `workflow` scope, so the authored CI workflow (branch `ci-verify`,
+  commit `30b789e`) cannot be pushed. Options: provide/rotate to a PAT with
+  `workflow` scope so a future round can push the branch, or drop the CI
+  idea.
 
 ## Next round focus
 
-1. **Profiling is now a conditional, not routine, task** — only profile
-   deeper when a future feature threatens the 44 KB `/agent` headroom
-   budget (currently 33.6 KB used); no routine action needed.
+1. **Resolve the CI push** — if a `workflow`-scoped PAT becomes
+  available, push `ci-verify` (or rebase it onto the current main) and
+  confirm the first real GitHub Actions run; otherwise mark the CI idea
+  closed after one more round.
 2. **Keep the gates current** — re-run `verify --build --api-e2e` + both
-   browser modes after any frontend change; keep `/agent` at the 484 KB /
-   33.6 KB baseline.
-3. **If user pain ever shows up on first load** — the ~460 KB shared
-   Next/React framework floor dominates every route and is the only big
-   lever left; profile that before touching per-route chunks.
+  browser modes after any frontend change; /agent baseline stays 484 KB /
+  33.6 KB headroom.
+3. **Profile only when a feature threatens the 44 KB `/agent` headroom
+  budget** — currently 33.6 KB used, no routine action needed.
