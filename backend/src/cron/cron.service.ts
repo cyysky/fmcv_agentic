@@ -31,8 +31,12 @@ export const MAX_RUN_MESSAGE = 500;
 export const MAX_RUN_HISTORY = 100;
 /** How many busiest jobs to surface in the cluster overview (Round 69). */
 export const OVERVIEW_TOP_JOBS = 5;
-/** How many recent lease transitions to surface in the overview (Round 71). */
+/** How many recent lease transitions to surface in the overview by default
+ *  (Round 71); the overview API accepts a client-chosen `?limit=` up to
+ *  OVERVIEW_EVENT_LIMIT_MAX (Round 76). */
 export const OVERVIEW_RECENT_EVENTS = 10;
+/** Upper bound for the overview transition window (Round 76). */
+export const OVERVIEW_EVENT_LIMIT_MAX = 100;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Terminal status written by this service when a run ends. */
@@ -617,11 +621,20 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * adds recent lease transition events so failover history (acquired/lost,
    * previous owner, timestamp) is visible alongside current ownership. Round 74
    * adds per-group transition totals (eventStats) so the newest-10 window can
-   * be labeled against each group's full history.
+   * be labeled against each group's full history. Round 76: `limit` widens
+   * (or narrows) the transition window (1..100, default 10) so a selected
+   * group can show more than its newest 10 events.
    */
-  async overview(group?: string): Promise<CronOverview> {
+  async overview(
+    group?: string,
+    limit = OVERVIEW_RECENT_EVENTS,
+  ): Promise<CronOverview> {
     const now = new Date();
     const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const eventLimit = Math.min(
+      Math.max(Math.trunc(limit) || OVERVIEW_RECENT_EVENTS, 1),
+      OVERVIEW_EVENT_LIMIT_MAX,
+    );
     const [leases, events, eventGroups, total, lastHour, byStatus, topJobs] =
       await Promise.all([
         this.prisma.cronSchedulerLease.findMany({
@@ -630,7 +643,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         this.prisma.cronSchedulerEvent.findMany({
           ...(group ? { where: { schedulerGroup: group } } : {}),
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: OVERVIEW_RECENT_EVENTS,
+          take: eventLimit,
         }),
         this.prisma.cronSchedulerEvent.groupBy({
           by: ['schedulerGroup'],

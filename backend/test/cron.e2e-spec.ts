@@ -367,6 +367,62 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     expect(none.eventGroups).toEqual(all.eventGroups);
   });
 
+  it('widens the overview transition window with ?limit=', async () => {
+    const group = `e2e-window-${stamp}`;
+    await prisma.cronSchedulerEvent.createMany({
+      data: Array.from({ length: 13 }, (_, i) => ({
+        id: `e2e-window-${stamp}-${i}`,
+        schedulerGroup: group,
+        owner: `replica-${i}`,
+        event: 'acquired',
+        previousOwner: i ? `replica-${i - 1}` : null,
+        createdAt: new Date(Date.now() - (13 - i) * 1000),
+      })),
+    });
+    try {
+      // Default window is the newest 10.
+      const tightened = json<CronOverviewRow>(
+        await http()
+          .get(`/api/cron/overview?group=${encodeURIComponent(group)}&limit=10`)
+          .expect(200),
+      );
+      expect(tightened.events).toHaveLength(10);
+      expect(tightened.events.every((evt) => evt.group === group)).toBe(true);
+      expect(tightened.eventStats).toEqual(
+        expect.arrayContaining([expect.objectContaining({ group, total: 13 })]),
+      );
+      // A deeper window shows the group's full history while totals stay
+      // group-wide.
+      const widened = json<CronOverviewRow>(
+        await http()
+          .get(`/api/cron/overview?group=${encodeURIComponent(group)}&limit=50`)
+          .expect(200),
+      );
+      expect(widened.events).toHaveLength(13);
+      expect(widened.eventStats).toEqual(tightened.eventStats);
+      // Omitted/malformed limits keep the documented default; a huge limit
+      // clamps at 100 but still returns the shallow history here.
+      const defaultLen = json<CronOverviewRow>(
+        await http()
+          .get(`/api/cron/overview?group=${encodeURIComponent(group)}`)
+          .expect(200),
+      ).events.length;
+      expect(defaultLen).toBe(10);
+      const clamped = json<CronOverviewRow>(
+        await http()
+          .get(
+            `/api/cron/overview?group=${encodeURIComponent(group)}&limit=500`,
+          )
+          .expect(200),
+      );
+      expect(clamped.events).toHaveLength(13);
+    } finally {
+      await prisma.cronSchedulerEvent.deleteMany({
+        where: { schedulerGroup: group },
+      });
+    }
+  });
+
   it('404s running an unknown job', async () => {
     await http()
       .post('/api/cron/00000000-0000-4000-8000-000000000000/run')

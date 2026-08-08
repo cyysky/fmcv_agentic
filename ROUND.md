@@ -1,44 +1,56 @@
-# ROUND 75 — 2026-08-08 (autonomous iteration round 75)
+# ROUND 76 — 2026-08-08 (autonomous iteration round 76)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 74's top focus item: load-all for run histories.
+round executed Round 75's top focus item: per-group transition history depth.
 
 ## What changed this round
 
-- **Load-all run history view** — every open history list now offers a
-  **Load all runs** button (next to Older whenever more pages exist) that
-  replaces the pager with the whole history in one scroll: it loops 20-row
-  pages up to a 200-run safety cap (10 pages; the backend clamps `limit` to
-  100, so no API contract change), and the pager swaps to a **Paged view**
-  button plus an "All N runs" / "First N runs" label (the latter only when
-  the cap actually cut a pathological history short).
-- **View-aware refresh guard** — the 5 s expanded-history auto-refresh now
-  also tracks whether the open list is in the paged or load-all view, so an
-  in-flight refresh cannot clobber a just-clicked Load all runs / Paged view
-  switch (extended the Round 74 page-move guard instead of replacing it).
-- **Browser E2E proof** — the cron journey now clicks Load all runs after
-  Jump to newest and asserts the all view renders all 23 seeded runs with an
-  "All 23 runs" label and a Paged view button, then clicks Paged view and
-  asserts page 0 / 20 rows / Older + Load all runs return. Result flag
-  `runHistoryLoadAll` + step `history-load-all` + screenshot
-  `cron-history-load-all.png`.
-- **Docs** — README cron prose and the browser-journey paragraph now
-  describe Load all runs / Paged view and the 200-run cap.
+- **Overview transition-window depth (`?limit=`)** — `GET /api/cron/overview`
+  now accepts an optional `limit=` that widens/narrows the transition event
+  window (clamped 1–100, default 10; non-numeric/0 fall back to the default,
+  negatives clamp to 1), so a selected lease group can show far more than its
+  newest 10 events. Controlled in the cron panel by a **newest
+  10/25/50/100** depth selector on the Transitions row that re-fetches the
+  overview immediately (the Round 74 stale-response seq guard and Round 73
+  group filter both keep working, and the 5 s refresh follows the chosen
+  depth).
+- **Unit + API coverage** — `CronService` unit test proves `take` follows the
+  requested limit with the floor/ceiling/defaulting behavior; API e2e seeds a
+  13-event synthetic group and verifies `?limit=10` → 10 rows, `?limit=50` →
+  13, omitted/500 → default/clamp, per-group totals unchanged.
+- **Browser E2E proof** — the cron journey now seeds **13** synthetic second-
+  group events (staggered one second apart) and proves the default window
+  reads "newest 10 of 13", then drives the depth selector to 50 and asserts
+  the same selected group shows "newest 13 of 13", before restoring All and
+  proving the widened depth survives (All view shows more than the old 10-
+  event window). Result flags `eventWindowClarity` + `eventWindowDepth`, step
+  `overview-event-depth`, screenshot `cron-overview-event-depth.png`.
+- **Cleanup hardened** — cron cleanup now removes every `browser-e2e-event-%`
+  fixture row and proves zero remain (the old exact-id delete would have
+  missed the 13 suffixed rows; the count check also tolerates interrupt
+  leftovers instead of assuming exactly 13).
+- **Docs** — README cron prose, the `/api/cron/overview` REST table row, and
+  the browser-journey paragraph now describe `?limit=` (1–100, default 10)
+  and the depth selector; docs drift guard stays green.
 
 ## Test status
 
-- Backend unit: **166 passed / 14 suites**; `tsc --noEmit` + `eslint .` clean.
-- Backend API E2E: **118 passed / 11 suites** (known Jest keep-alive warning
-  unchanged, exit code 0).
-- Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; Docker image
-  rebuilt with `next build` clean (frontend container recreated).
+- Backend unit: **167 passed / 14 suites** (`tsc --noEmit` + `eslint .`
+  clean); the new overview-limit test brings the cron spec to 27 tests.
+- Backend API E2E: **119 passed / 11 suites** (+1 for the `?limit=` window
+  e2e; known Jest keep-alive warning unchanged, exit code 0).
+- Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; `next build`
+  clean; **both Docker images rebuilt** (frontend carries the depth selector,
+  backend carries `?limit=` — the first E2E failures were the live backend
+  still running the pre-Round-76 image, which ignored `?limit`).
 - Docs drift guard OK — routes 69 / docs rows 68.
-- Browser E2E: **all checks passed** — cron flow now also proves
-  `runHistoryLoadAll` (23-row load-all view -> Paged view back to page 0);
-  zero console/network/HTTP errors; report + screenshots refreshed.
+- Browser E2E: **all checks passed** (cron flow proves the 13-event depth
+  window and selector; zero console/network/HTTP errors; report + screenshots
+  refreshed).
 - Baseline afterwards: 0 cron jobs / 0 cron_runs / 0 synthetic events;
-  5 authentic `default`-group `acquired` events remain as demo failover
-  history.
+  6 authentic `default`-group `acquired` events remain (one more than Round
+  75's 5 — the backend rebuild's scheduler failover logged another authentic
+  `default` takeover; demo history only).
 
 ## Known issues / open tickets
 
@@ -47,27 +59,31 @@ round executed Round 74's top focus item: load-all for run histories.
 - Startup acquisition in `onModuleInit` is deliberately not recorded as an
   event — only transitions observed inside `tick()` write audit rows.
 - Load-all is deliberately capped at 200 runs; a history deeper than that
-  shows "First 200 runs" (bounded UI memory) — an infinite scroll could
-  remove the cap at the cost of unbounded fetches.
-- Transitions still shows only the newest 10 events; per-group totals and
-  the newest-N-of-M label clarify the window, but a group whose newest event
-  is older than the 10th newest still reads "none recorded yet" when
-  selected.
+  shows "First 200 runs" (bounded UI memory).
+- The first two browser-E2E attempts failed against a stale backend image
+  (it ignored `?limit=`) and exposed that the deployed stack must be rebuilt
+  together before E2E; the round's workflow now includes rebuilding both
+  containers before the browser proof. A transient cleanup miscount
+  (14 vs 13 fixture rows during debugging) was absorbed by the hardened
+  zero-remain cleanup invariant.
 
 ## Next round focus
 
-- **Per-group transition history depth** — let a selected group show more
-  than the newest 10 of its events (e.g. last-N-per-group or a window
-  selector), removing the last empty-filter surprise entirely.
-- **Depth-aware overview endpoint** — extend `GET /api/cron/overview` (or
-  add `?limit=`/`?group=`) so the UI can fetch a deeper transition window
-  without unbounded payloads, and assert it in API + browser tests.
-- Any DIRECTION.md instruction.
+- **Memory-coast the overview window depth** — the Round 76 `?limit=`/
+  selector is applied per fetch but a selected group's deeper window could
+  also drive a "load all for this group" pass like run histories (or a
+  group-search/timeline view) when clusters have long failover histories.
+- **`MAX_RUN_MESSAGE` circular reference hygiene** — revisit the backend
+  message-length constant usage across run creation/update paths and the
+  history list rendering (never truncate mid-surrogate; assert in e2e).
+- **Docker/ops docs** — document the container rebuild requirement (frontend
+  + backend must be rebuilt together before E2E after API/UI contract
+  changes) so a future round doesn't hit the stale-image trap again.
 
 ## Loop state
 
-Loop state: running — Round 75 delivered the load-all run-history view
-with a view-aware refresh guard plus its browser proof; all gates green
-(backend 166 unit / 118 API e2e, frontend build/lint, docs guard, full
-browser journey) and the baseline ended clean. No exit condition fires;
-proceed to Round 76.
+Loop state: running — Round 76 delivered the per-group transition history
+depth (`?limit=` + newest 10/25/50/100 selector) with unit, API e2e, full
+browser proof, and docs; all gates green (backend 167 unit / 119 API e2e,
+frontend build/lint, docs guard, browser journey) and the baseline ended
+clean. No exit condition fires; proceed to Round 77.

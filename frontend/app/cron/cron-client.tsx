@@ -122,6 +122,12 @@ const RUNS_PAGE_SIZE = 20;
  *  is hit the label says "First N runs" instead of "All N runs". */
 const RUNS_ALL_PAGE_CAP = 10;
 
+/** Transition window depths offered by the cluster overview selector
+ *  (Round 76); the backend clamps ?limit= to 1..100 so 100 is the deepest
+ *  selectable window. */
+const OVERVIEW_EVENT_LIMITS = [10, 25, 50, 100] as const;
+const OVERVIEW_EVENT_LIMIT_DEFAULT = OVERVIEW_EVENT_LIMITS[0];
+
 /* ------------------------------- helpers -------------------------------- */
 
 function formatTime(iso: string | null): string {
@@ -155,6 +161,11 @@ export default function CronPanel() {
   const [overviewError, setOverviewError] = useState(false);
   // Round 73: which lease group's transition events to show (null = all).
   const [eventGroupFilter, setEventGroupFilter] = useState<string | null>(null);
+  // Transition window depth (Round 76): how many newest events the overview
+  // fetches, for All and per-group views alike.
+  const [eventWindowDepth, setEventWindowDepth] = useState<number>(
+    OVERVIEW_EVENT_LIMIT_DEFAULT,
+  );
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CronJobRow | null>(null);
@@ -215,9 +226,9 @@ export default function CronPanel() {
       const seq = ++overviewSeq;
       try {
         const res = await apiFetch(
-          eventGroupFilter
-            ? `/cron/overview?group=${encodeURIComponent(eventGroupFilter)}`
-            : "/cron/overview",
+          `/cron/overview?limit=${eventWindowDepth}${
+            eventGroupFilter ? `&group=${encodeURIComponent(eventGroupFilter)}` : ""
+          }`,
         );
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as CronOverview;
@@ -242,7 +253,7 @@ export default function CronPanel() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [eventGroupFilter]);
+  }, [eventGroupFilter, eventWindowDepth]);
 
   // Two-click delete disarm after a few seconds.
   useEffect(() => {
@@ -641,6 +652,25 @@ export default function CronPanel() {
                   </button>
                 ))}
               </span>
+            )}
+            {overview.eventGroups.length > 0 && (
+              <span className={styles.schedulerMeta}> · window:</span>
+            )}
+            {overview.eventGroups.length > 0 && (
+              <select
+                className={styles.select}
+                data-event-depth={eventWindowDepth}
+                data-testid="overview-event-depth"
+                aria-label="Transition window depth"
+                value={eventWindowDepth}
+                onChange={(e) => setEventWindowDepth(Number(e.target.value))}
+              >
+                {OVERVIEW_EVENT_LIMITS.map((depth) => (
+                  <option key={depth} value={depth}>
+                    newest {depth}
+                  </option>
+                ))}
+              </select>
             )}
             {overview.events.length === 0 ? (
               <span className={styles.schedulerMeta}>

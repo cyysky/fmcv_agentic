@@ -3296,17 +3296,20 @@ async function cronFlow() {
     flow.steps.push("overview");
     await screenshot(c, "cron-overview.png");
 
-    // 2f. Per-group transition filter (Round 73): seed one synthetic event
-    //     for a second lease group so the Transitions line gains a filter
-    //     control, then prove the group button narrows the list and All
-    //     restores it. The synthetic row is deleted in cronCleanup.
+    // 2f. Per-group transition filter (Round 73): seed 13 synthetic events
+    //     (Round 76) for a second lease group so the Transitions line gains a
+    //     filter control and the depth selector can be proven against a
+    //     13-event window; the group button narrows the list and All restores
+    //     it. The synthetic rows are deleted in cronCleanup.
     const syncEventId = `browser-e2e-event-${Date.now().toString(36)}`;
     const syncEventGroup = `e2e-${Date.now().toString(36)}`;
     execFileSync(
       "docker",
       ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c",
         `INSERT INTO cron_scheduler_events (id, "schedulerGroup", owner, event, "previousOwner", "createdAt")
-         VALUES ('${syncEventId}', '${syncEventGroup}', 'replica-x', 'acquired', null, now());`],
+         SELECT '${syncEventId}-' || n, '${syncEventGroup}', 'replica-x', 'acquired', null,
+                now() - ((13 - n) * interval '1 second')
+         FROM generate_series(1, 13) AS n;`],
       { encoding: "utf8", timeout: 15000 },
     );
     flow.syntheticEventId = syncEventId;
@@ -3356,8 +3359,9 @@ async function cronFlow() {
     // 2fii. Per-group event window clarity (Round 74): the filter chips carry
     //       each group's total transition count and the Transitions line
     //       labels the newest-N-of-M window, so a group with history but no
-    //       events on the All-view page is self-explanatory. With only the
-    //       synthetic event, the e2e group must show "newest 1 of 1".
+    //       events on the All-view page is self-explanatory. With 13 seeded
+    //       events and the default 10-event window, the e2e group must show
+    //       "newest 10 of 13" before the depth selector widens it.
     const windowClarityExpr = `(() => {
         const box = document.querySelector('[data-testid="cron-overview"]');
         if (!box) return null;
@@ -3369,8 +3373,8 @@ async function cronFlow() {
         const chipTotal = Number(chip.getAttribute("data-event-total"));
         const [shown, total] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
         const label = win.innerText;
-        return chipTotal === 1 && shown === 1 && total === 1 &&
-          label.includes("newest 1 of 1") &&
+        return chipTotal === 13 && shown === 10 && total === 13 &&
+          label.includes("newest 10 of 13") &&
           label.includes(" for " + ${JSON.stringify(syncEventGroup)})
           ? "window-clarity"
           : null;
@@ -3403,6 +3407,85 @@ async function cronFlow() {
       throw new Error("cron flow: per-group event window count/label incorrect");
     }
     flow.eventWindowClarity = true;
+
+    // 2fiii. Transition window depth (Round 76): the Transitions row offers a
+    //        depth selector; choosing 50 must refetch the overview and widen
+    //        the selected group's window from the default 10 to all 13 seeded
+    //        events while the chip total stays group-wide.
+    const depthSelectSeen = await waitFor(
+      c,
+      `!!document.querySelector('[data-testid="overview-event-depth"]')`,
+      15000,
+      500,
+      "event depth selector",
+    );
+    if (!depthSelectSeen) {
+      throw new Error("cron flow: transition depth selector never appeared");
+    }
+    const depthChanged = await evalJs(
+      c,
+      `(() => {
+        const sel = document.querySelector('[data-testid="overview-event-depth"]');
+        if (!sel || ![...sel.options].some((o) => o.value === "50")) return false;
+        Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(sel, "50");
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      })()`,
+    );
+    if (!depthChanged) throw new Error("cron flow: transition depth selector missing option");
+    const depthWindowExpr = `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const sel = box.querySelector('[data-testid="overview-event-depth"]');
+        const win = box.querySelector('[data-event-window]');
+        const chip = box.querySelector(
+          '[data-testid="overview-event-filter"] [data-event-group="${syncEventGroup}"]',
+        );
+        if (!sel || !win || !chip) return null;
+        if (sel.value !== "50") return null;
+        const chipTotal = Number(chip.getAttribute("data-event-total"));
+        const [shown, total] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
+        const label = win.innerText;
+        return chipTotal === 13 && shown === 13 && total === 13 &&
+          label.includes("newest 13 of 13") &&
+          label.includes(" for " + ${JSON.stringify(syncEventGroup)})
+          ? "depth-window"
+          : null;
+      })()`;
+    const depthWindow = await waitFor(
+      c,
+      depthWindowExpr,
+      15000,
+      500,
+      "per-group depth window",
+    );
+    if (depthWindow !== "depth-window") {
+      const diag = await evalJs(
+        c,
+        `(() => {
+          const box = document.querySelector('[data-testid="cron-overview"]');
+          const sel = box?.querySelector('[data-testid="overview-event-depth"]');
+          const win = box?.querySelector('[data-event-window]');
+          const chips = [...(box?.querySelectorAll(
+            '[data-testid="overview-event-filter"] [data-event-group]') || [])]
+            .map((b) => b.getAttribute("data-event-group") + ":" + b.getAttribute("data-event-total") + ":" + b.getAttribute("aria-pressed"));
+          return JSON.stringify({
+            selValue: sel?.value ?? null,
+            selOptions: sel ? [...sel.options].map((o) => o.value) : null,
+            transitionsText: box?.innerText || null,
+            winAttr: win?.getAttribute("data-event-window") || null,
+            winText: win?.innerText || null,
+            chips,
+          });
+        })()`,
+      );
+      log("  depth-window DOM diagnostic:", diag);
+      throw new Error("cron flow: transition depth selector did not widen the window");
+    }
+    flow.eventWindowDepth = true;
+    flow.steps.push("overview-event-depth");
+    await screenshot(c, "cron-overview-event-depth.png");
+
     const allClicked = await evalJs(
       c,
       `(() => {
@@ -3434,8 +3517,10 @@ async function cronFlow() {
       throw new Error("cron flow: All filter did not restore both groups");
     }
 
-    // Round 74: after All restores, the window label must stay coherent —
-    // "newest {shown} of {total}" with the All chip carrying the same total.
+    // Round 74 + Round 76: after All restores, the window label must stay
+    // coherent — "newest {shown} of {total}" with the All chip carrying the
+    // same total — and the depth-50 selector must survive, so the All view
+    // now shows more than the old 10-event window.
     const allWindow = await waitFor(
       c,
       `(() => {
@@ -3446,7 +3531,7 @@ async function cronFlow() {
         if (!allChip || !win) return null;
         const total = Number(allChip.getAttribute("data-event-total"));
         const [shown, totalAgain] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
-        return total >= 2 && shown >= 1 && shown <= 10 && totalAgain === total &&
+        return total >= 2 && shown > 10 && totalAgain === total &&
           win.innerText.includes("newest " + shown + " of " + total)
           ? "all-window"
           : null;
@@ -3578,6 +3663,7 @@ async function cronFlow() {
       historyJumpToNewest: true,
       runHistoryLoadAll: true,
       overviewFiltered: true,
+      eventWindowDepth: true,
       editedViaUi: true,
       paused: true,
       resumed: true,
@@ -3615,19 +3701,24 @@ async function cronCleanup(flow) {
     if (!deleted) throw new Error("delete refused while running after retries");
     const check = await fetch(`${API}/cron/${flow.jobId}`);
     detail = check.status === 404 ? "clean" : `leftover (HTTP ${check.status})`;
-    // Round 73: remove the synthetic second-group transition event.
+    // Round 73: remove the synthetic second-group transition events (Round 76
+    // seeds 13 rows whose ids share the fixture prefix) and prove none remain.
     if (flow.syntheticEventId) {
-      const eventId = String(flow.syntheticEventId).replace(/'/g, "''");
       try {
-        const removed = execFileSync(
+        execFileSync(
           "docker",
           ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
-            `DELETE FROM cron_scheduler_events WHERE id = '${eventId}' RETURNING id`],
+            `DELETE FROM cron_scheduler_events WHERE id LIKE 'browser-e2e-event-%'`],
+          { encoding: "utf8", timeout: 15000 },
+        );
+        const left = execFileSync(
+          "docker",
+          ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+            `SELECT count(*) FROM cron_scheduler_events WHERE id LIKE 'browser-e2e-event-%'`],
           { encoding: "utf8", timeout: 15000 },
         ).trim();
-        const removedLine = removed.split(/\r?\n/)[0];
-        if (removedLine !== eventId && detail === "clean") {
-          detail = "error: synthetic event missing at cleanup";
+        if (left !== "0" && detail === "clean") {
+          detail = `error: synthetic events remaining after cleanup (${left})`;
         }
       } catch (err) {
         if (detail === "clean") detail = `error: synthetic event cleanup: ${err.message}`;

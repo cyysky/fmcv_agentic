@@ -21,7 +21,9 @@ import { CronService } from './cron.service';
  *   GET    /api/cron           list jobs (with last/next run info)
  *   GET    /api/cron/scheduler this replica's scheduler lease/beat status
  *   GET    /api/cron/overview  cluster-wide lease groups + run throughput
- *                              (optional ?group= filters transition events)
+ *                              (optional ?group= filters transition events;
+ *                              optional ?limit= sets the transition window,
+ *                              1-100, default 10)
  *   GET    /api/cron/:id       get one job
  *   PATCH  /api/cron/:id       update name/schedule/prompt/task/enabled
  *   DELETE /api/cron/:id       delete a job (rejected while running)
@@ -47,8 +49,11 @@ export class CronController {
   }
 
   @Get('overview')
-  overview(@Query('group') group?: string) {
-    return this.cron.overview(group?.trim() || undefined);
+  overview(@Query('group') group?: string, @Query('limit') limit?: string) {
+    return this.cron.overview(
+      group?.trim() || undefined,
+      limit === undefined ? undefined : Number(limit),
+    );
   }
 
   @Get(':id/runs')

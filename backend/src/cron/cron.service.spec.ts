@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   CronService,
   MAX_RUN_HISTORY,
+  OVERVIEW_EVENT_LIMIT_MAX,
   OVERVIEW_RECENT_EVENTS,
   nextCronRun,
 } from './cron.service';
@@ -596,6 +597,48 @@ describe('CronService', () => {
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: OVERVIEW_RECENT_EVENTS,
       }),
+    );
+  });
+
+  it('applies and clamps the overview transition window limit', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
+      { schedulerGroup: 'default', _count: { _all: 13 } },
+    ]);
+    prisma.cronSchedulerEvent.findMany.mockResolvedValue(
+      Array.from({ length: 13 }, (_, i) => ({
+        id: `evt-${i}`,
+        schedulerGroup: 'default',
+        owner: `replica-${i}`,
+        event: 'acquired',
+        previousOwner: i ? `replica-${i - 1}` : null,
+        createdAt: new Date('2026-08-08T12:00:00Z'),
+      })),
+    );
+    await service.overview('default', 13);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { schedulerGroup: 'default' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 13,
+      }),
+    );
+    await service.overview(undefined, 0);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: OVERVIEW_RECENT_EVENTS }),
+    );
+    await service.overview(undefined, -5);
+    // Negative values clamp to the 1-event floor rather than the default.
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: 1 }),
+    );
+    await service.overview(undefined, 500);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: OVERVIEW_EVENT_LIMIT_MAX }),
+    );
+    await service.overview(undefined, Number.NaN);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ take: OVERVIEW_RECENT_EVENTS }),
     );
   });
 

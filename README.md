@@ -118,9 +118,12 @@ and coordinate multi-agent teams in Slack-style channels.
   All/group filter buttons so events stay scoped to a single group
   (the API's `?group=` filter keeps the 5 s refresh scoped too).
   Filter chips carry each group's total transition count and the Transitions
-  line labels the newest-N-of-M window it shows (for example "newest 1 of 1"
-  for a fresh group), so a group's full history size stays visible even when
-  the overview only surfaces the newest 10 transitions.
+  line labels the newest-N-of-M window it shows (for example "newest 10 of 13"
+  for a group with deeper history), so a group's full history size stays
+  visible even when a shallow window hides older events. The window depth is
+  selectable (newest 10/25/50/100) and drives the overview API's `?limit=`
+  (1-100, default 10), so a selected group can show far more than its newest
+  10 transitions when a cluster has long failover history.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, message, model,
@@ -230,7 +233,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
-| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -465,13 +468,15 @@ node scripts/verify-rest-docs.mjs
   with Newer, return to the last page and jump to newest in one click
   (page 0, 20 rows, Older still available), click **Load all runs** and
   assert all 23 rows render in one history view with an "All 23 runs"
-  label, then switch back with **Paged view** (page 0, 20 rows), asserts the cluster overview
-  panel shows an
-  active lease group plus the job's run in the throughput stats, seeds a
-  synthetic second-group transition event and proves the Transitions
-  All/group filter narrows the list to that group and back to all, checks
-  the filter chips report each group's transition total and the window label
-  reads "newest 1 of 1" for the synthetic group, then
+  label, then switch back with **Paged view** (page 0, 20 rows) and asserts
+  the cluster overview panel shows an active lease group plus the job's run
+  in the throughput stats, seeds 13 synthetic second-group transition events
+  and proves the Transitions All/group filter narrows the list to that group
+  and back to all, checks the filter chips report each group's transition
+  total and the window label reads "newest 10 of 13" for the synthetic
+  group, switches the window depth selector to 50 and proves the same
+  selected group then shows "newest 13 of 13" (with the widened All view
+  displaying its full total too), then
   collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
   deletes it with the two-click confirm (fixture removed server-side
