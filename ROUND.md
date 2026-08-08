@@ -1,9 +1,9 @@
-# ROUND 39 — 2026-08-08 (autonomous iteration round 39)
+# ROUND 40 — 2026-08-08 (autonomous iteration round 40)
 
 User instruction: generic loop prompt ("read on loop.md and do works") with no
 new human direction; `DIRECTION.md` items 1-4 (managed document buckets, cron
 jobs, agent skills, HTML view by link / new tab) remain completed and in
-effect. Round 38's handoff set "Next round focus: None"; this round re-ran the
+effect. Round 39's handoff set "Next round focus: None"; this round re-ran the
 full verification gate from a clean tree (zero diff prior to the run) against
 the live stack.
 
@@ -11,7 +11,7 @@ the live stack.
 
 - **Browser E2E artifacts re-recorded** — `e2e/report.json` and 27 screenshots
   refreshed against the current live stack (same passing checks; timestamps
-  and bytes differ from round 38).
+  and bytes differ from round 39).
 - **No source or test changes** — pure verification round; backend `npm run
   lint --fix`, `nest build`, `npx tsc --noEmit`, and frontend lint/typecheck/
   build touched no source files, and the four directed features are unchanged
@@ -29,7 +29,7 @@ the live stack.
   html-view, buckets, cron, skills, settings) pass; zero console/network/HTTP
   errors; pre-run stale sweep and every cleanup reported `clean`.
 - Live fixture spot-check after the run: buckets 0, cron 0, skills 0,
-  sessions 0, channels `FMCV`/`coder` only (verified via GET).
+  agent/sessions 0, channels `FMCV`/`coder` only (verified via GET).
 - DIRECTION item coverage confirmed by dedicated suites: buckets
   (`buckets.service.spec.ts` + `buckets.e2e-spec.ts`), cron
   (`cron.service.spec.ts` + `cron.e2e-spec.ts`), skills
@@ -55,7 +55,7 @@ the live stack.
 
 - **None.** Exit conditions C and D reached: ROUND.md "Next round focus" is
   empty, no open tickets remain, and no improvement is obviously valuable.
-  Rounds 35-39 are consecutive verification rounds with no net user-visible
+  Rounds 35-40 are consecutive verification rounds with no net user-visible
   change, so the degenerate-loop guard stops the loop here. Continue only if
   the human updates `DIRECTION.md`, reports new real-use friction, or asks for
   the trash folders/scratch files to be pruned.
