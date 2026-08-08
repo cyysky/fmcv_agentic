@@ -123,7 +123,13 @@ and coordinate multi-agent teams in Slack-style channels.
   visible even when a shallow window hides older events. The window depth is
   selectable (newest 10/25/50/100) and drives the overview API's `?limit=`
   (1-100, default 10), so a selected group can show far more than its newest
-  10 transitions when a cluster has long failover history.
+  10 transitions when a cluster has long failover history. When the window
+  still trails the group's total, a **Load all for this group** button
+  (or **Load all transitions** with no filter) swaps the Transitions line to
+  a paginated full-history pass over `/cron/overview/events` — pages of 100,
+  up to a 500-event safety cap, labeled "all N transitions" when the whole
+  history fit or "first N of M transitions" when the cap cut it short — and
+  a **back to newest {depth}** button returns to the depth-limited window.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, model, duration;
@@ -235,6 +241,7 @@ and awaits the agent turn):
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
 | GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
+| GET    | `/api/cron/overview/events` | paginated lease transition events for the load-all history view: same 1–100 `limit` clamp as `/overview` (default 10) plus `offset`, optional `group=` scopes the page to one lease group, and the payload reports the scoped `total` so the UI can page through every event or say "first N of M" when a safety cap cuts the pass short |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -481,7 +488,10 @@ node scripts/verify-rest-docs.mjs
   total and the window label reads "newest 10 of 13" for the synthetic
   group, switches the window depth selector to 50 and proves the same
   selected group then shows "newest 13 of 13" (with the widened All view
-  displaying its full total too), then
+  displaying its full total too), clicks **Load all for this group** and
+  asserts the Transitions line swaps to the full 13-event history ("all 13
+  transitions", data-complete) plus a **back to newest 50** button that
+  restores the depth-limited window label, then
   collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
   deletes it with the two-click confirm (fixture removed server-side

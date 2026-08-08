@@ -3408,6 +3408,112 @@ async function cronFlow() {
     }
     flow.eventWindowClarity = true;
 
+    // 2fiib. Load-all transition history (Round 78): with the group selected
+    //        at the default 10-event window, the Transitions line offers
+    //        "Load all for this group"; clicking it swaps the line to a
+    //        paginated full-history pass over /cron/overview/events (all 13
+    //        synthetic events, data-complete), and "back to newest 10"
+    //        restores the depth-limited window and its label.
+    const loadAllBtnSeen = await waitFor(
+      c,
+      `(() => {
+        const b = document.querySelector(
+          '[data-testid="overview-events-load-all"]',
+        );
+        return b && b.getAttribute("data-group") === ${JSON.stringify(syncEventGroup)} &&
+          Number(b.getAttribute("data-shown")) === 10 &&
+          Number(b.getAttribute("data-total")) === 13
+          ? "load-all-btn"
+          : null;
+      })()`,
+      15000,
+      500,
+      "overview load-all button",
+    );
+    if (loadAllBtnSeen !== "load-all-btn") {
+      throw new Error("cron flow: load-all-transitions button missing at default depth");
+    }
+    const overviewLoadAllClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector('[data-testid="overview-events-load-all"]');
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!overviewLoadAllClicked)
+      throw new Error("cron flow: could not click load-all transitions");
+    const eventsAll = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        const all = box?.querySelector('[data-testid="overview-events-all"]');
+        if (!box || !all) return null;
+        const shown = Number(all.getAttribute("data-shown"));
+        const total = Number(all.getAttribute("data-total"));
+        const complete = all.getAttribute("data-complete") === "true";
+        return shown === 13 && total === 13 && complete &&
+          box.innerText.includes("all 13 transitions") &&
+          box.innerText.includes(" for " + ${JSON.stringify(syncEventGroup)})
+          ? "events-all"
+          : null;
+      })()`,
+      15000,
+      500,
+      "overview load-all event list",
+    );
+    if (eventsAll !== "events-all") {
+      const diag = await evalJs(
+        c,
+        `(() => {
+          const box = document.querySelector('[data-testid="cron-overview"]');
+          const all = box?.querySelector('[data-testid="overview-events-all"]');
+          return JSON.stringify({
+            allAttr: all
+              ? [all.getAttribute("data-shown"), all.getAttribute("data-total"), all.getAttribute("data-complete")]
+              : null,
+            allText: all?.innerText || null,
+            winText: box?.innerText || null,
+          });
+        })()`,
+      );
+      log("  overview-events-all DOM diagnostic:", diag);
+      throw new Error("cron flow: load-all view did not render all events");
+    }
+    flow.overviewEventsLoadAll = true;
+    flow.steps.push("overview-events-load-all");
+    await screenshot(c, "cron-overview-events-all.png");
+    const backClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector('[data-testid="overview-events-all-back"]');
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!backClicked) throw new Error("cron flow: back-to-newest button missing in load-all view");
+    const windowRestored = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        const win = box?.querySelector('[data-event-window]');
+        if (!box || !win) return null;
+        const [shown, total] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
+        const btn = box.querySelector('[data-testid="overview-events-all"]');
+        return shown === 10 && total === 13 &&
+          win.innerText.includes("newest 10 of 13") &&
+          !btn ? "window-restored" : null;
+      })()`,
+      10000,
+      400,
+      "depth-limited window restored",
+    );
+    if (windowRestored !== "window-restored") {
+      throw new Error("cron flow: load-all back did not restore the depth-limited window");
+    }
+
     // 2fiii. Transition window depth (Round 76): the Transitions row offers a
     //        depth selector; choosing 50 must refetch the overview and widen
     //        the selected group's window from the default 10 to all 13 seeded
