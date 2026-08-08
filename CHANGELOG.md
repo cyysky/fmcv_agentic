@@ -1,3 +1,30 @@
+## Round 2026-08-08 — autonomous iteration round 57 (tag `round-57`)
+
+### Fixed
+- **README workspace layout doc corrected** — the Agent workspaces bullet now
+  describes the real tree (`projects/` for public project folders, and one
+  writable folder per agent under `agents/<name>/` each with a `work/`
+  directory), matching `WorkspaceService` and the live
+  `GET /api/agent/workspaces` payload; it previously claimed agent folders sat
+  directly under `AGENT_WORKSPACE_ROOT`.
+
+### Removed
+- **Pre-existing dev leftovers pruned** (explicitly authorized by previous
+  handoffs): stale coder-workspace scratch/test files were deleted through the
+  file-manager API (`debug_msgwpwu5.md`, `debug_msgwru8n.md`,
+  `debug_msgwtca3.md`, `restart-probe-1785984454.md`, `hello world.md`,
+  `hello.txt`, `live_check.txt`, `trace_check.txt`, `ui_test.txt`,
+  `viewer_demo.txt`), leaving the coder folder at its structural baseline
+  (`work/` only). The retired `/data/.trash-round34` folder is no longer
+  present in the backend container.
+
+### Test status
+- Full gate re-verified green: backend unit 146/146 + API E2E 107/107,
+  backend + frontend lint/tsc clean, frontend `next build` clean, docs drift
+  guard passes, browser E2E exit 0 (21 route probes + all journeys, zero
+  console/network/HTTP errors); live smoke 200s; DB/workspace baseline audited
+  clean (2 default channels only, coder workspace = `work/`).
+
 
 ## Round 2026-08-08 — autonomous iteration round 56 (tag `round-56`)
 

@@ -71,9 +71,10 @@ and coordinate multi-agent teams in Slack-style channels.
   badges it in the sidebar. Conversation loop with a hard `maxSteps` cap,
   tool-call trace and workspace viewer in the UI.
 - **Agent workspaces** — filesystem workspace under `AGENT_WORKSPACE_ROOT`
-  (Docker default `/data/workspaces`): named agent folders (`coder`,
-  `researcher`) and shared project folders; agents get file read/write/list
-  tools plus connection-credentials lookup.
+  (Docker default `/data/workspaces`): public project folders under
+  `projects/` and one writable folder per agent under `agents/<name>/`
+  (`coder`, `researcher`, each with a `work/` directory); agents get file
+  read/write/list tools plus connection-credentials lookup.
 - **File manager (`/files`)** — human-facing browser over the same
   workspace: pick an agent (read/write) or public project (read-only) scope,
   navigate one level at a time with a breadcrumb, view or download file
