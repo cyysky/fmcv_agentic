@@ -95,6 +95,65 @@ describe('BaseAgentService sessions', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it('recovers sparse rows with null messages and a pinned connection', async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-sess-sparse-'),
+    );
+    try {
+      const fake = prismaDouble() as unknown as {
+        agentSession: { findMany: jest.Mock };
+      };
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      fake.agentSession.findMany.mockResolvedValue([
+        {
+          id: 'sparse-session',
+          title: 'sparse',
+          model: 'ds4-flash',
+          connectionId: 'c-1',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          messages: null,
+        },
+      ]);
+      await agent.onModuleInit();
+      const s = agent.getSession('sparse-session');
+      expect(s.connectionId).toBe('c-1');
+      expect(s.messages).toEqual([]);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps live sessions when startup reload finds the same id', async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-sess-live-'),
+    );
+    try {
+      const fake = prismaDouble() as unknown as {
+        agentSession: { findMany: jest.Mock; upsert: jest.Mock };
+      };
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const live = await agent.createSession('live title');
+      fake.agentSession.findMany.mockResolvedValue([
+        {
+          id: live.id,
+          title: 'stale title',
+          model: 'ds4-flash',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          messages: [{ role: 'user', content: 'from disk' }],
+        },
+      ]);
+      await agent.onModuleInit();
+      expect(agent.getSession(live.id)).toBe(live);
+      expect(agent.getSession(live.id).title).toBe('live title');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
   it('lists and deletes sessions persisted outside the live map', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-orphan-'));
     try {
@@ -475,6 +534,34 @@ describe('BaseAgentService connections', () => {
       expect(calls.mock.calls[2][3]).toEqual(
         expect.objectContaining({ baseUrl: 'http://ollama.test/v1' }),
       );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('omits apiKey and parameters when the stored connection has none', async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-nokey-'),
+    );
+    try {
+      const fake = withConn({ apiKey: null, defaultParameters: null });
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'no key needed',
+        tool_calls: undefined,
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      const turn = await agent.runTurn({
+        message: 'hi',
+        connectionId: CONN_ID,
+      });
+      expect(turn.answer).toBe('no key needed');
+      expect(calls.mock.calls[0][3]).toEqual({
+        baseUrl: 'http://ollama.test/v1',
+        model: 'llama3.2',
+      });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1524,6 +1611,35 @@ describe('BaseAgentService executeTool and catalog', () => {
         baseUrl: 'http://vrs.test/v1',
         contextWindow: 131000,
       });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('applies documented config defaults when values are missing', async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-defaults-'),
+    );
+    try {
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(
+        {
+          get: (k: string) => (k === 'AGENT_WORKSPACE_ROOT' ? root : undefined),
+        } as never,
+        ws,
+        prismaDouble(),
+      );
+      const svc = agent as unknown as {
+        envApiKey: string;
+        defaultModelId: string;
+        llmTimeoutMs: number;
+        llmStub: boolean;
+      };
+      expect(svc.envApiKey).toBe('');
+      expect(svc.defaultModelId).toBe('ds4-flash');
+      expect(svc.llmTimeoutMs).toBe(120000);
+      expect(svc.llmStub).toBe(false);
+      expect(agent.getDefaults().baseUrl).toBe('');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

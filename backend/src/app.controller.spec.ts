@@ -18,5 +18,17 @@ describe('AppController', () => {
     it('should return "Hello World!"', () => {
       expect(appController.getHello()).toBe('Hello World!');
     });
+
+    it('passes through whatever the AppService returns', async () => {
+      const app: TestingModule = await Test.createTestingModule({
+        controllers: [AppController],
+        providers: [
+          { provide: AppService, useValue: { getHello: () => 'custom hello' } },
+        ],
+      }).compile();
+      expect(app.get<AppController>(AppController).getHello()).toBe(
+        'custom hello',
+      );
+    });
   });
 });

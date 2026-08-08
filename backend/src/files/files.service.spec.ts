@@ -237,6 +237,36 @@ describe('FilesService', () => {
     }
   });
 
+  it('never surfaces entry-level symlinks in listings', async () => {
+    await files.write('agent:coder', 'real.txt', 'x');
+    await fsp.symlink(
+      path.join(root, 'agents', 'coder', 'real.txt'),
+      path.join(root, 'agents', 'coder', 'link.txt'),
+    );
+    const list = await files.list('agent:coder');
+    expect(list.entries.map((e) => e.name)).toEqual(['real.txt']);
+  });
+
+  it('refuses to read a directory and to write/mkdir empty paths', async () => {
+    await files.mkdir('agent:coder', 'folder');
+    await expect(files.read('agent:coder', 'folder')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(files.write('agent:coder', '', 'x')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(files.mkdir('agent:coder', '')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('writes an empty body when content is omitted', async () => {
+    const written = await files.write('agent:coder', 'empty.txt');
+    expect(written.bytes).toBe(0);
+    const full = path.join(root, 'agents', 'coder', 'empty.txt');
+    await expect(fsp.readFile(full, 'utf8')).resolves.toBe('');
+  });
+
   it('refuses to write over an existing directory (EISDIR)', async () => {
     await files.mkdir('agent:coder', 'occupied');
     await expect(files.write('agent:coder', 'occupied', 'x')).rejects.toThrow(

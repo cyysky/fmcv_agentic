@@ -99,6 +99,23 @@ describe('ChannelJobService', () => {
     expect(job.events.filter((e) => e.type === 'error')).toHaveLength(1);
   });
 
+  it('stringifies non-Error run failures into the error message', async () => {
+    const channels = channelsDouble();
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockRejectedValue('kaboom');
+    const svc = makeSvc(channels, agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await job.process;
+
+    expect(job.status).toBe('error');
+    expect(job.error).toBe('kaboom');
+  });
+
   it('stop() emits ONE stopped event and the run does not duplicate it', async () => {
     const channels = channelsDouble();
     const agent = agentDouble();
@@ -207,6 +224,11 @@ describe('ChannelJobService', () => {
     await job.process;
 
     expect(job.status).toBe('done');
+    // A live in-memory job wins the snapshot lookup over Postgres.
+    await expect(svc.snapshot(job.id)).resolves.toMatchObject({
+      id: job.id,
+      status: 'done',
+    });
     // upsert: once on create, once at terminal (done) — plus channelPost etc.
     expect(prisma._upsert).toHaveBeenCalledTimes(2);
     const calls1 = (prisma._upsert as jest.Mock).mock.calls[1] as [
@@ -484,5 +506,48 @@ describe('ChannelJobService', () => {
 
     (prisma._findFirst as jest.Mock).mockRejectedValue(new Error('db down'));
     await expect(svc.latestFor('ch1', 'coder')).resolves.toBeNull();
+
+    (prisma._findFirst as jest.Mock).mockResolvedValue(null);
+    await expect(svc.latestFor('ch1', 'coder')).resolves.toBeNull();
+  });
+
+  it('history rows with null events and max steps degrade to empty defaults', async () => {
+    const prisma = prismaDouble();
+    const sparse = {
+      id: 'job-sparse',
+      channelId: 'ch1',
+      agentName: 'coder',
+      status: 'done',
+      events: null,
+      answer: null,
+      steps: null,
+      error: null,
+      maxSteps: null,
+      startedAt: new Date('2026-08-06T00:00:00.000Z'),
+      finishedAt: null,
+      createdAt: new Date('2026-08-06T00:00:00.000Z'),
+      updatedAt: new Date('2026-08-06T00:00:00.000Z'),
+    } as Record<string, unknown>;
+    const svc = makeSvc(channelsDouble(), agentDouble(), prisma);
+
+    (prisma._findFirst as jest.Mock).mockResolvedValue(sparse);
+    const latest = await svc.latestFor('ch1', 'coder');
+    expect(latest?.events).toEqual([]);
+    expect(latest?.maxSteps).toBeUndefined();
+
+    (prisma._findUnique as jest.Mock).mockResolvedValue(sparse);
+    const snap = await svc.snapshot('job-sparse');
+    expect(snap?.events).toEqual([]);
+    expect(snap?.maxSteps).toBeUndefined();
+
+    // Recovery also defaults the null events column before appending the
+    // explanatory stopped event.
+    (prisma._findMany as jest.Mock).mockResolvedValueOnce([
+      { ...sparse, id: 'job-recovered-sparse', status: 'running' },
+    ]);
+    await svc.onModuleInit();
+    const recovered = svc.get('job-recovered-sparse');
+    expect(recovered.events).toHaveLength(1);
+    expect(recovered.events[0].type).toBe('stopped');
   });
 });

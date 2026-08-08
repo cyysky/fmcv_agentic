@@ -35,4 +35,28 @@ describe('agent models catalog', () => {
     expect(fallbackFor(def)).toBeNull();
     expect(fallbackFor(resolveModel('qwen3.6-35b'))?.id).toBe('ds4-flash');
   });
+
+  it('degrades to the first catalog entry when no default is flagged', () => {
+    const flash = MODEL_CATALOG.find((m) => m.id === 'ds4-flash');
+    const savedDefault = flash?.is_default;
+    try {
+      if (flash) flash.is_default = false;
+      expect(resolveModel('qqq-no-default').id).toBe('qwen3.6-35b');
+    } finally {
+      if (flash && savedDefault !== undefined) flash.is_default = savedDefault;
+    }
+  });
+
+  it('returns null when no catalog fallback exists', () => {
+    const flash = MODEL_CATALOG.find((m) => m.id === 'ds4-flash');
+    const savedFallback = flash?.is_fallback;
+    try {
+      if (flash) flash.is_fallback = false;
+      const qwen = resolveModel('qwen3.6-35b');
+      expect(fallbackFor(qwen)).toBeNull();
+    } finally {
+      if (flash && savedFallback !== undefined)
+        flash.is_fallback = savedFallback;
+    }
+  });
 });

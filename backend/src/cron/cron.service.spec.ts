@@ -208,6 +208,29 @@ describe('CronService', () => {
     );
   });
 
+  it('creates with a trimmed model, pinned connection, and max steps when present', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.connection.findUnique.mockResolvedValue({ id: 'c-1' });
+    prisma.cronJob.create.mockResolvedValue(
+      row({ model: 'ds4-flash', connectionId: 'c-1', maxSteps: 5 }),
+    );
+    await service.create({
+      ...createDto,
+      model: '  ds4-flash  ',
+      connectionId: 'c-1',
+      maxSteps: 5,
+    });
+    expect(prisma.cronJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          model: 'ds4-flash',
+          connectionId: 'c-1',
+          maxSteps: 5,
+        }),
+      }),
+    );
+  });
+
   it('updates schedule/enabled and slides nextRunAt accordingly', async () => {
     const { service, prisma } = makeSvc();
     prisma.cronJob.findUnique.mockResolvedValue(row());
@@ -251,6 +274,37 @@ describe('CronService', () => {
         }),
       }),
     );
+  });
+
+  it('normalizes model, connection id, and max steps on update', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronJob.findUnique.mockResolvedValue(row());
+    prisma.connection.findUnique.mockResolvedValue({ id: 'c-1' });
+    prisma.cronJob.update.mockResolvedValue(row({ model: 'x' }));
+
+    await service.update('job-1', {
+      model: '  x  ',
+      connectionId: 'c-1',
+      maxSteps: 5,
+    });
+    const first = prisma.cronJob.update.mock.calls[0][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(first.data.model).toBe('x');
+    expect(first.data.connectionId).toBe('c-1');
+    expect(first.data.maxSteps).toBe(5);
+
+    await service.update('job-1', {
+      model: '   ',
+      connectionId: '',
+      maxSteps: null as never,
+    });
+    const second = prisma.cronJob.update.mock.calls[1][0] as {
+      data: Record<string, unknown>;
+    };
+    expect(second.data.model).toBeNull();
+    expect(second.data.connectionId).toBeNull();
+    expect(second.data.maxSteps).toBeNull();
   });
 
   it('400s on an empty update patch', async () => {
@@ -304,6 +358,34 @@ describe('CronService', () => {
       }),
     );
     expect(after.lastRunStatus).toBe('done');
+  });
+
+  it('forwards stored model, connection id, and max steps to the agent', async () => {
+    const { service, prisma, agent } = makeSvc();
+    prisma.cronJob.findUnique.mockResolvedValue(
+      row({ model: 'ds4-flash', connectionId: 'c-1', maxSteps: 5 }),
+    );
+    agent.runTurn.mockResolvedValue({
+      answer: 'ok',
+      model: 'ds4-flash',
+      steps: 1,
+    });
+    await service.runNow('job-1');
+    expect(agent.runTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Summarize the backlog',
+        model: 'ds4-flash',
+        connectionId: 'c-1',
+        maxSteps: 5,
+      }),
+    );
+  });
+
+  it('404s when running a job that does not exist', async () => {
+    const { service } = makeSvc();
+    await expect(service.runNow('nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('records an error result when the agent run fails', async () => {
@@ -621,6 +703,28 @@ describe('CronService', () => {
     );
   });
 
+  it('renders nulls for per-job stats when name or latency is missing', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronRun.count.mockResolvedValue(0);
+    prisma.cronRun.groupBy
+      .mockResolvedValueOnce([]) // by status
+      .mockResolvedValueOnce([
+        { cronJobId: 'deleted-job', _count: { _all: 2 }, _avg: { ms: null } },
+        { cronJobId: 'job-1', _count: { _all: 1 }, _avg: { ms: null } },
+      ]);
+    prisma.cronJob.findMany
+      .mockResolvedValueOnce([]) // job ownership rows
+      .mockResolvedValueOnce([{ id: 'job-1', name: 'daily-digest' }]);
+    prisma.cronSchedulerEvent.findMany.mockResolvedValue([]);
+    prisma.cronSchedulerEvent.groupBy.mockResolvedValue([]);
+
+    const overview = await service.overview();
+    expect(overview.runs.perJob).toEqual([
+      { cronJobId: 'deleted-job', name: null, runCount: 2, avgMs: null },
+      { cronJobId: 'job-1', name: 'daily-digest', runCount: 1, avgMs: null },
+    ]);
+  });
+
   it('filters overview transition events per lease group', async () => {
     const { service, prisma } = makeSvc();
     prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
@@ -730,6 +834,14 @@ describe('CronService', () => {
     it('clamps and defaults limit/offset like the overview window', async () => {
       const { service, prisma } = makeSvc();
       prisma.cronSchedulerEvent.count.mockResolvedValue(0);
+      await service.overviewEvents();
+      expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {},
+          take: OVERVIEW_RECENT_EVENTS,
+          skip: 0,
+        }),
+      );
       await service.overviewEvents(undefined, 0, -3);
       expect(prisma.cronSchedulerEvent.findMany).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -1154,6 +1266,21 @@ describe('CronService', () => {
       const created = await service.create(createDto);
       const after = await service.runNow(created.id);
       expect(after.lastRunStatus).toBe('done');
+    });
+
+    it('skips the run-history row when the result claim loses the race', async () => {
+      const { service, prisma, agent } = makeSvc();
+      prisma.cronJob.findUnique.mockResolvedValue(
+        row({ lastRunStatus: 'done', lastRunMessage: 'ok', lastRunMs: 5 }),
+      );
+      (prisma.cronJob.updateMany as jest.Mock)
+        .mockResolvedValueOnce({ count: 1 }) // fire claim
+        .mockResolvedValueOnce({ count: 0 }); // another replica won the result
+      agent.runTurn.mockResolvedValue({ answer: 'ok', model: 'ds4-flash' });
+
+      const after = await service.runNow('job-1');
+      expect(after.lastRunStatus).toBe('done');
+      expect(prisma.cronRun.create).not.toHaveBeenCalled();
     });
 
     it('fires the scheduler tick from the ticker interval', async () => {

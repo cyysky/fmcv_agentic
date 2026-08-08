@@ -197,6 +197,21 @@ describe('ChannelService', () => {
     expect((await svc.get(d.id)).members).toEqual(['coder']);
   });
 
+  it('404s before any work when the channel or parent is missing', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+
+    await expect(svc.ensureSubChannel('ghost', 'coder')).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(svc.addMember('ghost', 'coder')).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(svc.removeMember('ghost', 'coder')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
   it('ensures sub-channels exactly once and never nests sub-sub-channels', async () => {
     const { prisma, rows } = prismaDouble();
     const svc = new ChannelService(prisma, workspacesDouble());

@@ -97,4 +97,17 @@ describe('AppThrottlerGuard', () => {
     await new Promise((resolve) => setTimeout(resolve, 1100));
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
+
+  it('envPositiveInt falls back when the env var is missing, zero, or invalid', () => {
+    delete process.env.RATE_LIMIT_MAX;
+    expect(envPositiveInt('RATE_LIMIT_MAX', 42)).toBe(42);
+    process.env.RATE_LIMIT_MAX = '0';
+    expect(envPositiveInt('RATE_LIMIT_MAX', 42)).toBe(42);
+    process.env.RATE_LIMIT_MAX = '-5';
+    expect(envPositiveInt('RATE_LIMIT_MAX', 42)).toBe(42);
+    process.env.RATE_LIMIT_MAX = 'banana';
+    expect(envPositiveInt('RATE_LIMIT_MAX', 42)).toBe(42);
+    process.env.RATE_LIMIT_MAX = '7';
+    expect(envPositiveInt('RATE_LIMIT_MAX', 42)).toBe(7);
+  });
 });

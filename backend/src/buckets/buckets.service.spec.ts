@@ -356,6 +356,29 @@ describe('BucketsService', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('replaces an undefined uploaded name with the "document" fallback', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await service.addDocument('bucket-1', { buffer: Buffer.from('y') });
+    const data = (prisma.managedDocument.create as jest.Mock).mock.calls[0][0]
+      .data as { name: string; mimeType: null; kind: string };
+    expect(data.name).toBe('document');
+    expect(data.mimeType).toBeNull();
+    await fs
+      .unlink(path.join(root, 'projects', 'docs', 'research', 'document'))
+      .catch(() => undefined);
+  });
+
+  it('derives document kinds from extension and falls back when none exists', () => {
+    expect(deriveDocumentKind('audio/mpeg', undefined)).toBe('audio');
+    expect(deriveDocumentKind(undefined, 'notes.txt')).toBe('text');
+    expect(deriveDocumentKind('image/png', 'photo.bin')).toBe('other');
+  });
+
   it('rejects an oversize upload', async () => {
     (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
       id: 'bucket-1',

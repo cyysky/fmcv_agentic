@@ -90,6 +90,21 @@ describe('SkillsService', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
+  it('creates with an empty body when content is omitted (install still guarded)', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.skill.create.mockResolvedValue(row({ content: '' }));
+    const created = await service.create({ name: 'uninstalled' });
+    expect(created.content).toBe('');
+    expect(prisma.skill.create).toHaveBeenCalledWith({
+      data: {
+        name: 'uninstalled',
+        description: '',
+        content: '',
+        installed: false,
+      },
+    });
+  });
+
   it('lists skills newest first', async () => {
     const { service } = makeSvc();
     await service.list();
@@ -122,6 +137,18 @@ describe('SkillsService', () => {
     expect(updated.installed).toBe(true);
   });
 
+  it('passes content through when an update provides it', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.skill.findUnique.mockResolvedValue(row());
+    prisma.skill.update.mockResolvedValue(row({ content: '# New body' }));
+    const updated = await service.update('skill-1', { content: '# New body' });
+    expect(prisma.skill.update).toHaveBeenCalledWith({
+      where: { id: 'skill-1' },
+      data: expect.objectContaining({ content: '# New body' }),
+    });
+    expect(updated.content).toBe('# New body');
+  });
+
   it('409s when an update collides with an existing skill name', async () => {
     const { service, prisma } = makeSvc();
     prisma.skill.findUnique.mockResolvedValue(row());
@@ -129,6 +156,15 @@ describe('SkillsService', () => {
     await expect(service.update('skill-1', { name: 'taken' })).rejects.toThrow(
       ConflictException,
     );
+  });
+
+  it('uses the existing name in the 409 message when an update drops the name', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.skill.findUnique.mockResolvedValue(row({ name: 'code-review' }));
+    prisma.skill.update.mockRejectedValue({ code: 'P2002' });
+    await expect(
+      service.update('skill-1', { description: 'Renamed away' }),
+    ).rejects.toThrow('Skill name "code-review" already exists');
   });
 
   it('rethrows non-unique update errors untouched', async () => {

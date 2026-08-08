@@ -128,6 +128,24 @@ describe('ConnectionsService.test()', () => {
     expect(result.message).toContain('timed out');
   });
 
+  it('omits the authorization header for a stored connection without a key', async () => {
+    let sent: RequestInit | undefined;
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      sent = init;
+      return new Response('{"choices":[]}', { status: 200 });
+    }) as never;
+
+    const service = new ConnectionsService(
+      prismaDouble({ ...ROW, apiKey: null }),
+    );
+    const result = await service.test('conn-1');
+
+    expect(result.ok).toBe(true);
+    expect(
+      (sent?.headers as Record<string, string>).authorization ?? null,
+    ).toBeNull();
+  });
+
   it('persists the last-known probe on success so reloads keep health', async () => {
     global.fetch = jest.fn(async () => {
       return new Response('{"choices":[{"message":{"content":"pong"}}]}', {
@@ -287,6 +305,51 @@ describe('ConnectionsService.testDraft()', () => {
     expect(result.message).toContain('Connection failed');
     expect(result.message).toContain('fetch failed');
   });
+
+  it('falls back to the 8s timeout when the env var is missing or invalid', async () => {
+    const saved = process.env.CONNECTION_TEST_TIMEOUT_MS;
+    delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+    global.fetch = jest.fn(async () => {
+      const err = new Error('This operation was aborted') as Error & {
+        name: string;
+      };
+      err.name = 'AbortError';
+      throw err;
+    }) as never;
+    let service: ConnectionsService;
+    try {
+      service = new ConnectionsService(prismaDouble(null));
+      const missing = await service.testDraft({
+        baseUrl: 'http://127.0.0.1:4567/v1',
+        modelName: 'draft-model',
+      });
+      expect(missing.message).toContain('timed out after 8000 ms');
+
+      process.env.CONNECTION_TEST_TIMEOUT_MS = 'banana';
+      service = new ConnectionsService(prismaDouble(null));
+      const invalid = await service.testDraft({
+        baseUrl: 'http://127.0.0.1:4567/v1',
+        modelName: 'draft-model',
+      });
+      expect(invalid.message).toContain('timed out after 8000 ms');
+    } finally {
+      if (saved === undefined) delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+      else process.env.CONNECTION_TEST_TIMEOUT_MS = saved;
+    }
+  });
+
+  it('treats non-Error probe failures as strings', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new Error('kaboom');
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.testDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+      modelName: 'draft-model',
+    });
+    expect(result.message).toContain('Connection failed: kaboom');
+  });
 });
 
 describe('ConnectionsService model discovery (GET /models)', () => {
@@ -435,6 +498,82 @@ describe('ConnectionsService model discovery (GET /models)', () => {
     expect(auth).toBe('Bearer sk-probe-secret');
   });
 
+  it('fetchModels omits the authorization header when the stored key is null', async () => {
+    let auth: string | undefined;
+    global.fetch = jest.fn(async (_url: unknown, init?: RequestInit) => {
+      auth = (init?.headers as Record<string, string>)?.authorization;
+      return modelsResponse(['stored-model']);
+    }) as never;
+
+    const service = new ConnectionsService(
+      prismaDouble({ ...ROW, apiKey: null }),
+    );
+    const result = await service.fetchModels('conn-1');
+
+    expect(result.ok).toBe(true);
+    expect(auth ?? null).toBeNull();
+  });
+
+  it('reports model-list timeouts with the configured timeout', async () => {
+    global.fetch = jest.fn(async () => {
+      const err = new Error('This operation was aborted') as Error & {
+        name: string;
+      };
+      err.name = 'AbortError';
+      throw err;
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(result.message).toContain('timed out after 2000 ms');
+  });
+
+  it('treats non-Error model-list fetch failures as strings', async () => {
+    global.fetch = jest.fn(async () => {
+      throw new Error('kaboom');
+    }) as never;
+
+    const service = new ConnectionsService(prismaDouble(null));
+    const result = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(result.message).toContain('Connection failed: kaboom');
+  });
+
+  it('normalizes malformed model-list payloads without crashing', async () => {
+    global.fetch = jest.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ data: [{ id: 7 }, { id: 'ok-model' }] }),
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    ) as never;
+    const service = new ConnectionsService(prismaDouble(null));
+    const mixed = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(mixed.ok).toBe(true);
+    expect(mixed.models).toEqual(['ok-model']);
+
+    global.fetch = jest.fn(
+      async () =>
+        new Response(JSON.stringify({ data: 'nope' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    ) as never;
+    const nonArray = await service.fetchModelsDraft({
+      baseUrl: 'http://127.0.0.1:4567/v1',
+    });
+    expect(nonArray.ok).toBe(true);
+    expect(nonArray.models).toEqual([]);
+  });
+
   it('throws NotFoundException when fetching models for an unknown connection', async () => {
     const service = new ConnectionsService(prismaDouble(null));
     await expect(service.fetchModels('missing')).rejects.toThrow(
@@ -494,6 +633,23 @@ describe('ConnectionsService apiKey normalization', () => {
 
     const data = prisma.connection.create.mock.calls[0][0].data;
     expect(data.apiKey).toBeNull();
+  });
+
+  it('passes defaultParameters through when create provides them', async () => {
+    const prisma = updateDouble() as unknown as {
+      connection: { create: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    await service.create({
+      displayName: 'with-params',
+      baseUrl: 'http://127.0.0.1:1/v1',
+      modelName: 'probe-model',
+      contextLength: 128000,
+      defaultParameters: { temperature: 0.2 },
+    });
+
+    const data = prisma.connection.create.mock.calls[0][0].data;
+    expect(data.defaultParameters).toEqual({ temperature: 0.2 });
   });
 });
 
@@ -635,11 +791,15 @@ describe('ConnectionsService CRUD', () => {
       baseUrl: 'http://127.0.0.1:9876/v1///',
       concurrentConnections: 4,
       defaultParameters: { temperature: 0.2 },
+      modelName: 'updated-model',
+      contextLength: 64000,
     });
     const data = prisma.connection.update.mock.calls[0][0].data;
     expect(data.baseUrl).toBe('http://127.0.0.1:9876/v1');
     expect(data.concurrentConnections).toBe(4);
     expect(data.defaultParameters).toEqual({ temperature: 0.2 });
+    expect(data.modelName).toBe('updated-model');
+    expect(data.contextLength).toBe(64000);
   });
 
   it('remove deletes existing connections and 404s otherwise', async () => {
