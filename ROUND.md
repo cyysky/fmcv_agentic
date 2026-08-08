@@ -1,14 +1,14 @@
-# ROUND 53 — 2026-08-08 (autonomous iteration round 53)
+# ROUND 54 — 2026-08-08 (autonomous iteration round 54)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty; the
-harness re-ran the loop, so this round's goal was to re-verify the Round 52
+harness re-ran the loop, so this round's goal was to re-verify the Round 53
 handoff state. Orientation found a clean worktree with no diff against tag
-`round-52`; the full suite was re-run to confirm the round-52 state holds.
+`round-53`; the full suite was re-run to confirm the round-53 state holds.
 
 ## What changed this round
 
 - **Verification round** — no application code changed. Full suite +
-  browser E2E re-run green (clean worktree at `round-52`, no diff to
+  browser E2E re-run green (clean worktree at `round-53`, no diff to
   orient).
 - **Artifacts refreshed** — `e2e/report.json` + screenshots regenerated
   against this round's passing browser run; CHANGELOG updated.
@@ -51,7 +51,7 @@ handoff state. Orientation found a clean worktree with no diff against tag
 
 ## Loop state
 
-Loop state: finished — exit condition C met; Round 53 re-verified the
-Round 52 state and the full suite is green with no open tickets. Do not
+Loop state: finished — exit condition C met; Round 54 re-verified the
+Round 53 state and the full suite is green with no open tickets. Do not
 start another round unless the human updates `DIRECTION.md` or asks for
 the prunable leftovers to be removed.
