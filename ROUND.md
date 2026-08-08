@@ -1,89 +1,81 @@
-# ROUND 76 — 2026-08-08 (autonomous iteration round 76)
+# ROUND 77 — 2026-08-09 (autonomous iteration round 77)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 75's top focus item: per-group transition history depth.
+round executed Round 76's top focus item: surrogate-safe run-message
+truncation (`MAX_RUN_MESSAGE` hygiene).
 
 ## What changed this round
 
-- **Overview transition-window depth (`?limit=`)** — `GET /api/cron/overview`
-  now accepts an optional `limit=` that widens/narrows the transition event
-  window (clamped 1–100, default 10; non-numeric/0 fall back to the default,
-  negatives clamp to 1), so a selected lease group can show far more than its
-  newest 10 events. Controlled in the cron panel by a **newest
-  10/25/50/100** depth selector on the Transitions row that re-fetches the
-  overview immediately (the Round 74 stale-response seq guard and Round 73
-  group filter both keep working, and the 5 s refresh follows the chosen
-  depth).
-- **Unit + API coverage** — `CronService` unit test proves `take` follows the
-  requested limit with the floor/ceiling/defaulting behavior; API e2e seeds a
-  13-event synthetic group and verifies `?limit=10` → 10 rows, `?limit=50` →
-  13, omitted/500 → default/clamp, per-group totals unchanged.
-- **Browser E2E proof** — the cron journey now seeds **13** synthetic second-
-  group events (staggered one second apart) and proves the default window
-  reads "newest 10 of 13", then drives the depth selector to 50 and asserts
-  the same selected group shows "newest 13 of 13", before restoring All and
-  proving the widened depth survives (All view shows more than the old 10-
-  event window). Result flags `eventWindowClarity` + `eventWindowDepth`, step
-  `overview-event-depth`, screenshot `cron-overview-event-depth.png`.
-- **Cleanup hardened** — cron cleanup now removes every `browser-e2e-event-%`
-  fixture row and proves zero remain (the old exact-id delete would have
-  missed the 13 suffixed rows; the count check also tolerates interrupt
-  leftovers instead of assuming exactly 13).
-- **Docs** — README cron prose, the `/api/cron/overview` REST table row, and
-  the browser-journey paragraph now describe `?limit=` (1–100, default 10)
-  and the depth selector; docs drift guard stays green.
+- **Surrogate-safe run-message truncation** — `truncate()` in
+  `cron.service.ts` is now exported and flattens/trims text, keeps the
+  ellipsis inside the 500-code-unit cap, and backs the cut off when it
+  would split a UTF-16 surrogate pair (emoji straddling the boundary), so
+  persisted run messages and history rows are always valid Unicode. Added an
+  8-case unit block (empty/whitespace -> null, at-cap unchanged, long text
+  capped with the ellipsis inside the cap, whitespace collapse, emoji at the
+  cut, straddling surrogate backed off, leading emoji kept, degenerate caps).
+  README now documents the "500 valid-Unicode code units, never split
+  mid-emoji" contract.
+- **Root-caused + fixed the intermittent API E2E flake** — the
+  cron-multireplica suite failed ~5/8 runs at `lastRunMessage` = null while
+  `lastRunStatus` was `done`. Instrumented runs proved the suite's own
+  replicas never write that row: the live Docker backend's cron scheduler
+  scans *all* due jobs in the shared Postgres regardless of lease group,
+  claims the e2e-created failover job, runs it against the real gateway (the
+  container has no `AGENT_LLM_STUB`), and persists a `done` row with a
+  null/empty answer. Stopping the backend container during API E2E (the old
+  documented-but-unfollowed workflow) makes the suite deterministic: 5
+  consecutive full runs at 119/119.
+- **Docs** — root README Testing + backend README now give the exact
+  `docker compose stop backend` / `npm run test:e2e` / start workflow and
+  explain both interference sources (cross-stack due-job race + boot-time
+  recovery sweep). Browser E2E report refreshed (same checks, all passed).
 
 ## Test status
 
-- Backend unit: **167 passed / 14 suites** (`tsc --noEmit` + `eslint .`
-  clean); the new overview-limit test brings the cron spec to 27 tests.
-- Backend API E2E: **119 passed / 11 suites** (+1 for the `?limit=` window
-  e2e; known Jest keep-alive warning unchanged, exit code 0).
+- Backend unit: **175 passed / 14 suites** (+8 for `truncate`); `npx tsc
+  --noEmit` + `npx eslint .` clean.
+- Backend API E2E: **119 passed / 11 suites × 5 consecutive runs** (all
+  green, live backend stopped; previously flaky 4/6 with it running).
 - Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; `next build`
-  clean; **both Docker images rebuilt** (frontend carries the depth selector,
-  backend carries `?limit=` — the first E2E failures were the live backend
-  still running the pre-Round-76 image, which ignored `?limit`).
+  clean.
 - Docs drift guard OK — routes 69 / docs rows 68.
-- Browser E2E: **all checks passed** (cron flow proves the 13-event depth
-  window and selector; zero console/network/HTTP errors; report + screenshots
-  refreshed).
-- Baseline afterwards: 0 cron jobs / 0 cron_runs / 0 synthetic events;
-  6 authentic `default`-group `acquired` events remain (one more than Round
-  75's 5 — the backend rebuild's scheduler failover logged another authentic
-  `default` takeover; demo history only).
+- Browser E2E: **all checks passed** (zero console errors / failed requests
+  / HTTP errors; run against the rebuilt backend); report refreshed.
 
 ## Known issues / open tickets
 
+- **Medium — scheduler due-job scan is not lease-group scoped**: any
+  deployment sharing one Postgres can claim another deployment's due jobs
+  (lease groups isolate the scheduler, not the job scan). In practice API
+  E2E must run with the live backend container stopped; a real fix would be
+  per-job group ownership/claim or a `CRON_SCHEDULER_ENABLED=false`-style
+  switch for test isolation.
 - **Low** — Jest API e2e still prints the "did not exit" keep-alive warning
   after the multi-replica suite closes; suites pass with exit code 0.
 - Startup acquisition in `onModuleInit` is deliberately not recorded as an
   event — only transitions observed inside `tick()` write audit rows.
 - Load-all is deliberately capped at 200 runs; a history deeper than that
   shows "First 200 runs" (bounded UI memory).
-- The first two browser-E2E attempts failed against a stale backend image
-  (it ignored `?limit=`) and exposed that the deployed stack must be rebuilt
-  together before E2E; the round's workflow now includes rebuilding both
-  containers before the browser proof. A transient cleanup miscount
-  (14 vs 13 fixture rows during debugging) was absorbed by the hardened
-  zero-remain cleanup invariant.
 
 ## Next round focus
 
-- **Memory-coast the overview window depth** — the Round 76 `?limit=`/
+- **Memory-coast the overview window depth** — the Round 76 `?limit=` /
   selector is applied per fetch but a selected group's deeper window could
   also drive a "load all for this group" pass like run histories (or a
   group-search/timeline view) when clusters have long failover histories.
-- **`MAX_RUN_MESSAGE` circular reference hygiene** — revisit the backend
-  message-length constant usage across run creation/update paths and the
-  history list rendering (never truncate mid-surrogate; assert in e2e).
-- **Docker/ops docs** — document the container rebuild requirement (frontend
-  + backend must be rebuilt together before E2E after API/UI contract
-  changes) so a future round doesn't hit the stale-image trap again.
+- **Scheduler isolation for shared-DB stacks** — decide whether jobs should
+  carry a lease-group owner (schema + claim filter) or deployments get a
+  scheduler-disable switch, so API E2E no longer depends on the
+  stop-the-backend workflow.
+- **Docker/ops docs for rebuild-together** — document that frontend +
+  backend containers must be rebuilt together after any API/UI contract
+  change before the browser E2E (Round 76 leftover).
 
 ## Loop state
 
-Loop state: running — Round 76 delivered the per-group transition history
-depth (`?limit=` + newest 10/25/50/100 selector) with unit, API e2e, full
-browser proof, and docs; all gates green (backend 167 unit / 119 API e2e,
-frontend build/lint, docs guard, browser journey) and the baseline ended
-clean. No exit condition fires; proceed to Round 77.
+Loop state: running — Round 77 delivered surrogate-safe run-message
+truncation (unit-proven), root-caused the API E2E flake to live-stack
+scheduler interference, verified 5 consecutive green full API E2E runs, and
+hardened the docs/workflow so the trap is documented for every future round.
+No exit condition fires; proceed to Round 78.
