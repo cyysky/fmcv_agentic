@@ -329,8 +329,16 @@ node scripts/verify-test-counts.mjs
 
 # One-command fast verify: both guards + backend unit/lint/types +
 # frontend lint/types (backend must already be running for nothing; the
-# API E2E and browser E2E need docker mode flips and stay explicit)
+# API E2E and browser E2E need docker mode flips and stay explicit).
+#   --build    also runs `nest build` + `next build`
+#   --api-e2e  also runs the API E2E via scripts/api-e2e.mjs below
 node scripts/verify.mjs
+node scripts/verify.mjs --build --api-e2e
+
+# API E2E helper: disables the backend scheduler (CRON_SCHEDULER_ENABLED=false
+# + recreate), waits for API-only state, runs the suite, restores the backend
+# to enabled mode, and exits 0 only if all of that succeeded
+node scripts/api-e2e.mjs
 ```
 
 - **Unit: 14 suites** — model catalog, workspace service + tools,
@@ -437,9 +445,16 @@ node scripts/verify.mjs
 - **One-command verify** (`scripts/verify.mjs`) — zero-dependency;
   runs the REST docs guard, the test-count guard, backend unit tests,
   backend eslint + `tsc --noEmit`, and frontend eslint + `tsc
-  --noEmit` in one pass, failing fast with the step name. The API E2E,
-  browser E2E, and `next build` stay explicit (docker mode flips /
-  Chrome / longer runs).
+  --noEmit` in one pass, failing fast with the step name. Flags:
+  `--build` adds `nest build` + `next build`; `--api-e2e` adds the API
+  E2E step. The browser E2E stays explicit (Chrome + per-mode runs).
+- **API E2E helper** (`scripts/api-e2e.mjs`) — zero-dependency; flips the
+  backend to `CRON_SCHEDULER_ENABLED=false` + recreate, waits until
+  `/api/cron/scheduler` reports `enabled:false`, runs
+  `cd backend && npm run test:e2e`, restores the backend to enabled mode
+  and waits for `enabled:true` — the restore runs even when the suite or a
+  flip fails, and the exit code is non-zero unless the whole pipeline is
+  green.
 - **Test-count drift guard** (`scripts/verify-test-counts.mjs`) — zero
   dependencies; counts the unit spec files under `backend/src` and the
   API E2E spec files under `backend/test`, then verifies the README

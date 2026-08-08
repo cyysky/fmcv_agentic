@@ -9,8 +9,11 @@
  *   4. backend lint + type check
  *   5. frontend lint + type check
  *
- * Not included (they need external state / docker mode flips and are run
- * explicitly per round): backend API E2E, browser E2E, next build.
+ * Flags:
+ *   --build    also run backend `nest build` + frontend `next build`
+ *   --api-e2e  also run the API E2E suite via scripts/api-e2e.mjs (it flips
+ *              the backend to API-only mode and restores it to enabled)
+ * Not included by default (need external state / longer runs): browser E2E.
  *
  * Exit code 0 = everything green; non-zero stops at the first failure.
  */
@@ -30,6 +33,14 @@ const steps = [
   { label: "frontend lint", cmd: "npx", args: ["eslint", "."], cwd: join(root, "frontend") },
 ];
 
+if (process.argv.includes("--build")) {
+  steps.push({ label: "backend build (nest)", cmd: "npm", args: ["run", "build"], cwd: join(root, "backend") });
+  steps.push({ label: "frontend build (next)", cmd: "npm", args: ["run", "build"], cwd: join(root, "frontend") });
+}
+if (process.argv.includes("--api-e2e")) {
+  steps.push({ label: "backend API E2E (flip + restore)", cmd: "node", args: ["scripts/api-e2e.mjs"], cwd: root });
+}
+
 for (const step of steps) {
   process.stdout.write(`\n=== ${step.label} ===\n`);
   const r = spawnSync(step.cmd, step.args, { cwd: step.cwd, stdio: "inherit", shell: process.platform === "win32" });
@@ -38,5 +49,5 @@ for (const step of steps) {
     process.exit(r.status ?? 1);
   }
 }
-console.log("\nverify OK — guards, backend unit/lint/types, frontend lint/types all green.");
+console.log("\nverify OK — all requested checks green.");
 process.exit(0);
