@@ -1,42 +1,49 @@
-# Round 82 — browser E2E proof of the API-only scheduler chip (2026-08-09)
+# Round 83 — job-row lease-group badge and per-group `/api/cron` filter (2026-08-09)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 81's first focus item: browser-level proof that the
-/cron UI shows the API-only state when the backend runs with
-`CRON_SCHEDULER_ENABLED=false`.
+round executed Round 82's first focus item: surface `schedulerGroup` on every
+job row and let ops filter the `/api/cron` list per lease group.
 
 ## What changed this round
 
-- **Fixed a scheduler-chip race bug found by the new assertion** — the
-  scheduler-status and overview fetches shared one sequence counter, so the
-  overview's newer request silently discarded the scheduler response when it
-  won the race; the chip stayed empty even though `/cron/scheduler` 200'd.
-  Each feed now keeps its own sequence guard (`schedulerSeq`/`overviewSeq`).
-- **API-only chip is asserted in browser E2E** — the cron flow now checks
-  the header chip up front: `E2E_API_ONLY=1` expects "Scheduler disabled —
-  API-only" + "no lease · no background firing"; the default run expects
-  "Scheduler active on this node" or "Scheduler standby — lease held
-  elsewhere" (screenshot + `flow.schedulerChip` recorded per run).
-- **Overview lease gauge is mode-aware** — with `CRON_SCHEDULER_ENABLED=false`
-  the cluster-overview lease chip renders `group · disabled · no lease`
-  (previously it said "expired · <stale owner>"); the E2E asserts the
-  disabled gauge text in API-only mode and the active chip otherwise.
-- **Docs** — `e2e/README.md` gained the `E2E_API_ONLY` variable row and
-  `README.md` shows the one-line API-only browser E2E invocation.
+- **`GET /api/cron` accepts optional `?group=`** — the controller trims the
+  query and the service translates it into a `schedulerGroup` `where` clause
+  (same group semantics the overview and transition events use); no group
+  means all jobs, newest first as before.
+- **Each cron job row now shows its lease-group badge** — a small
+  `schedulerGroup` chip (default: `default`) with a hover title, next to the
+  schedule tag, so ownership is visible at the row level.
+- **Toolbar Group filter** — the `/cron` page gained a `Group:` select fed by
+  the overview's authoritative `jobGroups` list ("All groups" + `group · N
+  jobs"); picking a group re-fetches `/api/cron?group=<g>` (effect deps
+  include the filter, so switching groups always refreshes). The badge label
+  and filter select carry `data-testid`s for the browser E2E.
+- **Tests** — unit spec proves the service applies the group `where`;
+  API E2E creates a foreign-group job via Prisma, asserts `?group=` narrows
+  the list to that group (and excludes it from `default`), then deletes it.
+- **Browser E2E** — the cron journey now asserts the row badge reads
+  `default`, seeds a foreign-group job straight into Postgres (year-ahead
+  `nextRunAt` so the scheduler never fires it), waits for the filter option,
+  filters to the foreign group (main job hidden, foreign job shown), resets
+  to All groups (main job returns), and `cronCleanup` deletes the seeded row
+  and proves zero remain.
+- **Docs** — REST table documents `?group=` on `GET /api/cron`; the cron UI
+  bullet mentions the row badge + toolbar filter; the browser-E2E journey
+  description covers the new assertion.
 
 ## Test status
 
-- Backend unit: **181 passed / 14 suites**; `npx tsc --noEmit` +
-  `npx eslint .` clean.
-- Backend API E2E: **122 passed / 12 suites** with the live Docker backend
-  running the scheduler (Jest keep-alive warning remains, exit code 0).
-- Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; `next build`
-  clean.
-- Docs drift guard OK — routes 70 / docs rows 69 (no route change).
-- Browser E2E: **all checks passed twice** — enabled mode (scheduler
-  active/standby + active gauge chip) and `E2E_API_ONLY=1` mode (disabled
-  chip + disabled gauge chip), both zero console/network/HTTP errors;
-  report refreshed; screenshots regenerated (gitignored as usual).
+- Backend unit: **182 passed / 14 suites**; `npx tsc --noEmit` clean.
+- Backend API E2E: **123 passed / 12 suites** with the live Docker backend in
+  enabled mode (Jest keep-alive warning remains, exit code 0).
+- Frontend `npx tsc --noEmit` + `npx eslint app/cron/cron-client.tsx` clean;
+  `next build` clean.
+- Docs drift guard OK — routes 70 / docs rows 69.
+- Browser E2E: **all checks passed twice** — enabled mode (active/standby
+  chip) and `E2E_API_ONLY=1` mode (disabled chip + disabled gauge), both with
+  the new badge + filter flow, zero console/network/HTTP errors. The checked-
+  in report holds the API-only run (the enabled run's report was overwritten —
+  see tickets).
 
 ## Known issues / open tickets
 
@@ -44,26 +51,27 @@ round executed Round 81's first focus item: browser-level proof that the
   after the multi-replica suite closes; suites pass with exit code 0.
 - **Low** — docs test-count paragraphs drift with every test change; keep
   syncing manually or trim the bullets to suite counts.
+- **Low** — the E2E report + screenshots only keep the last mode's run, so
+  enabled-mode evidence from the same round is not archived (Round 82 ticket,
+  carried).
 - Load-all is deliberately capped (200 runs, 500 transition events,
   5 pages); a history deeper than that shows "First N runs/transitions"
   (bounded UI memory).
 
 ## Next round focus
 
-- **Ownership in the job row** — surface `schedulerGroup` on the individual
-  job cards/rows and optionally filter `/api/cron` list per group, so ops
-  can see (and filter) who owns each job at the row level, not only in the
-  cluster overview.
-- **Tidy the docs test-count paragraphs** — trim the unit/API e2e bullets
-  to suite-level counts or wire an automatic consistency check so exact
-  numbers stop drifting.
-- **Browse for other friction** — e.g. the E2E report only keeps the last
-  mode's run; consider writing mode-suffixed reports/screenshots so both
-  enabled and API-only evidence is archived per round.
+- **Tidy the docs test-count paragraphs** — trim the unit/API e2e bullets in
+  README/ROUND to suite-level counts or wire an automatic consistency check
+  so exact numbers stop drifting.
+- **Mode-suffixed E2E reports/screenshots** — write the browser E2E report as
+  `report-<enabled|api-only>.json` (and screenshots per mode) so both modes'
+  evidence is archived per round instead of the last-run-only artifact.
+- **Browse for other friction** — sweep the current journeys for remaining
+  rough edges (e.g. stale client caches, filter/refresh interplay, error
+  states), fix what is cheap and ticket what is not.
 
 ## Loop state
 
-Loop state: running — Round 82 delivered browser E2E proof of the API-only
-chip (and the API-only overview gauge), plus a real frontend race bug it
-caught; backend/API/browser suites are all green in both modes. No exit
-condition fires; proceed to Round 83.
+Loop state: running — Round 83 delivered row-level lease-group ownership in
+the cron UI plus per-group list filtering, with unit/API/frontend/browser
+suites all green (both modes). No exit condition fires; proceed to Round 84.
