@@ -1185,3 +1185,14 @@ behavior-relevant changes per round.
 ### Changed
 - Postgres persistence extended from `connections` to `channels`,
   `channel_members`, `channel_messages` (Prisma models + migrations).
+
+## Round 2026-08-08 — Round 43 · autonomous iteration round 43 (verification)
+
+### Changed
+- Full green-gate re-verification of the completed feature set: backend unit
+  146/146, API E2E 107/107, backend lint/build/tsc clean, frontend
+  lint/tsc/build clean; live smoke (`/`, buckets, cron, skills) all 200.
+- Browser E2E re-run (exit 0): 21 route probes + channel, sessions, files,
+  HTML view/new-tab, buckets, cron, skills, and settings journeys with zero
+  console/network errors; `e2e/report.json` + screenshots refreshed.
+- Docs re-scanned for stale persistence claims — none found.
