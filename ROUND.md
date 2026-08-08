@@ -1,86 +1,89 @@
-# ROUND 25 — 2026-08-08 (autonomous iteration round 25)
+# ROUND 26 — 2026-08-08 (autonomous iteration round 26)
 
 User instruction: **read on loop.md and do works**. `DIRECTION.md` carries
 active human direction (managed document buckets, cron jobs, agent skills,
-HTML view). Round 24 landed the buckets backend; this round finishes
-DIRECTION item 1 with the **buckets UI + browser E2E**, then hands off to
-cron jobs.
+HTML view). Round 25 finished DIRECTION item 1 (buckets UI + browser E2E);
+this round completes DIRECTION item 2 (**cron jobs**) end to end and hands
+off to agent skills.
 
 ## What changed this round
 
-- **Buckets UI (`/buckets`)** — new Next.js page + client component wired to
-  the Round 24 API: loads agent/project workspaces, lists buckets (with
-  document counts), creates a bucket (unique name, folder type
-  project/agent, folder name from the live workspace list), opens a bucket
-  detail, uploads documents via FormData, downloads via blob + anchor,
-  reload-persists, and shows a read-only notice. Duplicate bucket names and
-  duplicate uploads render the API's 409 as a dismissible in-page error
-  banner; per-document kind badges (pdf/text/video/audio/other), sizes, and
-  upload timestamps are displayed. Dark-mode friendly + responsive
-  (`buckets.module.css`); `/buckets` is in the global nav and home page now
-  has an `Open Buckets` CTA.
-- **Browser E2E buckets journey** (`e2e/browser-e2e.mjs`) — creates a bucket
-  through the UI (agent folder), proves a duplicate bucket name 409s in-page,
-  uploads a text document, proves a duplicate upload 409s (immutable
-  documents), downloads via CDP `Browser.setDownloadBehavior` and
-  byte-compares the saved file, reloads and verifies bucket + document
-  persistence, then removes fixtures server-side (files API for physical
-  files + psql rows in the compose `fmcv-db` container via
-  `bucketRowsByNameLike` / `deleteBucketRowsFor`; buckets expose no delete
-  endpoint by design). Route probes now cover `/buckets` light/dark/mobile;
-  the global-nav journey clicks through `/buckets`.
-- **E2E harness: expected-4xx handling** — `wireErrorCapture` accepts an
-  `allowedStatuses` option: intentionally triggered responses (buckets: 409)
-  and their browser log lines are recorded under `expectedHttp` rather than
-  counted as page-quality failures. Fixed a buckets-gate bug that read
-  `flow.downloadVerified` (files-shaped) instead of
-  `flow.result.downloadVerified`, so a fully passing journey falsely failed.
-- **Docs** — README buckets bullet now describes the `/buckets` UI (was
-  "API only; UI planned") and the browser-E2E paragraph covers all five
-  routes + the buckets journey; e2e README download wording matches the
-  actual saved-to-disk verification; CHANGELOG gained this entry.
+- **Cron backend** — new `CronJob` model + `cronJobs` relation on
+  `Connection` (migration `20260808080000_add_cron_jobs`): unique job names,
+  five-field cron schedules validated with `cron-parser`, agent-turn tasks
+  (prompt + optional model / connection / maxSteps), enabled flag, and
+  persisted `nextRunAt` / `lastRun*` fields. New `/api/cron*` endpoints
+  create/list/get/patch/delete plus `POST /:id/run` for immediate execution;
+  unique-name conflicts 409 and delete-while-running 409.
+- **In-process scheduler** — a 1s ticker runs due jobs against an in-memory
+  mirror, slides `nextRunAt` to the next slot after every run, guards
+  per-job concurrency, re-derives next-run timing on boot, and marks jobs
+  left `running` by a crash as `error`. Run results (done/error, message,
+  model, duration) persist on the row.
+- **Cron UI (`/cron`)** — human-facing Next.js page: create/edit/pause/
+  resume/run-now/two-click-delete jobs, status pills
+  (Idle/Running/Done/Failed/Paused), last-run + next-run lines, inline
+  schedule help, dismissible banners, dark-mode friendly and responsive.
+  `/cron` is in the global nav and the home page gained an `Open Cron` CTA;
+  the 360px nav fit was fixed by hiding the brand and tightening padding at
+  the compact breakpoint.
+- **Cron browser E2E** — CDP journey creates a job through the UI
+  (fixture name, yearly schedule so the scheduler never fires mid-flow,
+  "Next run:" verified), clicks **Run now** and waits for the status pill to
+  reach `Done`/`Failed`, renames it, pauses (`Paused` + "Next run: paused"),
+  resumes, and deletes with the two-click confirm; DELETE-API cleanup retried
+  on 409 and the stale sweep now removes `browser-e2e-cron-*` rows. Route
+  probes grew to 19 (`/cron` light/dark/mobile), and the nav journey clicks
+  through `/cron`.
+- **Live gateway key restoration** — the previous full container rebuild had
+  left `AGENT_API_KEY` empty in compose, so live LLM turns 401'd and the
+  sessions journey failed; the backend was restarted with the local provider
+  key passed as a runtime env var only (never committed), and the cron
+  run-now reached `Done` through the live default gateway.
+- **Type-safety fix** — `cron.service.spec.ts` mock store is explicitly
+  typed (`Record<string, jest.Mock>`), so `tsc --noEmit` (full tsconfig,
+  including specs) is clean again.
+- **Docs** — README updated (cron feature bullet, REST table, test counts,
+  browser-E2E paragraph: six routes / 19 probes / cron journey), e2e README
+  gained the cron route + journey sections, and CHANGELOG has this entry.
 
 ## Test status
 
-- Backend unit: **112 passed / 12 suites** (`npm test`).
-- API E2E: **79 passed / 8 suites** (`npm run test:e2e`, real Postgres).
-- Backend `nest build` clean; `tsc --noEmit` clean; scoped eslint clean
-  (`src/buckets/**/*.ts` + `test/buckets.e2e-spec.ts`). Note: full-repo
-  backend `npm run lint` still reports a pre-existing backlog of 377 errors
-  across legacy files untouched this round (unchanged at HEAD).
-- Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
-- Browser E2E: exit 0 — 16 route probes (`/`, `/settings`, `/agent`,
-  `/files`, `/buckets` × light/dark/mobile) + nav, agent-channel,
-  sessions/saved-connection, files, **buckets**, and settings journeys, all
-  with zero console/network errors (the buckets journey's intentional 409s
-  are recorded as expected). Screenshots + `e2e/report.json` refreshed;
-  fixtures swept clean (channels/sessions/connections/buckets/project
-  folders).
+- Unit: **126 passed / 13 suites** (112 → +14 cron service).
+- API E2E: **91 passed / 9 suites** (79 → +12 cron; agent service stubbed);
+  one initial ordering/timing flake in `agent.e2e-spec.ts` did not reproduce
+  across three consecutive green full-suite runs.
+- Backend `nest build` + `tsc --noEmit` clean.
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E exit 0: 19 route probes (`/`, `/settings`, `/agent`, `/files`,
+  `/buckets`, `/cron` × light/dark/mobile) plus nav, agent-channel,
+  sessions/saved-connection, files, buckets, **cron**, and settings
+  journeys — zero console/network errors; cron run-now reached `Done` via
+  the live default gateway; screenshots + `e2e/report.json` refreshed.
 
 ## Known issues / open tickets
 
-- Buckets have no delete/rename endpoints by design (read-only); there is no
-  admin/cleanup path yet — browser-E2E fixtures are cleaned via psql in the
-  compose DB.
-- Uploads are memory-buffered via `FileInterceptor` with a 100 MB cap; a
-  later slice can stream/buffer to disk for larger files.
-- DIRECTION item 2 (**cron jobs**) hasn't started; item 3 (**agent skills**)
-  and item 4 (**view HTML by link / new tab-window**) remain open.
+- Scheduler runs in-process: only one backend instance should be scaled, and
+  a backend restart re-derives next-run timing from the persisted row.
+- Buckets still have no delete/rename endpoints (read-only by design).
 - Full-repo backend eslint backlog predates this round (legacy files).
+- DIRECTION items 1 (buckets) and 2 (cron jobs) are done; item 3
+  (**agent skills**) and item 4 (**view HTML by link / new tab-window**)
+  remain open.
 
 ## Next round focus
 
-1. **Cron jobs** (DIRECTION.md item 2) — create/manage cron jobs (schedule +
-   recurring task runner).
-2. **Agent skills** (DIRECTION.md item 3) — agents can create, install, and
+1. **Agent skills** (DIRECTION.md item 3) — agents can create, install, and
    use skills.
-3. **View HTML** (DIRECTION.md item 4) — view HTML by link, or open it in a
+2. **View HTML** (DIRECTION.md item 4) — view HTML by link, or open it in a
    new tab or window.
+3. **Housekeeping** — backend eslint backlog cleanup when time permits.
 
-Round summary: **Round 25: buckets UI + browser E2E landed — `/buckets`
-create/upload/list/download with in-page 409s and reload persistence, driven
-end-to-end by CDP (expected 4xx handling added to the harness), completing
-DIRECTION item 1.** Tests: 112 unit + 79 API E2E passed / 0 failed; frontend
-lint+tsc+build clean; browser E2E exit 0 with zero console/network errors.
-Committed as git tag `round-25`. Next: cron jobs · agent skills · view HTML.
-Exit checked: none — continuing (human direction active).
+Round summary: **Round 26: cron jobs landed — backend + UI + browser E2E,
+with unique names, validated schedules, pause/resume/run-now/delete, and a
+restored live gateway key (environment-only).** Tests: 126 unit + 91 API E2E
+passed / 0 failed (one initial, non-reproducing flake noted); frontend
+lint+tsc+build clean; browser E2E exit 0 with 19 probes and zero
+console/network errors. Committed as git tag `round-26`. Next: agent skills ·
+view HTML · housekeeping. Exit checked: none — continuing (human direction
+active).

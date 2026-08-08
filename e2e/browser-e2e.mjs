@@ -12,7 +12,8 @@
 //                            # (defaults to the APP hostname or `hostname -I`)
 //
 // Checks:
-//   1. /, /settings, /agent load without console errors / failed network requests
+//   1. Every SPA route (/, /agent, /files, /buckets, /cron, /settings) loads
+//      without console errors / failed network requests
 //   2. Each route renders its expected document.title (browser tab title)
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
@@ -26,11 +27,11 @@
 //      back, download it (wire headers/bytes + saved-to-disk when CDP allows),
 //      then delete both through the UI and verify server-side removal
 //   8. Global nav: active-route state per page + nav links drive real
-//      client-side navigation between all five routes
-//   9. Dark mode: all five routes re-probed with prefers-color-scheme: dark
+//      client-side navigation between all six routes
+//   9. Dark mode: all six routes re-probed with prefers-color-scheme: dark
 //      (Emulation.setEmulatedMedia), asserting dark surfaces actually apply
 //      and the pages still render without console/network errors
-//   10. Mobile: all five routes re-probed at 360x640 with device metrics,
+//   10. Mobile: all six routes re-probed at 360x640 with device metrics,
 //      asserting no horizontal overflow, nav links fit, and the agent
 //      composer / files row grid are usable
 //   10b. Buckets: create a read-only document bucket through the /buckets UI
@@ -39,6 +40,10 @@
 //      when available), reload and verify both bucket and document persist,
 //      then clean up (files via the files API, DB rows via psql in the
 //      compose db container — buckets expose no delete API by design)
+//   10c. Cron: create a cron job through the /cron UI, run it now (waiting
+//      for a Done/Failed terminal status pill), rename it through the UI,
+//      pause/resume it, then delete it with the two-click confirm and verify
+//      server-side cleanup
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -328,7 +333,7 @@ const navChecks = {
   present: `!!${selExpr('nav[aria-label="Main"]')}`,
   links: `(() => {
     const hrefs = [...document.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute("href"));
-    return ["/", "/agent", "/files", "/buckets", "/settings"].every((h) => hrefs.includes(h));
+    return ["/", "/agent", "/files", "/buckets", "/cron", "/settings"].every((h) => hrefs.includes(h));
   })()`,
 };
 const navActive = (href) =>
@@ -457,6 +462,19 @@ async function probeRoute(route) {
     }
     await delay(600);
 
+    if (route.clickBeforeChecks) {
+      const clicked = await evalJs(c, jsClick(route.clickBeforeChecks, true));
+      if (!clicked) throw new Error(`${route.route}: before-checks click ${route.clickBeforeChecks} missing`);
+      const panelSeen = await waitFor(
+        c,
+        `!!document.querySelector('form[class*="panel"]')`,
+        10000,
+        400,
+        `${route.route} panel`,
+      );
+      if (!panelSeen) throw new Error(`${route.route}: panel never opened for checks`);
+    }
+
     const docTitle = await evalJs(c, "document.title");
     const body = await evalJs(c, "document.body.innerText");
     const checks = {};
@@ -546,6 +564,7 @@ async function navFlow() {
 
     await clickAndVerify("/files", "/files", "Files - ", "files");
     await clickAndVerify("/buckets", "/buckets", "Buckets - ", "buckets");
+    await clickAndVerify("/cron", "/cron", "Cron - ", "cron");
     await clickAndVerify("/settings", "/settings", "Settings - ", "settings");
     await clickAndVerify("/agent", "/agent", "Agent - ", "agent");
     await clickAndVerify("/", "/", "FMCV Agentic", "home");
@@ -2150,6 +2169,270 @@ async function bucketsCleanup(flow) {
   return ok ? "clean" : `error: ${JSON.stringify(detail)}`;
 }
 
+
+/** Find a cron job by name through the API (used to capture the server id
+ *  for cleanup and to verify server-side state). */
+async function cronFindByName(name) {
+  const res = await fetch(`${API}/cron`);
+  if (!res.ok) throw new Error(`list cron -> HTTP ${res.status}`);
+  const rows = await res.json();
+  return (Array.isArray(rows) ? rows : []).find((j) => j.name === name) ?? null;
+}
+
+/** End-to-end cron journey: create through the /cron UI, run now (accepting
+ *  either terminal status, like the channel flow), rename, pause, resume,
+ *  then delete via the two-click confirm. Real fixtures only; cron exposes a
+ *  full CRUD API so cleanup is a plain idempotent DELETE. */
+async function cronFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/cron`;
+  log(`flow cron -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, jobId: null, jobName: null };
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "cron ready");
+    if (!ready) throw new Error("cron flow: page never loaded");
+    const page = await waitFor(c, `document.body.innerText.includes("Cron Jobs")`, 30000, 600, "cron page");
+    if (!page) throw new Error("cron flow: page never rendered");
+    const started = Date.now();
+
+    const stamp = Date.now().toString(36);
+    const jobName = `browser-e2e-cron-${stamp}`;
+    const renamed = `${jobName}-renamed`;
+    flow.jobName = jobName;
+
+    // 1. Create a job through the UI. Use a yearly schedule so the scheduler
+    //    never fires it mid-flow (run-now drives the only execution).
+    const openCreate = await evalJs(c, jsClick("New cron job", true));
+    if (!openCreate) throw new Error("cron flow: New cron job button missing");
+    const formReady = await waitFor(
+      c,
+      `!!document.querySelector('input[aria-label="Cron job name"]')`,
+      10000,
+      400,
+      "create form",
+    );
+    if (!formReady) throw new Error("cron flow: create form never appeared");
+    await evalJs(c, jsSetInput('input[aria-label="Cron job name"]', jobName));
+    await evalJs(c, jsSetInput('input[aria-label="Cron schedule"]', "0 0 1 1 *"));
+    await evalJs(c, jsSetInput('textarea[aria-label="Cron prompt"]', "Reply with the single word: ok"));
+    await delay(150);
+    const created = await evalJs(c, jsClick("Create job", true));
+    if (!created) throw new Error("cron flow: Create job button missing");
+    const rowSeen = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${jobName}"]`)})`, 15000, 500, "cron row");
+    if (!rowSeen) throw new Error("cron flow: created job never listed");
+    const createNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Created job ${jobName}`)}) ?? false`,
+      5000,
+      300,
+      "create notice",
+    );
+    if (!createNotice) throw new Error("cron flow: create success notice missing");
+    const nextRunText = await evalJs(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${jobName}"]`)})?.innerText.includes("Next run:") ?? false`,
+    );
+    if (!nextRunText) throw new Error("cron flow: created row lacks Next run info");
+    flow.createdViaUi = true;
+    flow.steps.push("created-job");
+    for (const deadline = Date.now() + 10000; Date.now() < deadline;) {
+      flow.jobId = (await cronFindByName(jobName))?.id ?? null;
+      if (flow.jobId) break;
+      await delay(300);
+    }
+    if (!flow.jobId) throw new Error("cron flow: created job not found server-side");
+    await screenshot(c, "cron-created.png");
+
+    // 2. Run now: the POST awaits the agent turn server-side, so wait for the
+    //    status pill to reach a terminal button label (Done/Failed). Like the
+    //    channel flow, either terminal satisfies the page-quality gate; Done
+    //    is preferred (the compose backend usually routes to a live LLM).
+    const runClicked = await evalJs(c, rowBtnExpr(jobName, "Run now"));
+    if (!runClicked) throw new Error("cron flow: Run now button missing");
+    const pillExpr = `(() => {
+      const pill = document.querySelector(${JSON.stringify(`[data-name="${jobName}"] [class*="statusPill"]`)});
+      if (!pill) return null;
+      const t = pill.textContent.trim();
+      return t === "Done" ? "done" : t === "Failed" ? "failed" : null;
+    })()`;
+    const runStatus = await waitFor(c, pillExpr, 120000, 1000, "cron run terminal");
+    if (!runStatus) throw new Error("cron flow: run now never reached a terminal status");
+    flow.runStatus = runStatus;
+    flow.runTerminal = true;
+    flow.steps.push(`run-${runStatus}`);
+    if (runStatus !== "done") {
+      log("  note: cron run-now reached [Failed] terminal (live LLM); continuing like the channel flow");
+    }
+    const runNotice = await waitFor(
+      c,
+      `document.body.innerText.includes(${JSON.stringify(`Ran ${jobName}`)})`,
+      10000,
+      500,
+      "run notice",
+    );
+    flow.runNoticeSeen = !!runNotice;
+    if (!runNotice) throw new Error("cron flow: run success banner missing");
+    await screenshot(c, "cron-run-done.png");
+
+    // 3. Rename through the UI.
+    const editClicked = await evalJs(c, rowBtnExpr(jobName, "Edit"));
+    if (!editClicked) throw new Error("cron flow: Edit button missing");
+    const editTitle = await waitFor(c, `document.body.innerText.includes("Edit ${jobName}")`, 10000, 400, "edit mode");
+    if (!editTitle) throw new Error("cron flow: edit mode never opened");
+    await evalJs(c, jsSetInput('input[aria-label="Cron job name"]', renamed));
+    await delay(150);
+    const saveClicked = await evalJs(c, jsClick("Save changes", true));
+    if (!saveClicked) throw new Error("cron flow: Save changes button missing");
+    const renamedRow = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${renamed}"]`)})`, 15000, 500, "renamed cron row");
+    if (!renamedRow) throw new Error("cron flow: renamed job never listed");
+    const saveNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Saved job ${renamed}`)}) ?? false`,
+      5000,
+      400,
+      "save notice",
+    );
+    if (!saveNotice) throw new Error("cron flow: save success notice missing");
+    flow.editedViaUi = true;
+    flow.steps.push("edited-job");
+
+    // 4. Pause: pill must flip to Paused and the Next run line must say paused.
+    const pauseClicked = await evalJs(c, rowBtnExpr(renamed, "Pause"));
+    if (!pauseClicked) throw new Error("cron flow: Pause button missing");
+    const pausedPill = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${renamed}"] [class*="statusPill"]`)})?.textContent.trim() === "Paused"`,
+      10000,
+      400,
+      "paused pill",
+    );
+    const pausedNext = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${renamed}"]`)})?.innerText.includes("Next run: paused") ?? false`,
+      10000,
+      400,
+      "paused next run",
+    );
+    const pauseNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Paused ${renamed}`)}) ?? false`,
+      5000,
+      400,
+      "pause notice",
+    );
+    flow.paused = !!(pausedPill && pausedNext && pauseNotice);
+    if (!flow.paused) throw new Error("cron flow: pause did not take effect");
+    flow.steps.push("paused");
+    await screenshot(c, "cron-paused.png");
+
+    // 5. Resume: the saved terminal status returns and Next run is a real time again.
+    const resumeClicked = await evalJs(c, rowBtnExpr(renamed, "Resume"));
+    if (!resumeClicked) throw new Error("cron flow: Resume button missing");
+    const resumedState = await waitFor(
+      c,
+      `(() => {
+        const pill = document.querySelector(${JSON.stringify(`[data-name="${renamed}"] [class*="statusPill"]`)});
+        const row = document.querySelector(${JSON.stringify(`[data-name="${renamed}"]`)});
+        return !!pill && pill.textContent.trim() !== "Paused" && !!row && !row.innerText.includes("Next run: paused");
+      })()`,
+      15000,
+      500,
+      "resumed state",
+    );
+    const resumeNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Resumed ${renamed}`)}) ?? false`,
+      5000,
+      400,
+      "resume notice",
+    );
+    flow.resumed = !!(resumedState && resumeNotice);
+    if (!flow.resumed) throw new Error("cron flow: resume did not take effect");
+    flow.steps.push("resumed");
+
+    // 6. Delete via the two-click confirm; the row must disappear from the UI.
+    const delClicked = await evalJs(c, rowBtnExpr(renamed, "Delete"));
+    if (!delClicked) throw new Error("cron flow: Delete button missing");
+    const confirmReady = await waitFor(
+      c,
+      `(() => {
+        const row = document.querySelector(${JSON.stringify(`[data-name="${renamed}"]`)});
+        return !!row && [...row.querySelectorAll("button")].some((b) => b.textContent.trim() === "Confirm?");
+      })()`,
+      5000,
+      300,
+      "delete confirm",
+    );
+    if (!confirmReady) throw new Error("cron flow: two-click confirm never armed");
+    const confirmClicked = await evalJs(c, rowBtnExpr(renamed, "Confirm?"));
+    if (!confirmClicked) throw new Error("cron flow: Confirm? button missing");
+    const rowGone = await waitFor(c, `!document.querySelector(${JSON.stringify(`[data-name="${renamed}"]`)})`, 15000, 500, "row deleted");
+    if (!rowGone) throw new Error("cron flow: deleted job still listed");
+    const deleteNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Deleted job ${renamed}`)}) ?? false`,
+      5000,
+      400,
+      "delete notice",
+    );
+    flow.deletedViaUi = !!deleteNotice;
+    if (!flow.deletedViaUi) throw new Error("cron flow: delete success notice missing");
+    flow.steps.push("deleted-job");
+    await screenshot(c, "cron-deleted.png");
+
+    flow.result = {
+      createdViaUi: true,
+      runTerminal: true,
+      runStatus: flow.runStatus,
+      runNoticeSeen: true,
+      editedViaUi: true,
+      paused: true,
+      resumed: true,
+      deletedViaUi: true,
+    };
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  cron journey done in ${flow.timings.elapsedMs}ms (run status: ${flow.runStatus})`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Server-side cleanup + verification for the cron journey: delete the
+ *  fixture by id (the API refuses DELETE while running, so retry briefly on
+ *  409) and confirm the id is gone. */
+async function cronCleanup(flow) {
+  if (!flow?.jobId) return "none";
+  let detail = null;
+  try {
+    let deleted = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const del = await fetch(`${API}/cron/${flow.jobId}`, { method: "DELETE" });
+      if (del.ok) {
+        deleted = true;
+        break;
+      }
+      if (del.status === 404) {
+        deleted = true;
+        break;
+      }
+      if (del.status !== 409) throw new Error(`delete -> HTTP ${del.status}`);
+      await delay(2000);
+    }
+    if (!deleted) throw new Error("delete refused while running after retries");
+    const check = await fetch(`${API}/cron/${flow.jobId}`);
+    detail = check.status === 404 ? "clean" : `leftover (HTTP ${check.status})`;
+  } catch (err) {
+    detail = `error: ${err.message}`;
+    log(`  cleanup: cron FAILED: ${err.message}`);
+  }
+  if (detail !== "clean") log(`  cleanup: cron not clean (${detail})`);
+  return detail;
+}
+
 /* --------------------------------- main --------------------------------- */
 
 
@@ -2161,7 +2444,7 @@ async function bucketsCleanup(flow) {
  *  channel deletion; any still-present fixture folder is reported, not
  *  silently removed (the read-only project API cannot force a delete). */
 async function staleSweep() {
-  const result = { channels: [], sessions: [], connections: [], buckets: [], projectFolders: [], errors: [] };
+  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
     ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
       String(name ?? "").startsWith(p),
@@ -2212,6 +2495,34 @@ async function staleSweep() {
   } catch (err) {
     result.errors.push(`connections: ${err.message}`);
     log(`  stale sweep: connections FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/cron`);
+    if (!res.ok) throw new Error(`list cron -> HTTP ${res.status}`);
+    const jobs = await res.json();
+    for (const j of Array.isArray(jobs) ? jobs : []) {
+      if (!isFixture(j.name ?? "")) continue;
+      // A stale run-now from an interrupted run can still be in flight; the
+      // API refuses DELETE while running, so wait briefly and retry.
+      let deleted = false;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const del = await fetch(`${API}/cron/${j.id}`, { method: "DELETE" });
+        if (del.ok) {
+          deleted = true;
+          break;
+        }
+        if (del.status !== 409) throw new Error(`delete cron ${j.name} -> HTTP ${del.status}`);
+        await delay(2000);
+      }
+      if (!deleted) throw new Error(`delete cron ${j.name} -> still running after retries`);
+      result.crons.push(j.name);
+    }
+    if (result.crons.length) {
+      log(`  stale sweep: deleted ${result.crons.length} cron job(s) [${result.crons.join(", ")}]`);
+    }
+  } catch (err) {
+    result.errors.push(`cron: ${err.message}`);
+    log(`  stale sweep: cron FAILED: ${err.message}`);
   }
   try {
     const rows = bucketRowsByNameLike("browser-e2e-bucket-%");
@@ -3058,6 +3369,47 @@ async function main() {
       },
     },
     {
+      route: "cron",
+      url: `${APP}/cron`,
+      title: "Cron - FMCV Agentic",
+      waitText: "New cron job",
+      bodyText: { title: "Cron Jobs", newJob: "New cron job", empty: "No cron jobs yet" },
+      jsChecks: {
+        navPresent: navChecks.present,
+        navLinks: navChecks.links,
+        activeCron: navActive("/cron"),
+        newJobBtn: `[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "New cron job")`,
+      },
+    },
+    {
+      route: "cron-dark",
+      url: `${APP}/cron`,
+      emulate: "dark",
+      clickBeforeChecks: "New cron job",
+      title: "Cron - FMCV Agentic",
+      waitText: "New cron job",
+      bodyText: { title: "Cron Jobs", newJob: "New cron job" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        panelDark: `getComputedStyle(document.querySelector('form[class*="panel"]')).backgroundColor === "rgb(17, 24, 39)"`,
+        inputDark: `getComputedStyle(document.querySelector('form[class*="panel"] input')).backgroundColor === "rgb(31, 41, 55)"`,
+        primaryStaysBlue: `getComputedStyle(document.querySelector('button[class*="btnPrimary"]')).backgroundColor === "rgb(37, 99, 235)"`,
+      },
+    },
+    {
+      route: "cron-mobile",
+      shotName: "cron-mobile.png",
+      url: `${APP}/cron`,
+      viewport: { width: 360, height: 640 },
+      title: "Cron - FMCV Agentic",
+      waitText: "New cron job",
+      bodyText: { title: "Cron Jobs", newJob: "New cron job" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+      },
+    },
+    {
       route: "home-dark",
       url: `${APP}/`,
       emulate: "dark",
@@ -3188,6 +3540,8 @@ async function main() {
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
     report.bucketsFlow = await bucketsFlow();
     report.bucketsFlow.cleanup = await bucketsCleanup(report.bucketsFlow.flow);
+    report.cronFlow = await cronFlow();
+    report.cronFlow.cleanup = await cronCleanup(report.cronFlow.flow);
     report.settingsFlow = await settingsFlow();
     log("browser E2E flows done");
   } finally {
@@ -3210,7 +3564,7 @@ async function main() {
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
   const nf = report.navFlow;
-  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 5 || !nf.flow.homeActive || !nf.flow.bucketsActive) {
+  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 6 || !nf.flow.homeActive || !nf.flow.bucketsActive || !nf.flow.cronActive) {
     failures.push(`nav flow: journey not verified (${JSON.stringify(nf && nf.flow)})`);
   }
   const navErrs = errorCount(nf ? nf.errors : {});
@@ -3308,6 +3662,24 @@ async function main() {
   }
   const bucketsErrs = errorCount(bfl ? bfl.errors : {});
   if (bucketsErrs > 0) failures.push(`buckets flow: ${bucketsErrs} console/network error(s)`);
+
+  const cfl = report.cronFlow;
+  if (
+    !cfl ||
+    !cfl.flow.result?.createdViaUi ||
+    !cfl.flow.result?.runTerminal ||
+    !cfl.flow.result?.editedViaUi ||
+    !cfl.flow.result?.paused ||
+    !cfl.flow.result?.resumed ||
+    !cfl.flow.result?.deletedViaUi
+  ) {
+    failures.push(`cron flow: create/run/edit/pause/resume/delete not verified (${JSON.stringify(cfl && cfl.flow)})`);
+  }
+  if (cfl && cfl.cleanup !== "clean") {
+    failures.push(`cron flow: cleanup not verified (${cfl.cleanup})`);
+  }
+  const cronErrs = errorCount(cfl ? cfl.errors : {});
+  if (cronErrs > 0) failures.push(`cron flow: ${cronErrs} console/network error(s)`);
 
   const sfl = report.settingsFlow;
   if (

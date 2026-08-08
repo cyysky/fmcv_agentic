@@ -41,14 +41,14 @@ Environment overrides:
 
 ## What it checks
 
-1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files`, and
-   `/buckets` render their expected content with **no console errors, no
-   uncaught exceptions, no failed network requests, and no HTTP >= 400
-   responses** (measured over CDP events, including polling fetches the SPA
-   makes after first paint).
+1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files`,
+   `/buckets`, and `/cron` render their expected content with **no console
+   errors, no uncaught exceptions, no failed network requests, and no HTTP >=
+   400 responses** (measured over CDP events, including polling fetches the
+   SPA makes after first paint).
 2. **Document titles**: each route must expose its expected browser tab
    title (`FMCV Agentic`, `Settings - FMCV Agentic`, `Agent - FMCV Agentic`,
-   `Buckets - FMCV Agentic`).
+   `Buckets - FMCV Agentic`, `Cron - FMCV Agentic`).
 3. **Channel journey**: on `/agent`, the script opens the Channels tab,
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state

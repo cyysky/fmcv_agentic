@@ -88,6 +88,13 @@ and coordinate multi-agent teams in Slack-style channels.
   and each document is stored exactly once under
   `<folder>/<bucket>/<name>` — duplicate names are rejected in-page with the
   API's 409. Backed by the REST table below.
+- **Cron jobs (`/cron`)** — human-facing page over the cron API: create a
+  recurring agent-turn job (five-field cron expression, prompt, optional
+  model/max-steps, enabled toggle), edit, pause/resume, run it now, and
+  delete it with a two-click confirm. The backend scheduler ticks in-process
+  every second, validates expressions up front, refuses deletes while a job
+  is running, restores next-run timing on boot, and persists every run's
+  terminal result (done/error, message, model, duration) on the row.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -164,6 +171,19 @@ Managed document buckets (read-only; document uploads use a multipart
 | POST   | `/api/buckets/:id/documents`                      | upload a managed document (immutable, never overwritten) |
 | GET    | `/api/buckets/:id/documents/:documentId/download` | stream a document as an attachment  |
 
+Cron jobs (five-field schedules; `name` is unique, delete is rejected while
+a job is running, `POST /:id/run` executes immediately outside the schedule
+and awaits the agent turn):
+
+| Method | Path                 | Purpose                                                   |
+|--------|----------------------|-----------------------------------------------------------|
+| POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
+| GET    | `/api/cron`          | list jobs (with last/next run info)                       |
+| GET    | `/api/cron/:id`      | get one job                                               |
+| PATCH  | `/api/cron/:id`      | update any subset (name/schedule/prompt/model/maxSteps/enabled) |
+| DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
+| POST   | `/api/cron/:id/run`  | run the job now, outside its schedule                     |
+
 Channels:
 
 | Method | Path                                          | Purpose                                     |
@@ -200,7 +220,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 112 tests / 12 suites** — model catalog, workspace service + tools,
+- **Unit: 126 tests / 13 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -223,8 +243,14 @@ cd e2e && node browser-e2e.mjs
   (create/list/get mapped to project/agent folders, unknown project / unknown
   agent / invalid folder-type 400s, duplicate bucket 409 with folder
   rollback, sanitized immutable uploads with kind derivation, duplicate
-  document 409, 100 MB cap, download resolution).
-- **API E2E: 79 tests / 8 suites** (`backend/test/*.e2e-spec.ts`) — real
+  document 409, 100 MB cap, download resolution), and the cron service
+  (create with normalized fields + next-run slot, invalid schedule 400,
+  duplicate-name 409, unknown pinned connection 400, list/get/404, update
+  slides nextRunAt on schedule change and on enable/disable, empty PATCH 400,
+  run-now through the agent records done/error + message/model/duration,
+  restart recovery marks interrupted runs error, delete rejected while
+  running).
+- **API E2E: 91 tests / 9 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -247,21 +273,26 @@ cd e2e && node browser-e2e.mjs
   counts, get-one with empty documents, unknown bucket 404, PDF upload with
   kind/mime/size, duplicate document name 409, missing multipart field 400,
   list after upload, download bytes + attachment headers, missing document
-  404), the API token gate (3), and throttling
+  404), cron jobs (12: create + nextRunAt, duplicate name 409, invalid
+  schedule 400, list/get/404, PATCH name/schedule/enabled + nextRunAt
+  semantics, empty PATCH 400, run-now drives a stubbed agent turn and
+  persists done/error/message/model/duration, delete, delete-while-running
+  409 — the agent service is stubbed so the suite stays hermetic), the API
+  token gate (3), and throttling
   (2: over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
   (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
-  `/agent`, `/files`, `/buckets` render their content and document titles
-  with no console/network errors, asserts the global nav on each route (links
-  present, correct active link), re-runs `/settings`, `/agent`, `/files`, and
-  `/buckets` with CDP
+  `/agent`, `/files`, `/buckets`, and `/cron` render their content and
+  document titles with no console/network errors, asserts the global nav on
+  each route (links present, correct active link), re-runs `/settings`,
+  `/agent`, `/files`, `/buckets`, and `/cron` with CDP
   `prefers-color-scheme: dark` emulation and asserts the dark computed styles
   (card/input/select backgrounds, primary button still blue, body background,
-  kind badges on buckets),
-  re-probes all five routes at 360×640 device metrics asserting no horizontal
+  kind badges on buckets, and the cron create panel/inputs),
+  re-probes all six routes at 360×640 device metrics asserting no horizontal
   overflow, fit nav links, a visible agent composer, and the files responsive
   row grid,
   and drives a nav journey that clicks through every route
@@ -291,7 +322,14 @@ cd e2e && node browser-e2e.mjs
   proves a duplicate upload 409s (immutable documents), downloads the file and
   compares the saved-to-disk bytes, reloads and proves the bucket + document
   survived (fixtures are removed afterwards via the files API + psql in the
-  compose DB), and a settings journey that creates a throwaway connection through the API,
+  compose DB), a cron journey that creates a job through the `/cron` UI
+  (fixture name, yearly schedule so the scheduler never fires mid-flow),
+  verifies the row + success banner + `Next run:` line, clicks **Run now**
+  and waits for the status pill to reach `Done`/`Failed` (whichever the live
+  LLM produces; the compose gateway is configured from the local provider
+  key), then renames the job, pauses it (`Paused` + `Next run: paused`),
+  resumes it, and deletes it with the two-click confirm (fixture removed
+  server-side afterwards via the cron DELETE API), and a settings journey that creates a throwaway connection through the API,
   proves the Edit form opens with a blank API-key field, clicks the form's
   "Test Connection" button against a dead endpoint to prove unsaved values are
   probed gracefully and then Cancel preserves the stored URL, captures the wire

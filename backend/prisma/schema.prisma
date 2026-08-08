@@ -26,6 +26,7 @@ model Connection {
   updatedAt            DateTime @updatedAt
 
   agentSessions AgentSession[]
+  cronJobs      CronJob[]
 
   @@map("connections")
 }
@@ -164,4 +165,35 @@ model ManagedDocument {
   @@unique([bucketId, name])
   @@index([bucketId])
   @@map("managed_documents")
+}
+
+/**
+ * A scheduled cron job (DIRECTION.md item 2). Each job runs a recurring
+ * agent-turn task on a 5-field cron schedule (minute hour day-of-month
+ * month day-of-week). `nextRunAt` is the scheduler's next due time (null
+ * while disabled); `lastRun*` records the most recent execution and result.
+ */
+model CronJob {
+  id             String    @id @default(uuid())
+  name           String    @unique
+  schedule       String
+  taskType       String    @default("agent-turn")
+  prompt         String
+  model          String?
+  connectionId   String?
+  maxSteps       Int?
+  enabled        Boolean   @default(true)
+  lastRunAt      DateTime?
+  lastRunStatus  String? // "running" | "done" | "error"
+  lastRunMessage String?
+  lastRunModel   String?
+  lastRunMs      Int?
+  nextRunAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  connection Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([connectionId])
+  @@map("cron_jobs")
 }

@@ -1,3 +1,65 @@
+## Round 2026-08-08 — autonomous iteration round 26 (tag `round-26`)
+
+### Added
+- **Cron jobs** (DIRECTION.md item 2 — backend slice) — new `CronJob`
+  model + `cronJobs` relation on `Connection` (migration
+  `20260808080000_add_cron_jobs`): unique job names, five-field cron
+  schedules, agent-turn tasks (prompt + optional model / connection /
+  maxSteps), enabled flag, and persisted `nextRunAt` / `lastRun*` fields.
+  New `/api/cron*` endpoints create/list/get/patch/delete, and
+  `POST /:id/run` executes a job immediately outside its schedule.
+- **In-process scheduler** — a 1s ticker checks due jobs against an
+  in-memory mirror; `nextRunAt` slides to the next slot after every run,
+  per-job concurrency is guarded (delete is rejected with 409 while a job is
+  running), schedules are validated up front with `cron-parser`, and a boot
+  recovery pass marks jobs left `running` by a crash as `error`. Run results
+  (done/error, message, model, duration) persist on the row; `nextRunAt`
+  survives backend restarts (re-derived on boot).
+- **Cron UI (`/cron`)** — human-facing page wired to the API: create jobs
+  (name, schedule with inline five-field help, prompt, optional model and
+  max-steps, enabled toggle), edit, pause/resume, run now, and delete with a
+  two-click confirm; status pills (Idle/Running/Done/Failed/Paused), last-run
+  + next-run lines, dismissible success/error banners, dark-mode friendly
+  and responsive. `/cron` sits in the global nav and the home page gained an
+  `Open Cron` CTA.
+- **Cron browser E2E** — the CDP journey creates a job through the UI
+  (fixture name, yearly schedule so the scheduler never fires mid-flow,
+  "Next run:" verified), clicks **Run now** and waits for the status pill to
+  reach `Done`/`Failed` (the compose gateway is configured from the local
+  provider key), renames it, pauses (`Paused` + `Next run: paused`), resumes,
+  and deletes it with the two-click confirm; cleanup uses the cron DELETE API
+  (retried on 409) and the stale sweep now also removes
+  `browser-e2e-cron-*` rows. Route probes grew to 19 (`/cron` in
+  light/dark/mobile with panel/input dark checks and no-overflow nav fit),
+  and the nav journey clicks through `/cron`. To keep the 6-link nav inside
+  a 360px viewport the compact breakpoint hides the brand and tightens link
+  padding.
+- **Type-safety fix** — `cron.service.spec.ts` mock store is explicitly
+  typed (`Record<string, jest.Mock>`), so `tsc --noEmit` (full tsconfig,
+  including specs) is clean again after the cron suite landed.
+
+### Test status
+- Unit **126 passed / 13 suites** (112 → +14 cron service).
+- API E2E **91 passed / 9 suites** (79 → +12 cron, agent service stubbed;
+  three consecutive green full-suite runs; one initial ordering/timing flake
+  in `agent.e2e-spec.ts` did not reproduce).
+- Backend `nest build` + `tsc --noEmit` clean.
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E exit 0: 19 route probes (`/`, `/settings`, `/agent`, `/files`,
+  `/buckets`, `/cron` × light/dark/mobile) plus nav, agent-channel,
+  sessions/saved-connection, files, buckets, **cron**, and settings
+  journeys — zero console/network errors; cron run-now reached `Done` via
+  the live default gateway; screenshots + `e2e/report.json` refreshed.
+
+### Known issues / open tickets
+- Scheduler runs in-process: only one backend instance should be scaled, and
+  a backend restart re-derives next-run timing from the persisted row.
+- Buckets still have no delete/rename endpoints (read-only by design).
+- Full-repo backend eslint backlog predates this round (legacy files).
+- DIRECTION item 1 (buckets) and item 2 (cron jobs) are done; item 3
+  (**agent skills**) and item 4 (**view HTML by link / new tab-window**)
+  remain open.
+
 ## Round 2026-08-08 — autonomous iteration round 25 (tag `round-25`)
 
 ### Added

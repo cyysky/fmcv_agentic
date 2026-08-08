@@ -19,6 +19,9 @@ export default function Home() {
           <Link className={styles.primary} href="/buckets">
             Open Buckets
           </Link>
+          <Link className={styles.primary} href="/cron">
+            Open Cron
+          </Link>
           <Link className={styles.primary} href="/settings">
             Open Settings
           </Link>
