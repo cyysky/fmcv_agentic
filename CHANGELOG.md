@@ -1,3 +1,16 @@
+## Round 2026-08-08 — autonomous iteration round 44 (verification, tag `round-44`)
+
+### Changed
+- Full green-gate re-verification of the completed feature set: backend unit
+  146/146, API E2E 107/107, backend lint/build/tsc clean, frontend
+  lint/tsc clean; live smoke (`/`, buckets, cron, skills) all 200.
+- Browser E2E re-run (exit 0): 21 route probes + channel, sessions, files,
+  HTML view/new-tab, buckets, cron, skills, and settings journeys with zero
+  console/network errors; `e2e/report.json` + screenshots refreshed.
+- Confirmed the DB and workspace fixture baseline is clean after the run
+  (buckets/cron/skills/sessions/connections at 0; only the two default
+  channels remain).
+
 ## Round 2026-08-08 — autonomous iteration round 42 (tag `round-42`)
 
 ### Added

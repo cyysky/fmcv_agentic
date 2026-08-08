@@ -1,34 +1,36 @@
-# ROUND 43 — 2026-08-08 (autonomous iteration round 43)
+# ROUND 44 — 2026-08-08 (autonomous iteration round 44)
 
 User instruction: generic loop prompt ("read on loop.md and do works").
 DIRECTION.md is unchanged since Round 42 (items 1-4 completed and in
-effect). Round 42 declared the loop finished; this round re-verified the
-completed state end-to-end and refreshed the browser E2E artifact set.
+effect). Round 43 declared the loop finished; this round re-verified the
+completed state end-to-end once more (full suite + browser E2E) with no
+code changes needed.
 
 ## What changed this round
 
 - **Full-suite verification** — backend unit 146/146, API E2E 107/107,
   backend lint + `nest build` + `npx tsc --noEmit` clean; frontend lint +
-  `npx tsc --noEmit` + `npm run build` clean; live smoke
-  (`/`, `/api/buckets`, `/api/cron`, `/api/skills`) all 200.
+  `npx tsc --noEmit` clean; live smoke (`/`, `/api/buckets`, `/api/cron`,
+  `/api/skills`) all 200.
 - **Browser E2E re-run, exit 0** — 21 route probes plus every main journey
   (channel, sessions, files, HTML view/new-tab, buckets, cron, skills,
-  settings) with zero console/network errors and clean fixture sweep;
+  settings) with zero console/network errors; bucket duplicate-name and
+  duplicate-upload 409s were the only (expected) HTTP responses;
   `e2e/report.json` + screenshots refreshed against this run.
-- **Docs re-scanned** — no stale persistence claims found; the remaining
-  "in-memory" mentions in code/docs accurately describe live session/job
-  mechanics (DB-backed rows), not install/skill state.
-
-No application code changed: nothing was broken or missing, and there are
-no new tickets.
+- **Fixture sweep confirmed clean** — DB back to baseline (buckets=0,
+  managed_documents=0, cron_jobs=0, skills=0, agent_sessions=0,
+  connections=0, channels=2 defaults only) and the agent workspace contains
+  no `browser-e2e-*`/`round2.md` leftovers.
+- No application code changed: nothing was broken or missing and there are
+  no new tickets.
 
 ## Test status
 
 - Backend unit: **146 passed / 14 suites**; API E2E: **107 passed / 10
   suites**; backend lint + `nest build` + `npx tsc --noEmit` clean.
-- Frontend lint + `npx tsc --noEmit` + `npm run build` clean.
-- Browser E2E: exit 0 (21 route probes, all flows, zero
-  console/network/HTTP errors; fixtures cleaned to baseline).
+- Frontend lint + `npx tsc --noEmit` clean.
+- Browser E2E: exit 0 (21 route probes, all flows, zero console/network
+  errors; fixtures cleaned to baseline).
 - Live smoke: `/` (frontend), `/api/buckets`, `/api/cron`, `/api/skills`
   all 200.
 
