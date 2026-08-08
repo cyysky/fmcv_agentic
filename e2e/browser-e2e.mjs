@@ -2801,9 +2801,10 @@ async function cronFindByName(name) {
 }
 
 /** End-to-end cron journey: create through the /cron UI, run now (accepting
- *  either terminal status, like the channel flow), rename, pause, resume,
- *  then delete via the two-click confirm. Real fixtures only; cron exposes a
- *  full CRUD API so cleanup is a plain idempotent DELETE. */
+ *  either terminal status, like the channel flow), expand + collapse the
+ *  append-only run history, rename, pause, resume, then delete via the
+ *  two-click confirm. Real fixtures only; cron exposes a full CRUD API so
+ *  cleanup is a plain idempotent DELETE. */
 async function cronFlow() {
   const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/cron`;
@@ -2897,6 +2898,65 @@ async function cronFlow() {
     flow.runNoticeSeen = !!runNotice;
     if (!runNotice) throw new Error("cron flow: run success banner missing");
     await screenshot(c, "cron-run-done.png");
+
+    // 2b. Run history: expand the append-only history list and assert the
+    //     terminal run just performed shows status/meta/message (real LLM
+    //     answer here, so no stub text), then collapse it again.
+    if (!flow.jobId) throw new Error("cron flow: no job id for history");
+    const histClicked = await evalJs(c, rowBtnExpr(jobName, "History"));
+    if (!histClicked) throw new Error("cron flow: History button missing");
+    const runsList = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)})`,
+      10000,
+      400,
+      "run history list",
+    );
+    if (!runsList) throw new Error("cron flow: run history never rendered");
+    const runHistoryStatus = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const pill = box.querySelector('[class*="statusPill"]');
+        if (!pill) return null;
+        const t = pill.textContent.trim();
+        return t === "Done" || t === "Failed" ? t : null;
+      })()`,
+      10000,
+      500,
+      "run history status pill",
+    );
+    const expectedPill = flow.runStatus === "done" ? "Done" : "Failed";
+    if (runHistoryStatus !== expectedPill) {
+      throw new Error(
+        `cron flow: history pill ${JSON.stringify(runHistoryStatus)} != expected ${JSON.stringify(expectedPill)}`,
+      );
+    }
+    const historyRow = await evalJs(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return false;
+        const meta = box.querySelector('[class*="runMeta"]');
+        const msg = box.querySelector('[class*="rowMessage"]');
+        return !!meta && !!msg && msg.textContent.trim().length > 0;
+      })()`,
+    );
+    if (!historyRow) throw new Error("cron flow: run history row missing meta/message");
+    flow.historyShown = true;
+    flow.steps.push("run-history");
+    const hideClicked = await evalJs(c, rowBtnExpr(jobName, "Hide history"));
+    if (!hideClicked) throw new Error("cron flow: Hide history button missing");
+    const runsHidden = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)})`,
+      10000,
+      400,
+      "run history hidden",
+    );
+    if (!runsHidden) throw new Error("cron flow: run history did not collapse");
+    await screenshot(c, "cron-history.png");
 
     // 3. Rename through the UI.
     const editClicked = await evalJs(c, rowBtnExpr(jobName, "Edit"));
@@ -3009,6 +3069,7 @@ async function cronFlow() {
       runTerminal: true,
       runStatus: flow.runStatus,
       runNoticeSeen: true,
+      historyShown: true,
       editedViaUi: true,
       paused: true,
       resumed: true,

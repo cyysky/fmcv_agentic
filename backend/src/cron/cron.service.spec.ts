@@ -14,6 +14,7 @@ function prismaDouble(): {
   cronJob: MockStore;
   connection: MockStore;
   cronSchedulerLease: MockStore;
+  cronRun: MockStore;
   $executeRaw: jest.Mock;
 } {
   const cronJob: MockStore = {
@@ -34,10 +35,15 @@ function prismaDouble(): {
   const cronSchedulerLease: MockStore = {
     updateMany: jest.fn(async () => ({ count: 1 })),
   };
+  const cronRun: MockStore = {
+    create: jest.fn(async () => ({ id: 'run-1' })),
+    findMany: jest.fn(async () => []),
+  };
   return {
     cronJob,
     connection: { findUnique: jest.fn(async () => null) },
     cronSchedulerLease,
+    cronRun,
     $executeRaw: jest.fn(async () => 1),
   };
 }
@@ -252,10 +258,7 @@ describe('CronService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           id: 'job-1',
-          OR: [
-            { lastRunStatus: { not: 'running' } },
-            { lastRunStatus: null },
-          ],
+          OR: [{ lastRunStatus: { not: 'running' } }, { lastRunStatus: null }],
         }),
         data: expect.objectContaining({ lastRunStatus: 'running' }),
       }),
@@ -319,7 +322,7 @@ describe('CronService', () => {
     const { service, prisma } = makeSvc();
     prisma.cronJob.create.mockResolvedValue(row());
     await service.create(createDto);
-    const status = await service.schedulerStatus();
+    const status = service.schedulerStatus();
     expect(status).toMatchObject({
       leaseHeld: false,
       leaseGroup: 'default',
@@ -332,18 +335,67 @@ describe('CronService', () => {
     expect(status.leaseExpireAt).toBeNull();
   });
 
+  it('persists a run-history row for a terminal result', async () => {
+    const { service, prisma, agent } = makeSvc();
+    prisma.cronJob.findMany.mockResolvedValue([row()]);
+    await service.onModuleInit();
+    service.onModuleDestroy();
+    agent.runTurn.mockResolvedValue({
+      answer: 'Backlog summarized',
+      model: 'ds4-flash',
+      steps: 2,
+    });
+    prisma.cronJob.create.mockResolvedValue(row());
+    prisma.cronJob.findUnique.mockResolvedValue(
+      row({ lastRunStatus: 'done', lastRunMessage: 'Backlog summarized' }),
+    );
+    const created = await service.create(createDto);
+    await service.runNow(created.id);
+    expect(prisma.cronRun.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          cronJobId: 'job-1',
+          status: 'done',
+          message: 'Backlog summarized',
+          model: 'ds4-flash',
+          ms: expect.any(Number) as number,
+        }),
+      }),
+    );
+  });
+
+  it('lists run history newest-first and 404s on an unknown job', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronJob.findUnique.mockResolvedValue(row());
+    prisma.cronRun.findMany.mockResolvedValue([
+      { id: 'run-2', cronJobId: 'job-1', status: 'done' },
+      { id: 'run-1', cronJobId: 'job-1', status: 'error' },
+    ] as never);
+    const runs = await service.runs('job-1');
+    expect(runs).toHaveLength(2);
+    expect(prisma.cronRun.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { cronJobId: 'job-1' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    );
+    prisma.cronJob.findUnique.mockResolvedValue(null);
+    await expect(
+      service.runs('00000000-0000-4000-8000-000000000000'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('rejects a concurrent run after another replica claimed the job', async () => {
     const { service, prisma, agent } = makeSvc();
     prisma.cronJob.create.mockResolvedValue(row());
     // First claim succeeds; a concurrent replica's claim of the same row then
     // sees lastRunStatus=running and loses the atomic updateMany.
     let claimed = false;
-    prisma.cronJob.updateMany.mockImplementationOnce(
-      async () => {
-        claimed = true;
-        return { count: 1 };
-      },
-    );
+    prisma.cronJob.updateMany.mockImplementationOnce(async () => {
+      claimed = true;
+      return { count: 1 };
+    });
     prisma.cronJob.updateMany.mockImplementationOnce(async () => ({
       count: claimed ? 0 : 1,
     }));
@@ -391,7 +443,6 @@ describe('CronService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-
   it('only the lease holder fires due scheduler ticks', async () => {
     const { service, prisma, agent } = makeSvc();
     // First acquire (startup): lease already held by another replica. Then
@@ -410,10 +461,7 @@ describe('CronService', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           enabled: true,
-          OR: [
-            { lastRunStatus: { not: 'running' } },
-            { lastRunStatus: null },
-          ],
+          OR: [{ lastRunStatus: { not: 'running' } }, { lastRunStatus: null }],
         }),
       }),
     );

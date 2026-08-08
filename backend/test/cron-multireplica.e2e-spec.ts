@@ -33,7 +33,9 @@ interface SchedulerStatus {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Wait until the two replicas settle into exactly one lease holder. */
-async function electHolder(apps: [INestApplication<App>, INestApplication<App>]): Promise<{
+async function electHolder(
+  apps: [INestApplication<App>, INestApplication<App>],
+): Promise<{
   holder: INestApplication<App>;
   standby: INestApplication<App>;
 }> {
@@ -93,9 +95,9 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
         .catch(() => undefined);
     }
     await Promise.all([appA?.close(), appB?.close()]);
-    await prisma
-      .$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${leaseGroup}`
-      .catch(() => undefined);
+    await prisma.$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${leaseGroup}`.catch(
+      () => undefined,
+    );
     if (process.env.CRON_LEASE_GROUP === leaseGroup) {
       delete process.env.CRON_LEASE_GROUP;
     }
@@ -107,10 +109,14 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
     expect(standby).toBeDefined();
     expect(standby).not.toBe(holder);
     const holderStatus = (
-      await request(holder.getHttpServer()).get('/api/cron/scheduler').expect(200)
+      await request(holder.getHttpServer())
+        .get('/api/cron/scheduler')
+        .expect(200)
     ).body as SchedulerStatus;
     const standbyStatus = (
-      await request(standby.getHttpServer()).get('/api/cron/scheduler').expect(200)
+      await request(standby.getHttpServer())
+        .get('/api/cron/scheduler')
+        .expect(200)
     ).body as SchedulerStatus;
     expect(holderStatus.leaseHeld).toBe(true);
     expect(standbyStatus.leaseHeld).toBe(false);
@@ -118,130 +124,140 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
     expect(holderStatus.failoverMs).toBe(5000);
   });
 
-  it(
-    'runs a due job exactly once when the ticker and run-now race across replicas',
-    async () => {
-      const { holder, standby } = await electHolder([appA, appB]);
-      const holderRuns = { runs: 0 };
-      const standbyRuns = { runs: 0 };
-      slowAgent(holder, holderRuns);
-      slowAgent(standby, standbyRuns);
+  it('runs a due job exactly once when the ticker and run-now race across replicas', async () => {
+    const { holder, standby } = await electHolder([appA, appB]);
+    const holderRuns = { runs: 0 };
+    const standbyRuns = { runs: 0 };
+    slowAgent(holder, holderRuns);
+    slowAgent(standby, standbyRuns);
 
-      // Create through the standby (its cache has the row) so run-now runs on
-      // a different replica than the ticker, then force the row due.
-      const created = (
-        await request(standby.getHttpServer())
-          .post('/api/cron')
-          .send({
-            name: jobName,
-            schedule: '* * * * *',
-            prompt: 'Race me',
-            maxSteps: 2,
-          })
-          .expect(201)
+    // Create through the standby (its cache has the row) so run-now runs on
+    // a different replica than the ticker, then force the row due.
+    const created = (
+      await request(standby.getHttpServer())
+        .post('/api/cron')
+        .send({
+          name: jobName,
+          schedule: '* * * * *',
+          prompt: 'Race me',
+          maxSteps: 2,
+        })
+        .expect(201)
+    ).body as CronJobRow;
+    jobId = created.id;
+    await prisma.cronJob.update({
+      where: { id: jobId },
+      data: { nextRunAt: new Date(Date.now() - 5000) },
+    });
+
+    // Fire run-now on the standby; the lease holder's ticker will also see
+    // the due row within its next beat. Exactly one claim may win.
+    const runNow = await request(standby.getHttpServer())
+      .post(`/api/cron/${jobId}/run`)
+      .send();
+    expect([201, 409]).toContain(runNow.status);
+
+    // Settle: poll until a terminal status appears (via the holder).
+    let row: CronJobRow | null = null;
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      row = (
+        await request(holder.getHttpServer())
+          .get(`/api/cron/${jobId}`)
+          .expect(200)
       ).body as CronJobRow;
-      jobId = created.id;
+      if (row.lastRunStatus === 'done' || row.lastRunStatus === 'error') break;
+      await sleep(200);
+    }
+    expect(row?.lastRunStatus).toBe('done');
+    expect(row?.lastRunMessage).toContain('[stub]');
+    expect(row?.lastRunModel).toBe('ds4-flash');
+    expect(typeof row?.lastRunMs).toBe('number');
+    // The append-only run history must also show exactly one execution.
+    const runHistory = await prisma.cronRun.findMany({
+      where: { cronJobId: jobId },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(runHistory).toHaveLength(1);
+    expect(runHistory[0].status).toBe('done');
+
+    // Exactly-once: across both replicas the agent was entered exactly once,
+    // and the winner's progress is the row both runners agree on.
+    expect(holderRuns.runs + standbyRuns.runs).toBe(1);
+    const agree = (
+      await request(standby.getHttpServer())
+        .get(`/api/cron/${jobId}`)
+        .expect(200)
+    ).body as CronJobRow;
+    expect(agree).toEqual(row);
+    expect(new Date(agree.nextRunAt as string).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+
+    await request(standby.getHttpServer())
+      .delete(`/api/cron/${jobId}`)
+      .expect(200);
+    jobId = '';
+  }, 30000);
+
+  it('fails the lease over and fires a due job on the new holder', async () => {
+    const { holder, standby } = await electHolder([appA, appB]);
+    const failoverName = `e2e-cron-failover-${stamp}`;
+    const created = (
+      await request(standby.getHttpServer())
+        .post('/api/cron')
+        .send({
+          name: failoverName,
+          schedule: '* * * * *',
+          prompt: 'After takeover',
+          maxSteps: 2,
+        })
+        .expect(201)
+    ).body as CronJobRow;
+    try {
+      // Simulate holder death: stop its ticker (lifecycle hook).
+      holder.get(CronService).onModuleDestroy();
+      // Standby must take over the lease inside the failover window...
+      let takenOver = false;
+      const takeoverDeadline = Date.now() + 9000;
+      while (Date.now() < takeoverDeadline && !takenOver) {
+        const status = (
+          await request(standby.getHttpServer())
+            .get('/api/cron/scheduler')
+            .expect(200)
+        ).body as SchedulerStatus;
+        if (status.leaseHeld) takenOver = true;
+        await sleep(300);
+      }
+      expect(takenOver).toBe(true);
+
+      // ...and only once it owns the lease should the due job fire.
       await prisma.cronJob.update({
-        where: { id: jobId },
+        where: { id: created.id },
         data: { nextRunAt: new Date(Date.now() - 5000) },
       });
-
-      // Fire run-now on the standby; the lease holder's ticker will also see
-      // the due row within its next beat. Exactly one claim may win.
-      const runNow = await request(standby.getHttpServer())
-        .post(`/api/cron/${jobId}/run`)
-        .send();
-      expect([201, 409]).toContain(runNow.status);
-
-      // Settle: poll until a terminal status appears (via the holder).
       let row: CronJobRow | null = null;
-      const deadline = Date.now() + 8000;
-      while (Date.now() < deadline) {
-        row = (
-          await request(holder.getHttpServer()).get(`/api/cron/${jobId}`).expect(200)
+      const fireDeadline = Date.now() + 6000;
+      while (Date.now() < fireDeadline && !row) {
+        const probe = (
+          await request(standby.getHttpServer())
+            .get(`/api/cron/${created.id}`)
+            .expect(200)
         ).body as CronJobRow;
-        if (row.lastRunStatus === 'done' || row.lastRunStatus === 'error') break;
-        await sleep(200);
+        if (probe.lastRunStatus === 'done') row = probe;
+        await sleep(250);
       }
       expect(row?.lastRunStatus).toBe('done');
       expect(row?.lastRunMessage).toContain('[stub]');
-      expect(row?.lastRunModel).toBe('ds4-flash');
-      expect(typeof row?.lastRunMs).toBe('number');
-
-      // Exactly-once: across both replicas the agent was entered exactly once,
-      // and the winner's progress is the row both runners agree on.
-      expect(holderRuns.runs + standbyRuns.runs).toBe(1);
-      const agree = (
-        await request(standby.getHttpServer()).get(`/api/cron/${jobId}`).expect(200)
-      ).body as CronJobRow;
-      expect(agree).toEqual(row);
-      expect(new Date(agree.nextRunAt as string).getTime()).toBeGreaterThan(
-        Date.now(),
-      );
-
-      await request(standby.getHttpServer()).delete(`/api/cron/${jobId}`).expect(200);
-      jobId = '';
-    },
-    30000,
-  );
-
-  it(
-    'fails the lease over and fires a due job on the new holder',
-    async () => {
-      const { holder, standby } = await electHolder([appA, appB]);
-      const failoverName = `e2e-cron-failover-${stamp}`;
-      const created = (
-        await request(standby.getHttpServer())
-          .post('/api/cron')
-          .send({
-            name: failoverName,
-            schedule: '* * * * *',
-            prompt: 'After takeover',
-            maxSteps: 2,
-          })
-          .expect(201)
-      ).body as CronJobRow;
-      try {
-        // Simulate holder death: stop its ticker (lifecycle hook).
-        holder.get(CronService).onModuleDestroy();
-        // Standby must take over the lease inside the failover window...
-        let takenOver = false;
-        const takeoverDeadline = Date.now() + 9000;
-        while (Date.now() < takeoverDeadline && !takenOver) {
-          const status = (
-            await request(standby.getHttpServer())
-              .get('/api/cron/scheduler')
-              .expect(200)
-          ).body as SchedulerStatus;
-          if (status.leaseHeld) takenOver = true;
-          await sleep(300);
-        }
-        expect(takenOver).toBe(true);
-
-        // ...and only once it owns the lease should the due job fire.
-        await prisma.cronJob.update({
-          where: { id: created.id },
-          data: { nextRunAt: new Date(Date.now() - 5000) },
-        });
-        let row: CronJobRow | null = null;
-        const fireDeadline = Date.now() + 6000;
-        while (Date.now() < fireDeadline && !row) {
-          const probe = (
-            await request(standby.getHttpServer())
-              .get(`/api/cron/${created.id}`)
-              .expect(200)
-          ).body as CronJobRow;
-          if (probe.lastRunStatus === 'done') row = probe;
-          await sleep(250);
-        }
-        expect(row?.lastRunStatus).toBe('done');
-        expect(row?.lastRunMessage).toContain('[stub]');
-      } finally {
-        await request(standby.getHttpServer())
-          .delete(`/api/cron/${created.id}`)
-          .expect(200);
-      }
-    },
-    30000,
-  );
+      const failoverRuns = await prisma.cronRun.findMany({
+        where: { cronJobId: created.id },
+      });
+      expect(failoverRuns).toHaveLength(1);
+      expect(failoverRuns[0].status).toBe('done');
+    } finally {
+      await request(standby.getHttpServer())
+        .delete(`/api/cron/${created.id}`)
+        .expect(200);
+    }
+  }, 30000);
 });

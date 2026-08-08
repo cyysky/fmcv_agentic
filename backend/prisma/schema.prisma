@@ -193,22 +193,24 @@ model CronJob {
   updatedAt      DateTime  @updatedAt
 
   connection Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  runs       CronRun[]
 
   @@index([connectionId])
   @@map("cron_jobs")
 }
 
 /**
- * Distributed scheduler lease (Round 65).
+ * Distributed scheduler lease (Round 65, refined Round 66).
  *
- * A single singleton row (`"singleton"`) backs the cron scheduler election:
- * each backend replica periodically claims/renews the lease in one atomic
+ * One row per scheduler group backs the cron scheduler election: each
+ * backend replica periodically claims/renews the lease in one atomic
  * statement, and only the replica that holds a fresh lease runs the ticker.
  * If the holder dies without renewing, the lease expires (expireAt) and the
  * next replica's claim succeeds — so scheduling no longer depends on a
  * single NestJS instance. Job firing is additionally guarded by an atomic
  * row claim on CronJob.lastRunStatus, so even a split-brain lease can never
- * run the same due job twice.
+ * run the same due job twice. The row id is the group itself (the PK), so
+ * separate CRON_LEASE_GROUP deployments elect independently.
  */
 model CronSchedulerLease {
   id             String   @id
@@ -220,6 +222,23 @@ model CronSchedulerLease {
 
   @@unique([schedulerGroup])
   @@map("cron_scheduler_leases")
+}
+
+/** One terminal execution of a cron job (Round 67): append-only history so
+ *  every firing is auditable even as `CronJob.lastRun*` rolls forward. */
+model CronRun {
+  id        String   @id @default(cuid())
+  cronJobId String
+  cronJob   CronJob  @relation(fields: [cronJobId], references: [id], onDelete: Cascade)
+  status    String // "done" | "error"
+  message   String?
+  model     String?
+  ms        Int?
+  startedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([cronJobId, createdAt])
+  @@map("cron_runs")
 }
 
 /**

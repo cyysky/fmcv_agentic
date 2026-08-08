@@ -46,6 +46,16 @@ interface SchedulerStatus {
   enabledCount: number;
 }
 
+interface CronRunRow {
+  id: string;
+  cronJobId: string;
+  status: string;
+  message: string | null;
+  model: string | null;
+  ms: number | null;
+  createdAt: string;
+}
+
 const EMPTY_DRAFT: CronDraft = {
   name: "",
   schedule: "*/15 * * * *",
@@ -94,6 +104,8 @@ export default function CronPanel() {
 
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [runsByJob, setRunsByJob] = useState<Record<string, CronRunRow[] | null>>({});
+  const [runsLoading, setRunsLoading] = useState<string | null>(null);
 
   // Load the job list.
   useEffect(() => {
@@ -289,6 +301,26 @@ export default function CronPanel() {
       setError(errText(e));
     } finally {
       setActionKey(null);
+    }
+  };
+
+  const toggleRuns = async (job: CronJobRow) => {
+    if (runsByJob[job.id]) {
+      setRunsByJob((m) => ({ ...m, [job.id]: null }));
+      return;
+    }
+    setRunsLoading(job.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiFetch(`/cron/${job.id}/runs`);
+      if (!res.ok) throw new Error(await apiError(res));
+      const body = (await res.json()) as CronRunRow[];
+      setRunsByJob((m) => ({ ...m, [job.id]: body }));
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setRunsLoading(null);
     }
   };
 
@@ -516,6 +548,47 @@ export default function CronPanel() {
                   Next run:{" "}
                   {job.enabled ? formatTime(job.nextRunAt) : "paused"}
                 </div>
+                {runsByJob[job.id] && (
+                  <div className={styles.runList} data-runs={job.id}>
+                    {runsByJob[job.id]!.length === 0 ? (
+                      <div className={styles.muted}>No runs recorded yet.</div>
+                    ) : (
+                      runsByJob[job.id]!.map((run) => (
+                        <div
+                          key={run.id}
+                          className={styles.runRow}
+                          data-run-status={run.status}
+                        >
+                          <span
+                            className={`${styles.statusPill} ${
+                              run.status === "done"
+                                ? styles.statusDone
+                                : styles.statusError
+                            }`}
+                          >
+                            {run.status === "done" ? "Done" : "Failed"}
+                          </span>
+                          <span className={styles.runMeta}>
+                            {formatTime(run.createdAt)}
+                          </span>
+                          {run.model && (
+                            <span className={styles.runMeta}>· {run.model}</span>
+                          )}
+                          {formatDuration(run.ms) && (
+                            <span className={styles.runMeta}>
+                              · {formatDuration(run.ms)}
+                            </span>
+                          )}
+                          {run.message && (
+                            <span className={styles.rowMessage} title={run.message}>
+                              {run.message}
+                            </span>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
               <div className={styles.rowActions}>
                 <button
@@ -535,6 +608,18 @@ export default function CronPanel() {
                     : job.enabled
                       ? "Pause"
                       : "Resume"}
+                </button>
+                <button
+                  className={styles.btnGhost}
+                  aria-label={`History for ${job.name}`}
+                  disabled={actionKey !== null}
+                  onClick={() => toggleRuns(job)}
+                >
+                  {runsLoading === job.id
+                    ? "Loading…"
+                    : runsByJob[job.id]
+                      ? "Hide history"
+                      : "History"}
                 </button>
                 <button
                   className={styles.btnGhost}

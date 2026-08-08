@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { CreateCronJobDto, UpdateCronJobDto } from './cron.dto';
 import { CronService } from './cron.service';
@@ -41,6 +42,11 @@ export class CronController {
   @Get('scheduler')
   scheduler() {
     return this.cron.schedulerStatus();
+  }
+
+  @Get(':id/runs')
+  runs(@Param('id', ParseUUIDPipe) id: string, @Query('limit') limit?: string) {
+    return this.cron.runs(id, limit === undefined ? undefined : Number(limit));
   }
 
   @Get(':id')

@@ -7,7 +7,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { CronJob, Prisma } from '@prisma/client';
+import { CronJob, CronRun, Prisma } from '@prisma/client';
 import { CronExpressionParser } from 'cron-parser';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -107,12 +107,13 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     // old holder is stopped, so nothing renews them).
     const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
     await this.prisma
-      .$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${group} AND id <> ${group}`
-      .catch((err) => {
+      .$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${group} AND id <> ${group}`.catch(
+      (err) => {
         this.logger.warn(
           `Could not clean legacy cron lease rows: ${(err as Error).message}`,
         );
-      });
+      },
+    );
     await this.prisma.cronJob
       .updateMany({
         where: { lastRunStatus: STATUS_RUNNING },
@@ -266,6 +267,16 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     return this.executeJob(id);
   }
 
+  /** Recent terminal runs for a job, newest first (Round 67). */
+  async runs(id: string, limit = 20): Promise<CronRun[]> {
+    await this.get(id); // 404 on an unknown job
+    return this.prisma.cronRun.findMany({
+      where: { cronJobId: id },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(Math.trunc(limit) || 20, 1), 100),
+    });
+  }
+
   /* ---------------------------- scheduler ---------------------------- */
 
   /**
@@ -280,8 +291,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     // Single atomic INSERT ... ON CONFLICT: insert this group's row when
     // missing; otherwise renew only when we already own it or its lease has
     // expired. A replica that loses the race simply stays in standby.
-    const count =
-      await this.prisma.$executeRaw`
+    const count = await this.prisma.$executeRaw`
         INSERT INTO cron_scheduler_leases (id, "schedulerGroup", owner, "expireAt", "createdAt", "updatedAt")
         VALUES (${group}, ${group}, ${this.leaseOwner}, ${expireAt}, now(), now())
         ON CONFLICT (id) DO UPDATE SET
@@ -324,7 +334,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     });
     for (const { id } of due) {
       this.executeJob(id).catch((err) => {
-        this.logger.warn(`Could not fire cron job ${id}: ${(err as Error).message}`);
+        this.logger.warn(
+          `Could not fire cron job ${id}: ${(err as Error).message}`,
+        );
       });
     }
   }
@@ -402,7 +414,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     // slot from the DB row, not the in-memory mirror.
     const current =
       this.jobs.get(id) ??
-      (await this.prisma.cronJob.findUnique({ where: { id } }).catch(() => null));
+      (await this.prisma.cronJob
+        .findUnique({ where: { id } })
+        .catch(() => null));
     const updated = await this.prisma.cronJob.updateMany({
       where: {
         id,
@@ -425,11 +439,26 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         (await this.prisma.cronJob.findUnique({ where: { id } })) ??
           (current as CronJob),
       );
+      await this.prisma.cronRun
+        .create({
+          data: {
+            cronJobId: id,
+            status,
+            message: truncate(message, MAX_RUN_MESSAGE),
+            ...(model ? { model } : { model: null }),
+            ms,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Could not persist cron run history for ${id}: ${(err as Error).message}`,
+          );
+        });
     }
   }
 
   /** Local scheduler/lease view for ops and the UI (Round 66). */
-  async schedulerStatus(): Promise<{
+  schedulerStatus(): {
     leaseHeld: boolean;
     leaseGroup: string;
     leaseExpireAt: string | null;
@@ -438,7 +467,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     lastTickAt: string | null;
     jobCount: number;
     enabledCount: number;
-  }> {
+  } {
     const rows = [...this.jobs.values()];
     return {
       leaseHeld: !!(

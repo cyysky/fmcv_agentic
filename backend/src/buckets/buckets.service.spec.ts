@@ -254,10 +254,9 @@ describe('BucketsService', () => {
       folderType: 'project',
       folderName: 'docs',
     });
-    await fs.mkdir(
-      path.join(root, 'projects', 'docs', 'research-renamed'),
-      { recursive: true },
-    );
+    await fs.mkdir(path.join(root, 'projects', 'docs', 'research-renamed'), {
+      recursive: true,
+    });
     await expect(
       service.renameBucket('bucket-1', 'research-renamed'),
     ).rejects.toBeInstanceOf(ConflictException);

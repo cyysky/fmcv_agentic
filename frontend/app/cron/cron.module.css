@@ -312,6 +312,32 @@
   white-space: nowrap;
 }
 
+.runList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.runList .muted {
+  padding: 0.35rem 0;
+}
+
+.runRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.runMeta {
+  font-size: 0.75rem;
+  color: #888;
+}
+
 .rowActions {
   display: flex;
   gap: 0.45rem;
@@ -466,6 +492,14 @@
     background: #1f2937;
     border-color: #374151;
     color: #e5e7eb;
+  }
+
+  .runList {
+    border-top-color: #374151;
+  }
+
+  .runMeta {
+    color: #9ca3af;
   }
 
   .statusIdle {

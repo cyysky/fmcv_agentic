@@ -99,17 +99,20 @@ and coordinate multi-agent teams in Slack-style channels.
   API's 409. Backed by the REST table below.
 - **Cron jobs (`/cron`)** — human-facing page over the cron API: create a
   recurring agent-turn job (five-field cron expression, prompt, optional
-  model/max-steps, enabled toggle), edit, pause/resume, run it now, and
-  delete it with a two-click confirm. The backend scheduler ticks every
-  second, validates expressions up front, refuses deletes while a job is
-  running, restores next-run timing on boot, and persists every run's
-  terminal result (done/error, message, model, duration) on the row. The
-  page also shows the local scheduler/lease status (active on this node vs
-  standby, last tick/beat, lease expiry) refreshed every 5 s. Scheduling is
-  multi-instance safe: a distributed Postgres lease elects one replica as
-  the ticker (a dead holder fails over in ~5 s), and each firing is an
-  atomic row claim, so the same due job never runs twice even under a
-  split-brain lease or an overlapping `run now` request.
+  model/max-steps, enabled toggle), edit, pause/resume, run it now, delete
+  it with a two-click confirm, and expand each job's append-only run history
+  (History button: status, time, model, duration, message; newest first).
+  The backend scheduler ticks every second, validates expressions up front,
+  refuses deletes while a job is running, restores next-run timing on boot,
+  and persists every run's terminal result (done/error, message, model,
+  duration) on the row plus a dedicated `CronRun` history row
+  (cascade-deleted with the job). The page also shows the local
+  scheduler/lease status (active on this node vs standby, last tick/beat,
+  lease expiry) refreshed every 5 s. Scheduling is multi-instance safe: a
+  distributed Postgres lease elects one replica as the ticker (a dead holder
+  fails over in ~5 s), and each firing is an atomic row claim, so the same
+  due job never runs twice even under a split-brain lease or an overlapping
+  `run now` request.
 - **Agent skills (`/skills`)** — human-facing page over the skills API:
   authors create uniquely named, slug-form skills (name, description, and a
   markdown instructions body) and install/uninstall them; installed skills
@@ -212,6 +215,7 @@ and awaits the agent turn):
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
 | POST   | `/api/cron/:id/run`  | run the job now, outside its schedule                     |
+| GET    | `/api/cron/:id/runs` | append-only run history, newest first (`limit` 1–100, default 20) |
 
 Skills:
 
@@ -266,7 +270,7 @@ cd e2e && node browser-e2e.mjs
 node scripts/verify-rest-docs.mjs
 ```
 
-- **Unit: 146 tests / 14 suites** — model catalog, workspace service + tools,
+- **Unit: 160 tests / 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -300,7 +304,9 @@ node scripts/verify-rest-docs.mjs
   slides nextRunAt on schedule change and on enable/disable, empty PATCH 400,
   run-now through the agent records done/error + message/model/duration,
   restart recovery marks interrupted runs error, delete rejected while
-  running), and the skills service
+  running, run history persists a terminal `cronRun` row per firing,
+  `runs()` lists newest first with a clamped limit and 404s on unknown
+  jobs), and the skills service
   (create/list/get/update/delete, unique slug-form names with 409
   duplicate, invalid-name 400, install requires non-empty content,
   uninstall keeps the record, empty PATCH 400, content capped at 200k
@@ -308,7 +314,7 @@ node scripts/verify-rest-docs.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 107 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 115 tests / 11 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -334,15 +340,18 @@ node scripts/verify-rest-docs.mjs
   list after upload, download bytes + attachment headers, missing document
   404, rename moves the folder on disk, invalid rename 400, rename-to-taken
   409 with the conflict bucket deleted, delete removes folder + rows + 404s),
-  cron jobs (13: create + nextRunAt, duplicate name 409, invalid schedule
+  cron jobs (14: create + nextRunAt, duplicate name 409, invalid schedule
   400, unknown pinned connection 400, list/get/404, PATCH
   name/schedule/enabled + nextRunAt semantics, empty PATCH 400, run-now
   drives a stubbed agent turn and persists done/error/message/model/
-  duration, delete, delete-while-running 409, a restart restores the job and
-  recomputes nextRunAt — the agent service is stubbed so the suite stays
-  hermetic; plus a two-replica scheduler suite covering lease election, a
-  ticker-vs-run-now race that fires the due job exactly once, and failover
-  firing after the holder stops), skills
+  duration plus an appended run-history row, the run-history endpoint
+  returns the newest-first rows and 404s on unknown jobs, run-now on an
+  unknown job 404s, and delete cascade-prunes run history, restart restores
+  jobs and recomputes nextRunAt — the agent service is stubbed so the suite
+  stays hermetic; plus a two-replica scheduler suite covering lease
+  election, a ticker-vs-run-now race that fires the due job exactly once,
+  and failover firing after the holder stops, with the race and failover
+  tests each asserting exactly one appended `cronRun` row), skills
   (11: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes
@@ -421,9 +430,12 @@ node scripts/verify-rest-docs.mjs
   verifies the row + success banner + `Next run:` line, clicks **Run now**
   and waits for the status pill to reach `Done`/`Failed` (whichever the live
   LLM produces; the compose gateway is configured from the local provider
-  key), then renames the job, pauses it (`Paused` + `Next run: paused`),
-  resumes it, and deletes it with the two-click confirm (fixture removed
-  server-side afterwards via the cron DELETE API), a skills journey that
+  key), expands the job's **History** list and asserts the terminal run row
+  (status pill, time/model meta, non-empty message) then collapses it again,
+  renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
+  deletes it with the two-click confirm (fixture removed server-side
+  afterwards via the cron DELETE API, which also cascade-prunes its run
+  history), a skills journey that
   creates a skill through the `/skills` UI (slug-form fixture name,
   description, markdown instructions) with the **Install now** box checked,
   verifies the Installed pill + create notice, reloads and proves both the

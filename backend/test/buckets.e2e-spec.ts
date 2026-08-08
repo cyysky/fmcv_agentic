@@ -63,7 +63,11 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
     // The bucket folder lives under the temp E2E workspace; remove it so the
     // next run starts clean even if a test failed mid-way.
     const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
-    for (const folder of new Set([bucketName, `${bucketName}-renamed`, dupeName])) {
+    for (const folder of new Set([
+      bucketName,
+      `${bucketName}-renamed`,
+      dupeName,
+    ])) {
       await fs
         .rm(path.join(root, 'projects', projectName, folder), {
           recursive: true,
@@ -284,7 +288,9 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
     expect(rows.some((b) => b.id === bucketId)).toBe(false);
     const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
     await expect(
-      fs.stat(path.join(root, 'projects', projectName, `${bucketName}-renamed`)),
+      fs.stat(
+        path.join(root, 'projects', projectName, `${bucketName}-renamed`),
+      ),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

@@ -22,6 +22,16 @@ interface CronJobRow {
   nextRunAt?: string | null;
 }
 
+interface CronRunRow {
+  id: string;
+  cronJobId: string;
+  status: string;
+  message?: string | null;
+  model?: string | null;
+  ms?: number | null;
+  createdAt: string;
+}
+
 interface TypedResponse {
   body: unknown;
   headers: Record<string, string | string[] | undefined>;
@@ -224,6 +234,23 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     );
   });
 
+  it('lists the persisted run history for a job', async () => {
+    const res = await http().get(`/api/cron/${jobId}/runs`).expect(200);
+    const runs = json<CronRunRow[]>(res);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      cronJobId: jobId,
+      status: 'done',
+    });
+    expect(runs[0].message).toContain('[stub]');
+    expect(runs[0].model).toBe('ds4-flash');
+    expect(typeof runs[0].ms).toBe('number');
+    // Runs for an unknown job 404 like the job itself.
+    await http()
+      .get('/api/cron/00000000-0000-4000-8000-000000000000/runs')
+      .expect(404);
+  });
+
   it('404s running an unknown job', async () => {
     await http()
       .post('/api/cron/00000000-0000-4000-8000-000000000000/run')
@@ -231,10 +258,15 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
   });
 
   it('deletes a cron job', async () => {
+    const deletedId = jobId;
     await http().delete(`/api/cron/${jobId}`).expect(200);
     jobId = '';
     await http()
       .get('/api/cron/00000000-0000-4000-8000-000000000000')
       .expect(404);
+    // Run history is cascade-deleted with the job.
+    expect(
+      await prisma.cronRun.count({ where: { cronJobId: deletedId } }),
+    ).toBe(0);
   });
 });

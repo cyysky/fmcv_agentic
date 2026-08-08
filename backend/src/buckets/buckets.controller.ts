@@ -54,10 +54,7 @@ export class BucketsController {
   }
 
   @Patch(':id')
-  rename(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: RenameBucketDto,
-  ) {
+  rename(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RenameBucketDto) {
     return this.buckets.renameBucket(id, dto.name);
   }
 
