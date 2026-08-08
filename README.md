@@ -474,8 +474,11 @@ node scripts/api-e2e.mjs
   the budget (default 600 KB, override `FMCV_BUNDLE_BUDGET_BYTES`).
   Measured baseline Round 99: largest first load is `/agent` at ~484 KB
   — the Next/React framework baseline (~460 KB shared, ~156 KB gzipped)
-  dominates while per-route app chunks stay ~9-34 KB (plus tiny edge
-  chunks) and are not duplicated across routes. Deferred chunks on
+  dominates while per-route app chunks stay ~9-34 KB (plus tiny 316–987 B
+  module-edge chunks Turbopack emits per route for async boundaries: `/agent`'s
+  316 B edge is the `next/dynamic` loader that fetches the lazy chunks below,
+  the same pattern as `/cron`'s 987 B apiFetch boundary) and are not
+  duplicated across routes. Deferred chunks on
   `/agent` (all fetched only
   on demand, verified by the browser E2E lazy guard): Round 93 lazy-split
   the sessions/channels tab panels (`agent/agent-views.tsx`, ~23 KB);

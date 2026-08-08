@@ -1,66 +1,66 @@
-# Round 100 — visibilitychange channel refresh (2026-08-09)
+# Round 101 — 316 B edge chunk: investigated, not foldable (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 99's focus item #1: the Channels view now refreshes
-immediately when the tab returns, instead of waiting up to 8s for the next
-polling tick. The 0–8s staleness on return was user-visible in practice
-(tab switches are exactly when a fresh feed matters), so the change was
-adopted and pinned by an extended browser E2E guard.
+executed Round 100's focus item #1 as a decision pass: whether the 316 B
+`/agent` edge chunk can be folded into the page chunk. It cannot — without
+losing the lazy split it exists to serve — so the round closes the question
+with evidence and documents the answer.
 
 ## What changed this round
 
-- **Immediate refresh on `visibilitychange`** — `frontend/app/agent/agent-client.tsx`
-  now listens for `visibilitychange` in the Channels polling effect and calls
-  `loadChannels()` the moment the tab returns to visible; the 8s visibility-gated
-  tick still covers the hidden/open case, and the listener is removed in effect
-  cleanup. Commit `2f66233`.
-- **E2E guard extended** — the `agentChannelFlow` polling guard first proves
-  polling stays fully hidden while the tab is hidden (>2 intervals, zero list
-  fetches), then restores visibility and now asserts an immediate resume
-  within 2s (`immediateCount > hiddenCount`) plus resumed tick activity
-  (`resumedCount > hiddenCount`). Log line:
-  `visibility polling guard: hidden kept 2/2, immediate resume 1, resumed 4 (ok)`.
-- **Frontend container rebuilt** with the Round 100 build
-  (`docker compose build frontend && up -d --force-recreate frontend`).
-- **Both browser modes green** — enabled-mode run and API-only mode run
-  (fresh this round): 21 route probes each, zero console/network errors,
-  all journeys passed. API-only mode also re-proved the startup-race stale
-  sweep (`stale sweep: clean`).
-- **README updated** — Channels bullet documents the visibility-gated 8s
-  polling + immediate resume on tab return; the E2E description notes the
-  resume-within-2s guard; the headroom baseline was remeasured after the
-  feature (page chunk +153 B) and updated.
+- **Identified the 316 B chunk** — `2cym9c2bsuhxj.js` is Turbopack's async
+  module-edge for `/agent`'s two `next/dynamic` loadables. It registers the
+  loader modules that fetch `agent-views.tsx` (~23 KB, sessions + channels
+  panels, Round 93 lazy split) and `workspace-viewer.tsx` (~2.3 KB, Round 97
+  lazy split) on demand; the page chunk's `loadableGenerated` modules point
+  straight at it.
+- **Proved it is a framework pattern, not agent-specific cruft** — `/cron`
+  carries its own 987 B per-route edge chunk (an apiFetch boundary), and
+  `/` has none because it has no async boundary. Tiny module-edge chunks are
+  a normal Turbopack emission wherever routes lazy-load.
+- **Decision: no fold.** Folding the edge means deleting or inlining the
+  dynamic boundaries, which would add ~25.5 KB (23 KB panels + 2.3 KB
+  workspace viewer) back to `/agent` first load — strictly worse than the
+  ~316 B uncompressed (~100 B gzipped) + one cached HTTP request the edge
+  costs. Next 16 default Turbopack exposes no chunk-merge knob, and
+  switching the build pipeline to webpack `splitChunks` for a sub-KB saving
+  is not justified. Same cost/benefit call as Round 99's picker-split no-go.
+- **README updated** — the bundle-size guard notes now explain what the
+  "tiny edge chunks" are (`/agent` = `next/dynamic` loader edge;
+  `/cron` = apiFetch boundary), so future rounds don't re-investigate.
 
 ## Test status
 
-- Backend unit: **14 suites / 182 tests passed** (fresh via
-  `verify --build --api-e2e` this round).
-- Backend API E2E (real Postgres, multi-replica): **12 suites / 123 tests
-  passed** (fresh this round; known Jest keep-alive warning only).
-- Frontend: `tsc --noEmit`, ESLint, Nest + Next builds green; bundle-size
-  guard `/agent` **484 KB / 8 chunks** within 600 KB; headroom guard
-  **33.6 KB** agent-specific delta within the 44 KB budget (remeasured
-  495,956 B vs 461,553 B baseline after the feature's +153 B page chunk).
-- Browser E2E: **both modes re-run this round** — enabled and api-only,
-  21 route probes each, zero console/network errors; polling guard
-  `hidden 2/2, immediate resume 1, resumed 4 (ok)` in both; api-only mode
-  kept `stale sweep: clean`. Reports committed
-  (`e2e/report.json`, `report-enabled.json`, `report-api-only.json`).
+- No runtime code changed this round; the full
+  `verify --build --api-e2e` gate remains green from this session's Round
+  100 run: **14/182 unit, 12/123 API E2E**, bundle `/agent` 484 KB /
+  8 chunks within 600 KB, headroom 33.6 KB within 44 KB.
+- Fast `verify.mjs` re-run this round on final code: green — REST docs
+  guard (70 routes / 69 rows), test-count guard, backend unit 14/182,
+  backend lint + types, frontend types + lint.
+- Browser E2E: **not re-run this round** — no frontend runtime change
+  (same explicit skip as Round 99); Round 100's enabled + api-only runs
+  (21 route probes each, zero console/network errors) remain current
+  runtime evidence.
 
 ## Known issues / open tickets
 
-- **Low** — Jest API e2e still prints the "did not exit" keep-alive warning
-  after the multi-replica suite closes; suites pass with exit code 0.
-- **Low** — `e2e/report.json` is the latest-run mirror only; per-mode
-  archives live in git history via committed `report-<mode>.json` (by design).
+- **Low** — Jest API e2e keep-alive warning after the multi-replica suite;
+  suites exit 0.
+- **Low** — `e2e/report.json` mirrors only the latest run; per-mode
+  archives live in git history (by design).
+- **Closed this round** — the "fold the 316 B edge chunk" open question:
+  not foldable without a ~25.5 KB first-load regression; kept as-is and
+  documented in README.
 
 ## Next round focus
 
-1. **Optional** — try folding the 316 B `/agent` edge chunk into the page
-   chunk (Turbopack emits it as a separate module edge; negligible, but a
-   cheap clean-up if trivial).
-2. **Optional** — deeper bundle profiling only when a new feature threatens
-   the 44 KB `/agent` headroom budget; routine rounds don't need it.
-3. **Keep the gates current** — re-run `verify --build --api-e2e` + both
-   browser modes after any future frontend change; keep the baseline
-   `/agent` 484 KB / 33.6 KB headroom.
+1. **Profiling is now a conditional, not routine, task** — only profile
+   deeper when a future feature threatens the 44 KB `/agent` headroom
+   budget (currently 33.6 KB used); no routine action needed.
+2. **Keep the gates current** — re-run `verify --build --api-e2e` + both
+   browser modes after any frontend change; keep `/agent` at the 484 KB /
+   33.6 KB baseline.
+3. **If user pain ever shows up on first load** — the ~460 KB shared
+   Next/React framework floor dominates every route and is the only big
+   lever left; profile that before touching per-route chunks.
