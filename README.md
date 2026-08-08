@@ -234,13 +234,17 @@ duplicate names are 409s):
 
 Cron jobs (five-field schedules; `name` is unique, delete is rejected while
 a job is running, `POST /:id/run` executes immediately outside the schedule
-and awaits the agent turn; set `CRON_SCHEDULER_ENABLED=false` on any backend
-to run it API-only — no background lease/tick/boot-recovery sweep, while
-CRUD and `Run now` still work):
+and awaits the agent turn; each job is owned by the lease group
+(`CRON_LEASE_GROUP`, default `default`) of the backend that created it — the
+due-job scan and boot-recovery sweep only touch the owner group, so
+deployments sharing one Postgres never claim each other's jobs, while manual
+`Run now` works from any node; set `CRON_SCHEDULER_ENABLED=false` on any
+backend to run it API-only — no background lease/tick/boot-recovery sweep,
+while CRUD and `Run now` still work):
 
 | Method | Path                 | Purpose                                                   |
 |--------|----------------------|-----------------------------------------------------------|
-| POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
+| POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`); the job is stamped with the creating backend's `CRON_LEASE_GROUP` as its owner |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
 | GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group, optional `limit=` sets the transition window depth (1-100, default 10), and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
@@ -316,7 +320,7 @@ cd e2e && node browser-e2e.mjs
 node scripts/verify-rest-docs.mjs
 ```
 
-- **Unit: 179 tests / 14 suites** — model catalog, workspace service + tools,
+- **Unit: 181 tests / 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -364,7 +368,7 @@ node scripts/verify-rest-docs.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 121 tests / 12 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 122 tests / 12 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -398,12 +402,16 @@ node scripts/verify-rest-docs.mjs
   returns the newest-first rows and 404s on unknown jobs, run-now on an
   unknown job 404s, and delete cascade-prunes run history, restart restores
   jobs and recomputes nextRunAt — the agent service is stubbed so the suite
-  stays hermetic; plus a two-replica scheduler suite covering lease
-  election, a ticker-vs-run-now race that fires the due job exactly once,
-  and failover firing after the holder stops, with the race and failover
-  tests each asserting exactly one appended `cronRun` row and the failover
-  test also asserting an append-only `acquired` lease-transition event whose
-  previous owner is the dead holder), skills
+  stays hermetic; plus a bottom-line lease-group ownership test proving a
+  job handed to a foreign `schedulerGroup` never fires and fires on return,
+  a two-replica scheduler suite covering lease election, a
+  ticker-vs-run-now race that fires the due job exactly once, and failover
+  firing after the holder stops, with the race and failover tests each
+  asserting exactly one appended `cronRun` row and the failover test also
+  asserting an append-only `acquired` lease-transition event whose previous
+  owner is the dead holder, and an API-only suite proving
+  `CRON_SCHEDULER_ENABLED=false` never acquires a lease or fires a due job
+  while manual run-now still works), skills
   (11: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes

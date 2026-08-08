@@ -15,7 +15,12 @@ npm run start:dev    # watch mode (or `docker compose up --build` from the repo 
 Environment knobs:
 
 - `CRON_LEASE_GROUP` — scheduler lease group id (defaults to `default`); a
-  group has exactly one active scheduler across replicas.
+  group has exactly one active scheduler across replicas, and every cron job
+  a backend creates is stamped with that group as its owner
+  (`CronJob.schedulerGroup`). The boot recovery sweep, startup cache load,
+  and due-job scan only touch the owner group, so deployments sharing one
+  Postgres never claim or sweep each other's jobs. Manual `Run now` is
+  intentionally group-agnostic and can fire any job from any node.
 - `CRON_SCHEDULER_ENABLED` — set to `false` for API-only mode: no lease
   acquisition, no tick, no boot-time recovery sweep (CRUD and `Run now`
   still work). Any other value (or unset) enables the scheduler.
@@ -24,11 +29,12 @@ Environment knobs:
 
 ```bash
 npm test -- --runInBand    # unit tests (no external services)
-# API E2E: needs PostgreSQL (docker compose up -d db). The live backend
-# container's scheduler fires jobs from the same shared Postgres even when
-# the suite runs its own lease group, so it can steal e2e jobs and persist
-# real-gateway (non-stub) answers. Preferred: put the live stack in API-only
-# mode (no stop required)...
+# API E2E: needs PostgreSQL (docker compose up -d db). Suites boot their
+# own backend on an isolated CRON_LEASE_GROUP, and Round 80 job ownership
+# means the live Docker backend (same Postgres, different group) can no
+# longer steal their jobs. The main cron suite shares the `default` group
+# with the container, so the still-recommended belt-and-braces setup puts
+# the live stack in API-only mode (no stop required)...
 CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend
 npm run test:e2e
 docker compose up -d --force-recreate backend   # restore the scheduler
@@ -44,18 +50,18 @@ holds the config (30s timeout, `maxWorkers: 1`). The suites share one real
 Postgres. Two interference sources require the live backend to be stopped
 and serial execution:
 
-- **Cross-stack scheduler races**: the cron scheduler's due-job scan is not
-  scoped to a lease group, so any running deployment (e.g. the Docker
-  backend) can claim the suite's jobs (`CRON_LEASE_GROUP` only isolates the
-  lease, not the due-job scan). The container has no `AGENT_LLM_STUB`, so a
-  stolen job runs against the real gateway and can persist a `done` row
-  with a null/empty message — exactly the symptom that makes the
-  multi-replica suite flaky. API-only mode (`CRON_SCHEDULER_ENABLED=false`)
-  closes exactly this hole for the live stack, which is why the E2E
-  workflow prefers it over a full stop.
-- **Boot-time recovery sweep**: `onModuleInit` marks every cluster-wide
-  `running` row `error`, so one suite's app boot can clobber another
-  suite's in-flight job; serial execution keeps the suite deterministic.
+- **Cross-stack scheduler races**: cron jobs are owned by the lease group
+  that created them (Round 80), and the due-job scan + boot recovery sweep
+  only touch the owner group, so a running deployment can no longer claim
+  another group's jobs (`CRON_LEASE_GROUP` now isolates both the lease and
+  job ownership). The Docker backend shares the `default` group with the
+  main cron suite, though, and it has no `AGENT_LLM_STUB`, so API-only
+  mode (`CRON_SCHEDULER_ENABLED=false`) remains the preferred E2E posture
+  for the live stack.
+- **Boot-time recovery sweep**: `onModuleInit` marks that group's `running`
+  rows `error`, so one suite's app boot can't clobber another suite's
+  in-flight job; suites isolate themselves with unique lease groups and the
+  serial Jest config keeps the run deterministic.
 
 ## Layout
 
