@@ -10,6 +10,10 @@
 //   E2E_API_ONLY=1 E2E_APP_BASE=http://localhost:3333 node e2e/browser-e2e.mjs
 //     (run with the backend in API-only mode: the cron flow asserts the
 //      "Scheduler disabled — API-only" chip instead of active/standby)
+// Artifacts are mode-stamped so both runs can be archived per round:
+//   report.json         latest run (mirrors report-<mode>.json)
+//   report-<mode>.json  enabled | api-only
+//   screenshots/<mode>/ per-mode screenshot directory
 //   CHROME_DEBUG_PORT=9222 E2E_APP_BASE=http://10.0.151.7:3333 node e2e/browser-e2e.mjs
 //   E2E_CONN_HOST=<host-ip>  # host IP the Dockerized backend can reach for the fake upstream
 //                            # (defaults to the APP hostname or `hostname -I`)
@@ -96,8 +100,13 @@ const API = process.env.E2E_API_BASE || APP.replace(/:\d+/, ":5555") + "/api";
 // Resolve artifact paths relative to this script's directory so the script
 // behaves the same no matter where it is invoked from.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SHOT_DIR = resolve(process.env.E2E_SHOT_DIR || resolve(SCRIPT_DIR, "screenshots"));
+const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
+// Mode-suffixed artifacts (Round 85): each run also writes
+// report-<mode>.json + screenshots/<mode>/ so enabled and API-only evidence
+// can both be committed; report.json mirrors whichever mode ran last.
+const SHOT_DIR = resolve(process.env.E2E_SHOT_DIR || resolve(SCRIPT_DIR, "screenshots", MODE));
 const REPORT = resolve(process.env.E2E_REPORT || resolve(SCRIPT_DIR, "report.json"));
+const MODE_REPORT = resolve(SCRIPT_DIR, `report-${MODE}.json`);
 // Overall watchdog: a stuck CDP target must not let the round hang forever.
 const WATCHDOG_MS = Number(process.env.E2E_WATCHDOG_MS || 10 * 60 * 1000);
 mkdirSync(SHOT_DIR, { recursive: true });
@@ -5464,7 +5473,7 @@ async function main() {
   ];
 
   const version = await httpJson("/json/version");
-  const report = { browser: version.Browser, app: APP, ranAt: new Date().toISOString(), routes: [], flow: null };
+  const report = { mode: MODE, browser: version.Browser, app: APP, ranAt: new Date().toISOString(), routes: [], flow: null };
   log("browser E2E start");
 
   try {
@@ -5727,8 +5736,10 @@ async function main() {
   const settingsErrs = errorCount(sfl ? sfl.errors : {});
   if (settingsErrs > 0) failures.push(`settings flow: ${settingsErrs} console/network error(s)`);
 
-  writeFileSync(REPORT, JSON.stringify(report, null, 2));
+  const reportPaths = [REPORT, MODE_REPORT];
+  for (const out of reportPaths) writeFileSync(out, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
+  log(`artifacts: ${reportPaths.join(", ")} (+ screenshots under ${SHOT_DIR})`);
   console.log(failures.length
     ? `\nFAILURES:\n  - ${failures.join("\n  - ")}`
     : "\nAll browser E2E checks passed.");

@@ -559,8 +559,10 @@ node scripts/verify-test-counts.mjs
   pruned server-side via the workspace API (no docker dependency), and tab
   cleanup no longer logs the non-fatal CDP `Target is closing` text as a
   warning. Per-step timeouts + a global watchdog bound the run and all created
-  tabs are closed even on failure. Artifacts land in `e2e/screenshots/` and
-  `e2e/report.json`.
+  tabs are closed even on failure. Artifacts are mode-stamped: screenshots
+  land in `e2e/screenshots/<mode>/` and the JSON report in
+  `e2e/report-<mode>.json` (mode = `enabled` or `api-only`; `e2e/report.json`
+  mirrors the latest run), so both modes' evidence can be archived per round.
 
 ## Progress (from git history)
 
