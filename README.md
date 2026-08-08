@@ -43,7 +43,9 @@ and coordinate multi-agent teams in Slack-style channels.
   replays the row's last-known probe result until a probed value changes.
   Saving values that were never probed auto-runs a probe of the persisted row
   (client-side, best-effort — the save is never blocked by a slow endpoint)
-  and reports the result in the success banner. Editing never replays the
+  and reports the result in the success banner. A connection can also carry a
+  **Models** list (one provider model id per line) so non-catalog providers
+  are first-class in the agent model picker. Editing never replays the
   masked key back over the stored secret, and an explicit "Clear stored API
   key" checkbox lets you remove a secret (stored as NULL, never an empty
   string).
@@ -53,12 +55,13 @@ and coordinate multi-agent teams in Slack-style channels.
   stateless turns can pin a saved Connection from Settings, so that row's
   base URL, model, stored API key, and default parameters drive the LLM
   instead of the built-in gateway. Selecting a connection defers the model
-  picker to the connection's model by default, while catalog models remain
-  selectable as per-turn overrides that still route through the connection's
-  endpoint + key; opening a pinned session restores its connection (with the
-  connection default model) and badges it in the sidebar. Conversation loop
-  with a hard `maxSteps` cap, tool-call trace and workspace viewer in the
-  UI.
+  picker to the connection's model by default, while the connection's own
+  **Models** list (set in Settings) and the catalog models remain selectable
+  as per-turn overrides that still route through the connection's endpoint +
+  key; non-catalog model ids are sent verbatim on the wire. Opening a pinned
+  session restores its connection (with the connection default model) and
+  badges it in the sidebar. Conversation loop with a hard `maxSteps` cap,
+  tool-call trace and workspace viewer in the UI.
 - **Agent workspaces** — filesystem workspace under `AGENT_WORKSPACE_ROOT`
   (Docker default `/data/workspaces`): named agent folders (`coder`,
   `researcher`) and shared project folders; agents get file read/write/list
@@ -110,12 +113,13 @@ Agent:
 | GET    | `/api/agent/workspaces/agents/:name`   | list agent folder content                   |
 
 When an optional `connectionId` (UUID) is supplied, the saved Connection's
-base URL, model name, stored API key, and default parameters replace the
-built-in gateway + catalog for that call. The connection's model is used
-verbatim; neither the request `model` nor the row's default `model` /
-`messages` / `tools` entries can override it, and catalog fallback is
-disabled for custom endpoints. Unknown connection ids are 404s on
-create/turn/converse. On sessions the pin persists, so later turns keep
+base URL, model name, stored API key, default parameters, and model list
+replace the built-in gateway + catalog for that call. Without an explicit
+`model` the connection's own model wins; an explicit `model` is a per-turn
+override — catalog model ids map to their provider model, while any other id
+(e.g. a raw model from the connection's stored `models` list) is sent to the
+endpoint verbatim, with no catalog fallback. Unknown connection ids are 404s
+on create/turn/converse. On sessions the pin persists, so later turns keep
 using that provider; if the connection is later deleted, the session
 self-heals back to the default gateway.
 
@@ -168,7 +172,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 80 tests / 11 suites** — model catalog, workspace service + tools,
+- **Unit: 84 tests / 11 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -179,27 +183,31 @@ cd e2e && node browser-e2e.mjs
   network failure, abort/timeout, unknown id 404; draft values tested without
   touching the DB, trailing-slash normalization, no-auth-header omission) plus
   apiKey normalization (empty-string clears to NULL on create and update),
-  and connection-pinned agent calls (session pin persists through DB
-  persistence, unknown connection 404 on create/turn, converse resolves the
-  row's baseUrl/model/key/default-parameters, a deleted pinned connection
+  per-connection `models` normalization (trim/dedupe/blanks on create, empty
+  array clears on update, absent key leaves the list untouched), and
+  connection-pinned agent calls (session pin persists through DB persistence,
+  unknown connection 404 on create/turn, converse resolves the row's
+  baseUrl/model/key/default-parameters, a deleted pinned connection
   self-heals to the default endpoint, attaching a connection to an existing
-  session via converse, and explicit catalog-model overrides through a
-  connection on both turns and sessions).
-- **API E2E: 56 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
+  session via converse, explicit catalog-model overrides through a connection
+  on both turns and sessions, and a non-catalog model id used verbatim on the
+  wire + stored verbatim on the session).
+- **API E2E: 58 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
-  `test/test-app.ts`: app health (5), connections CRUD + live probes (13:
+  `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
-  the stored key to NULL server-side, probe OK through a hermetic fake
-  upstream that asserts the stored bearer key, 401 reporting, unreachable
-  endpoint graceful failure, unknown id 404, draft endpoint success/401/
-  unreachable/validation against entered values without persisting a row), agent
+  the stored key to NULL server-side, model-list normalization/replace/clear,
+  malformed model-list 400s, probe OK through a hermetic fake upstream that
+  asserts the stored bearer key, 401 reporting, unreachable endpoint graceful
+  failure, unknown id 404, draft endpoint success/401/unreachable/validation
+  against entered values without persisting a row), agent
   sessions/turns/rename/auto-title + saved-connection pinning (12: pin
   persists on create/converse, attach via converse, stateless turn with the
-  connection, explicit catalog-model override via turn/converse, unknown
-  connection 404 on create/turn/converse, malformed id 400), channel
-  lifecycle + streaming jobs
-  (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
-  delete + file delete, path-escape 400, project-scope 403, scope
+  connection, explicit catalog-model override via turn/converse, a raw
+  provider model id used verbatim and reported back, unknown connection 404
+  on create/turn/converse, malformed id 400), channel lifecycle + streaming
+  jobs (12), files manager (9: CRUD round-trip, directory-first ordering,
+  empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
   directory/escape download 400), the API token gate (3), and throttling
   (2: over-limit 429 then window recovery). Deleting a channel stops its running
@@ -364,6 +372,32 @@ cd e2e && node browser-e2e.mjs
   clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
   (`e2e/report.json` + screenshots refreshed, including
   `agent-sessions-picker.png` / `agent-sessions-connection.png`).
+
+### Round 22 — per-connection model lists
+- Connections gain an editable **Models** list (one provider model id per
+  line) stored on the row (`models String[]`, migration
+  `20260808060737_add_connection_models`); ids are trimmed/deduped
+  server-side, an empty list clears the field, and the Settings edit form
+  round-trips the list.
+- The agent model picker is now first-class for non-catalog providers: with a
+  connection selected it shows the connection default, every model in the
+  connection's list, and the catalog models. Picking a connection model is a
+  per-turn override — `model` + `connectionId` on the wire — and the backend
+  treats a non-catalog id as a raw provider model sent verbatim (previously
+  `resolveModel` silently fell back to the catalog default for unknown ids),
+  storing it verbatim on the session so reopening keeps the user's choice.
+- Browser E2E: the sessions journey now proves the connection-model path —
+  the fixture row carries a non-catalog model id, it is absent from the
+  default-gateway picker, appears only after the connection is selected,
+  drives a real turn whose wire model is the raw id with the fixture's bearer
+  key, and the process is repeated for the catalog-override path with both
+  cleanups verified. New flags: `connListNotCatalog`, `connListOptionSeen`,
+  `connListModelSentOnConverse`, `connListUpstreamHit`,
+  `connListUpstreamModel`/`AuthOk`, `connListReplySeen` (all gated).
+- Unit 80 → 84, API E2E 56 → 58; backend `nest build` + `tsc --noEmit`
+  clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
+  (`e2e/report.json` + screenshots refreshed; containers rebuilt with the
+  migration applied).
 
 ### Round 21 — probe metrics + auto-probe after save
 - Probe results now carry the full picture in one glance: the backend message

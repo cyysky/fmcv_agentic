@@ -1,3 +1,51 @@
+## Round 2026-08-08 — autonomous iteration round 22 (tag `round-22`)
+
+### Added
+- Per-connection model lists: `Connection.models String[] @default([])`
+  (migration `20260808060737_add_connection_models`). Settings gets a
+  **Models** textarea (one provider model id per line) that round-trips on
+  create/edit; the backend trims, drops blanks, and de-dupes the list on
+  create/update, an empty array clears it, and malformed lists (non-array,
+  non-string entries, > 50 ids, > 200-char ids) are 400s.
+- The agent model picker treats connection-provided models as first-class:
+  with a connection selected it lists the connection default, every id from
+  the connection's `models` list, and the catalog models. Picking a
+  connection model is a per-turn override (`model` + `connectionId` on the
+  wire) with the same route-through semantics as catalog overrides.
+- Raw (non-catalog) model ids are sent to the endpoint verbatim: before this
+  round an unknown explicit model was silently resolved to the catalog
+  default, so a provider-specific model could never actually be used. The
+  chosen id is also stored verbatim on the session.
+- Browser E2E: the sessions journey now proves the connection-model path
+  against the hermetic fake upstream — the fixture row carries a non-catalog
+  model id, it is absent from the default-gateway picker, appears only after
+  the connection is selected, drives a real turn whose wire model is the raw
+  id with the fixture's bearer key, and stays green alongside the existing
+  catalog-override path (new gated flags `connListNotCatalog`,
+  `connListOptionSeen`, `connListModelSentOnConverse`, `connListUpstreamHit`,
+  `connListUpstreamModel`/`AuthOk`, `connListReplySeen`).
+
+### Fixed
+- Explicit `model` values outside the catalog no longer fall back to the
+  catalog default on the wire (`resolveWireModel` maps catalog ids to their
+  `provider_model` and passes everything else through verbatim); pinned
+  sessions persist the raw id so reopening shows the user's choice.
+
+### Test status
+- Unit **84 passed / 11 suites** (80 → +4: models normalization on
+  create/update/absent-key, non-catalog model used verbatim on turn +
+  converse and stored on the session).
+- API E2E **58 passed / 7 suites** (56 → +2: model-list
+  normalize/replace/clear round trip, malformed model-list 400s; the agent
+  suite asserts a raw provider model id is reported back from a turn).
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean (0 warnings).
+- Browser E2E all green (exit 0, zero console/network errors): all 12 route
+  probes, nav/channel/files/settings journeys (incl. Round 21 auto-probe),
+  and the extended sessions journey (default path + connection-model path +
+  catalog-override path). `e2e/report.json` + screenshots refreshed;
+  containers rebuilt/restarted with the new images and migration applied.
+
 ## Round 2026-08-08 — autonomous iteration round 21 (tag `round-21`)
 
 ### Added

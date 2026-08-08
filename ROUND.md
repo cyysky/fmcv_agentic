@@ -1,59 +1,67 @@
-# ROUND 21 — 2026-08-08 (autonomous iteration round 21)
+# ROUND 22 — 2026-08-08 (autonomous iteration round 22)
 
-User instruction: **read on loop.md and do works**. This round polished the
-settings probe UX: probe results now show structured HTTP status + latency
-without dying in the message text, the edit form replays a row's last-known
-probe, and saving untested values auto-probes the saved row.
+User instruction: **read on loop.md and do works**. This round landed
+per-connection model lists (Round 21's top focus): Settings can store a
+provider-specific model list per connection, the agent model picker treats
+those ids as first-class overrides, and non-catalog ids reach the endpoint
+verbatim instead of silently falling back to the catalog default.
 
 ## What changed this round
 
-- **Structured probe metrics** — the backend success message is now short
-  (`Connected — <model> responded.`); the settings UI composes
-  `HTTP <status> · <latency> ms` beneath it in both the row result and the
-  edit-form result, so latency/status are never duplicated inside the message.
-- **Edit replays known probe** — opening Edit fills the form's test-result
-  area with the row's last probe (`testStates[id].result`) until any probed
-  value changes (any field change clears it again).
-- **Auto-probe on save** — saving a connection whose form values were never
-  probed kicks a client-side probe of the persisted row after the save lands
-  (never blocking the save): the row renders `Connected · HTTP 200 · <n> ms`,
-  the success banner reports `Probe: <summary>` (or graceful
-  `Probe unavailable: <message>` when the probe fails).
-- **Browser E2E** — the settings journey now runs the whole auto-probe path
-  against the hermetic fake upstream: form create → row result with curated
-  metrics → `Probe:` banner → single one-token `chat/completions` with the
-  stored bearer key + `max_tokens: 1` → Edit replays the probe → both fixtures
-  deleted + server-side cleanup verified. New flags: `autoProbeRowSeen`,
-  `autoProbeBannerSeen`, `autoProbeUpstreamHit`, `autoProbeUpstreamAuthOk`,
-  `autoProbeUpstreamModel`, `autoProbeUpstreamMaxTokens`, `autoProbeRowText`,
-  `autoEditReplaysProbe`, `autoCleanup` (all gated).
+- **Connection model lists** — `Connection.models String[]` (migration
+  `20260808060737_add_connection_models`) with a Settings textarea (one
+  provider model id per line) that round-trips on create/edit; backend trims,
+  drops blanks, and de-dupes the list, an empty array clears it, and
+  malformed lists (non-array, non-string, > 50 ids, > 200-char ids) are 400s.
+- **First-class provider models in the picker** — with a connection selected,
+  the agent model picker shows the connection default, every id from the
+  connection's `models` list, and the catalog models; picking a connection
+  model sends `model` + `connectionId` on the wire (per-turn override).
+- **Raw model ids sent verbatim** — `resolveWireModel` maps catalog ids to
+  their `provider_model` and passes everything else (e.g. a connection-list
+  id) through unchanged; pinned sessions store the user's chosen id verbatim.
+- **Browser E2E** — the sessions journey proves the connection-model path
+  against the hermetic fake upstream: the fixture row's non-catalog id is
+  absent from the default-gateway picker, appears after the connection is
+  selected, drives a real turn with the fixture's bearer key, and reports the
+  raw id at the upstream (new gated flags `connList*`).
+- **Housekeeping** — removed 10 stale "New session" rows and 1 leftover
+  connection fixture (with a stored API key) left by earlier interrupted
+  browser-E2E runs; verified no stray localhost tabs after the run; fixed a
+  duplicate CHANGELOG heading. A stray `.gitignore` rule that would have
+  untracked `e2e/screenshots/` was reverted so screenshots stay committed as
+  round evidence, consistent with all previous rounds.
 
 ## Test status
 
-- Unit: **80 passed / 11 suites** (count unchanged; reachable-probe message
-  assertion updated to the short form).
-- API E2E: **56 passed / 7 suites**.
-- Backend: `nest build` + `tsc --noEmit` clean.
-- Frontend: `tsc --noEmit` + `eslint` clean, zero warnings.
-- Browser E2E: all green, exit 0, zero console/network errors —
-  `e2e/report.json` + screenshots refreshed (incl. `settings-auto-probe.png`);
-  containers rebuilt/restarted with the Round-21 images before the run.
+- Unit: **84 passed / 11 suites** (`npm test`).
+- API E2E: **58 passed / 7 suites** (`npm run test:e2e`, real Postgres).
+- Backend: `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean (0 warnings); `prisma generate` + migration status clean.
+- Browser E2E: exit 0, zero console/network errors on all routes and the
+  nav/channel/files/settings/sessions journeys; `e2e/report.json` +
+  screenshots refreshed against freshly rebuilt images (migration applied);
+  fixture connections/sessions cleaned up server-side (`connections: 0,
+  sessions: 0` after the run + housekeeping).
 
 ## Known issues / open tickets
 
-- None blocking. Documented semantics: the auto-probe is best-effort and
-  client-side, so a slow endpoint can leave the banner in
-  `Probe unavailable: …` even though the save succeeded (graceful by design).
+- None blocking. The connection-model list is a manual textarea list (no
+  `/models` discovery yet); dedupe is case-sensitive; the picker omits a
+  catalog duplicate when the same id is also in the connection list (the
+  connection's raw id wins) — both are documented semantics, not blockers.
 
 ## Next round focus
 
-1. **Per-connection model lists** (Round 20's #2) — beyond the catalog
-   override, let a connection expose a provider-specific model list (e.g.
-   `/models` discovery or an editable list in Settings) so non-catalog
-   providers are first-class in the agent model picker.
-2. **Housekeeping** — audit TODO/FIXME markers, check for stale browser E2E
-   sessions/connections after failed runs, and re-verify docs/README counts
-   are accurate.
-3. **Probe polish follow-ups** — e.g. surface the probe metrics line in the
-   row even when a previous probe is stale, or persist the last probe result
-   server-side so a reload of `/settings` still shows known health.
+1. **Probe polish follow-ups** (Round 21's #3) — surface the probe metrics
+   line in a row even when a previous probe is stale, or persist the last
+   probe result server-side so a reload of `/settings` still shows known
+   health.
+2. **Model discovery / editable validation** — add a "fetch models" action
+   (GET the provider's `/models` where available) or validate connection
+   model ids against a documented endpoint; consider case-insensitive
+   de-dupe/conflict handling between the connection list and the catalog.
+3. **Housekeeping rhythm** — keep the API-E2E and browser-E2E suites wired
+   into the round loop with a short smoke check of stale-session cleanup in
+   the browser script itself (it already deletes its own fixtures; an
+   explicit pre-run stale sweep would make failed-run leftovers impossible).
