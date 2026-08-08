@@ -53,7 +53,10 @@ Environment overrides:
 3. **Channel journey**: on `/agent`, the script opens the Channels tab,
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state
-   (`[answer]`, `[stopped]`, or `[error]`).
+   (`[answer]`, `[stopped]`, or `[error]`). After the channel is deleted, the
+   cleanup also removes the `round2.md` fixture the brief makes `coder` write
+   into its own agent folder (channel deletion only cascades the channel's
+   project folder) and fails the run if either artifact is left behind.
 4. **Sessions + saved-connection journey**: on `/agent`, the script opens the
    Sessions tab, creates a session, posts a live converse, asserts the
    auto-title and history survive a page reload, renames the session through

@@ -752,12 +752,34 @@ async function projectFolderPruneCheck(channelPrefix) {
 
 async function agentChannelCleanup(f) {
   if (!f?.channelName) return null;
+  const parts = [];
   try {
-    return await cleanupChannel(f.channelName);
+    parts.push(await cleanupChannel(f.channelName));
+    // The channel brief asks the `coder` agent to write round2.md into its
+    // OWN agent folder. Channel deletion only cascades the channel's project
+    // folder, so this fixture file must be pruned separately or every run
+    // leaves an agent-scope artifact behind.
+    const delRes = await fetch(
+      `${API}/files/delete?scope=agent:coder&path=round2.md`,
+      { method: "DELETE" },
+    );
+    if (delRes.status >= 400 && delRes.status !== 404) {
+      throw new Error(`delete agent fixture round2.md -> HTTP ${delRes.status}`);
+    }
+    const listRes = await fetch(`${API}/files/list?scope=agent:coder&path=`);
+    if (!listRes.ok) throw new Error(`agent files list -> HTTP ${listRes.status}`);
+    const body = await listRes.json();
+    const names = (body.entries ?? []).map((e) => e.name);
+    if (names.includes("round2.md")) {
+      throw new Error("agent fixture round2.md still present after delete");
+    }
+    parts.push("agent-fixture-clean");
+    log("  cleanup: channel deleted + agent fixture round2.md removed");
   } catch (err) {
     log(`  cleanup FAILED: ${err.message}`);
     return `error: ${err.message}`;
   }
+  return parts.join("+");
 }
 
 /** Sessions flow: create a persisted chat, converse, reload the page, and
@@ -4256,6 +4278,9 @@ async function main() {
   }
   if (f.projectPrune && f.projectPrune.ok === false) {
     failures.push(`agent flow: leftover channel project folder(s) [${f.projectPrune.leftovers.join(", ")}]`);
+  }
+  if (!f.cleanup || !f.cleanup.includes("deleted") || !f.cleanup.includes("agent-fixture-clean")) {
+    failures.push(`agent flow: cleanup not verified (${f.cleanup})`);
   }
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
