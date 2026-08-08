@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { WorkspaceService } from './workspace.service';
-import { buildWorkspaceTools } from './workspace-tools';
+import { buildSelfTools, buildWorkspaceTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
 
 function configMock(root: string) {
@@ -29,6 +29,13 @@ describe('workspace tools', () => {
   it('write -> read -> list round-trip in an agent folder', async () => {
     const tools = buildWorkspaceTools(ws);
     const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+
+    const empty = (await byName['write_workspace_file'].run({
+      name: 'coder',
+      path: 'empty.txt',
+    })) as { written: boolean; bytes: number };
+    expect(empty.written).toBe(true);
+    expect(empty.bytes).toBe(0);
 
     const written = (await byName['write_workspace_file'].run({
       name: 'coder',
@@ -104,6 +111,133 @@ describe('workspace tools', () => {
       path: 'projects/public-a',
     })) as Record<string, unknown>;
     expect(tree).toEqual({ 'readme.md': null });
+
+    // The projects root itself lists without an agent arg too.
+    const rootTree = (await byName['list_workspace'].run({
+      path: 'projects',
+    })) as Record<string, unknown>;
+    expect(rootTree).toHaveProperty('public-a');
+
+    // A trailing slash normalizes to the same root tree.
+    const rootTree2 = (await byName['list_workspace'].run({
+      path: 'projects/',
+    })) as Record<string, unknown>;
+    expect(rootTree2).toHaveProperty('public-a');
+
+    // An empty agent-folder path falls back to the folder root.
+    await byName['write_workspace_file'].run({
+      name: 'coder',
+      path: 'probe.txt',
+      content: 'probe',
+    });
+    const agentRoot = (await byName['list_workspace'].run({
+      agent: 'coder',
+      path: '',
+    })) as Record<string, unknown>;
+    expect(agentRoot['probe.txt']).toBeNull();
+  });
+
+  it('self tools list/read/write inside the agent folder only', async () => {
+    const byName = Object.fromEntries(
+      buildSelfTools(ws, 'coder').map((t) => [t.name, t]),
+    );
+
+    // Default empty content, nested dirs created on write.
+    const written = (await byName['write_own_file'].run({
+      path: 'drafts/note.txt',
+    })) as { written: boolean; bytes: number; path: string };
+    expect(written.written).toBe(true);
+    expect(written.bytes).toBe(0);
+    expect(written.path).toContain('drafts/note.txt');
+
+    await byName['write_own_file'].run({
+      path: 'drafts/note.txt',
+      content: 'hello',
+    });
+    const read = (await byName['read_own_file'].run({
+      path: 'drafts/note.txt',
+    })) as { content: string; size: number };
+    expect(read.content).toBe('hello');
+    expect(read.size).toBe(5);
+
+    // Explicit sub-path and the default "." both produce trees.
+    const tree = (await byName['list_own_workspace'].run({
+      path: 'drafts',
+    })) as Record<string, unknown>;
+    expect(tree).toEqual({ 'note.txt': null });
+    const rootTree = (await byName['list_own_workspace'].run({})) as Record<
+      string,
+      unknown
+    >;
+    expect(rootTree).toHaveProperty('drafts');
+    const slashRoot = (await byName['list_own_workspace'].run({
+      path: '/',
+    })) as Record<string, unknown>;
+    expect(slashRoot).toHaveProperty('drafts');
+  });
+
+  it('self tools reject missing paths, directories, and oversized files', async () => {
+    const byName = Object.fromEntries(
+      buildSelfTools(ws, 'coder').map((t) => [t.name, t]),
+    );
+
+    await expect(byName['read_own_file'].run({})).rejects.toThrow(
+      'path must be a non-empty string',
+    );
+    await expect(byName['write_own_file'].run({})).rejects.toThrow(
+      'path must be a non-empty string',
+    );
+    await expect(byName['read_own_file'].run({ path: '.' })).rejects.toThrow(
+      'read_own_file expects a file',
+    );
+
+    await byName['write_own_file'].run({
+      path: 'big.bin',
+      content: 'x'.repeat(101 * 1024),
+    });
+    await expect(
+      byName['read_own_file'].run({ path: 'big.bin' }),
+    ).rejects.toThrow(/file too large/);
+  });
+
+  it('workspace tools reject bad kinds, missing names, and directories', async () => {
+    const byName = Object.fromEntries(
+      buildWorkspaceTools(ws).map((t) => [t.name, t]),
+    );
+
+    await expect(byName['list_workspace'].run({})).rejects.toThrow(
+      'agent must be a non-empty string',
+    );
+    await expect(
+      byName['read_workspace_file'].run({
+        kind: 'bogus',
+        name: 'coder',
+        path: '.',
+      }),
+    ).rejects.toThrow("kind must be 'project' or 'agent'");
+    await expect(
+      byName['read_workspace_file'].run({ kind: 'project', path: 'x' }),
+    ).rejects.toThrow('name must be a non-empty string');
+    await expect(
+      byName['read_workspace_file'].run({
+        kind: 'agent',
+        name: 'coder',
+        path: '.',
+      }),
+    ).rejects.toThrow('read_workspace_file expects a file');
+
+    await byName['write_workspace_file'].run({
+      name: 'coder',
+      path: 'big.bin',
+      content: 'x'.repeat(101 * 1024),
+    });
+    await expect(
+      byName['read_workspace_file'].run({
+        kind: 'agent',
+        name: 'coder',
+        path: 'big.bin',
+      }),
+    ).rejects.toThrow(/file too large/);
   });
 });
 
