@@ -217,6 +217,26 @@ describe('Files API (e2e)', () => {
     expect((view.body as Buffer).toString('utf8')).toBe(html);
   });
 
+  it('requires the API token on the view endpoint when API_TOKEN is set', async () => {
+    const previous = process.env.API_TOKEN;
+    process.env.API_TOKEN = 'fmcv-e2e-view-token';
+    try {
+      await request(app.getHttpServer())
+        .get('/api/files/view')
+        .query({ scope, path: htmlPath })
+        .expect(401);
+      const ok = await request(app.getHttpServer())
+        .get('/api/files/view')
+        .query({ scope, path: htmlPath })
+        .set('Authorization', 'Bearer fmcv-e2e-view-token')
+        .expect(200);
+      expect(ok.headers['content-type']).toContain('text/html');
+    } finally {
+      if (previous === undefined) delete process.env.API_TOKEN;
+      else process.env.API_TOKEN = previous;
+    }
+  });
+
   it('refuses to view non-HTML files inline (415)', async () => {
     const plainPath = `${base}/plain.txt`;
     await request(app.getHttpServer())

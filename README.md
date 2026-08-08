@@ -77,12 +77,15 @@ and coordinate multi-agent teams in Slack-style channels.
   navigate one level at a time with a breadcrumb, view or download file
   contents (downloads are binary-safe and bypass the viewer cap), create
   files/folders, edit, and delete files or empty folders. HTML files open in
-  a sandboxed inline preview (served by `GET /api/files/view` with CSP
-  `sandbox`, `inline` disposition and `nosniff`) and a dedicated **Open in
-  new tab** link opens the same URL in a fresh tab/window. Dotfiles are
-  shown, path escapes are rejected by the API, the create/edit panel submits
-  from the name field (Enter), and every create/save/download/delete action
-  shows a dismissible success notice.
+  a sandboxed inline preview (CSP `sandbox`, `inline` disposition and
+  `nosniff`) and a dedicated **Open in new tab** link opens the same URL in a
+  fresh tab/window. Both the preview iframe and the link go through the
+  frontend's same-origin view proxy (`/api/files/view` on the app origin),
+  which attaches the API bearer token server-side before forwarding to the
+  backend, so token-protected deployments keep working without leaking the
+  token into URLs. Dotfiles are shown, path escapes are rejected by the API,
+  the create/edit panel submits from the name field (Enter), and every
+  create/save/download/delete action shows a dismissible success notice.
 - **Managed document buckets (`/buckets`)** — human-facing page over the
   read-only buckets API: pick an agent or project folder, create a uniquely
   named bucket, upload documents (PDF/text/video/audio/other, 100 MB cap),
@@ -166,7 +169,7 @@ check):
 | GET    | `/api/files/list?scope=&path=`        | one-level directory listing (dirs first) |
 | GET    | `/api/files/read?scope=&path=`        | read a text file (100 KB viewer cap)  |
 | GET    | `/api/files/download?scope=&path=`    | stream a file as an attachment (binary-safe, no cap) |
-| GET    | `/api/files/view?scope=&path=`       | stream an HTML file inline (sandboxed `text/html`, `inline` + CSP `sandbox`; 415 for non-HTML) |
+| GET    | `/api/files/view?scope=&path=`       | stream an HTML file inline (sandboxed `text/html`, `inline` + CSP `sandbox`; 415 for non-HTML). The UI opens this through a same-origin frontend proxy of the same path (`<app origin>/api/files/view`) that adds the bearer token when one is configured |
 | PUT    | `/api/files/write?scope=&path=`       | write a file (parents created)        |
 | POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
 | DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
@@ -617,7 +620,14 @@ Stop everything with `docker compose down`.
   empty/unset keeps the API fully open for local dev.
 - `NEXT_PUBLIC_API_TOKEN` — optional frontend build-time token; forwarded as
   the bearer header by `frontend/lib/api.ts` when `API_TOKEN` is set on the
-  backend. It ships in browser JS, so treat it as access gating, not a secret.
+  backend, and also attached server-side by the files view proxy
+  (`/api/files/view`) so HTML previews and new-tab links work under the
+  token gate. It ships in browser JS, so treat it as access gating, not a
+  secret.
+- `API_INTERNAL_URL` — optional backend base URL used by the frontend's
+  server-side file-view proxy to reach the backend (defaults to
+  `http://backend:5555/api` in the compose deployment; falls back to
+  `NEXT_PUBLIC_API_URL` / `http://localhost:5555/api` elsewhere).
 - `RATE_LIMIT_MAX` — max requests per window per client IP (default 100);
   set `0` to disable throttling entirely. Over-limit bursts get 429 with
   `Retry-After` and recover once the window elapses.

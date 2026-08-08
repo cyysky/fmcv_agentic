@@ -12,6 +12,9 @@ services:
       - "3333:3333"
     environment:
       - NODE_ENV=production
+      # Server-side base URL the file-view proxy uses to reach the backend
+      # (the browser-facing NEXT_PUBLIC_API_URL is the client's own default).
+      - API_INTERNAL_URL=${API_INTERNAL_URL:-http://backend:5555/api}
     restart: unless-stopped
 
   backend:

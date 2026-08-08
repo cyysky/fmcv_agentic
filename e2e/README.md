@@ -85,16 +85,18 @@ Environment overrides:
    the files API (no leftovers).
 6. **HTML-view journey**: on `/files`, the script creates an
    `view.html` fixture through the UI (agent scope), clicks **View** and
-   proves the in-app sandboxed iframe preview renders the fixture, captures
-   the `/files/view` response headers over CDP to assert `text/html`,
-   `inline` disposition, `Content-Security-Policy: sandbox`, and `nosniff`,
-   then clicks **Open in new tab** with a trusted CDP mouse click (so the
-   popup blocker treats it as a user gesture), finds the new page target via
-   `/json/list`, and proves the new tab rendered the fixture's marker and
-   document title. The file + folder are then deleted through the UI and the
-   server-side state is verified clean. If the popup target is ever missed,
-   the script falls back to opening the direct `view` link in a fresh tab and
-   still verifies the rendered document.
+   proves the in-app sandboxed iframe preview renders the fixture, asserts
+   both the iframe and the **Open in new tab** link point at the
+   same-origin frontend proxy (`<app origin>/api/files/view`), captures the
+   proxy response headers over CDP to assert `text/html`, `inline`
+   disposition, `Content-Security-Policy: sandbox`, and `nosniff` are
+   preserved, then clicks **Open in new tab** with a trusted CDP mouse click
+   (so the popup blocker treats it as a user gesture), finds the new page
+   target via `/json/list`, and proves the new tab rendered the fixture's
+   marker and document title. The file + folder are then deleted through the
+   UI and the server-side state is verified clean. If the popup target is ever
+   missed, the script falls back to opening the same proxy `href` in a fresh
+   tab and still verifies the rendered document.
 7. **Settings journey**: the script creates a throwaway connection via the
    API (with a stored key), clicks Edit and asserts the API-key field opens
    blank (so the masked preview cannot overwrite the stored secret), changes

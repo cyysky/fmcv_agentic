@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./files.module.css";
-import { API_URL, apiFetch } from "../../lib/api";
+import { apiFetch } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -320,9 +320,14 @@ export default function FilesPanel() {
     }
   };
 
+  // The in-app preview and the "Open in new tab" link both go through the
+  // frontend's same-origin view proxy (/api/files/view), which forwards the
+  // bearer token server-side. That keeps token-protected deployments working
+  // without ever putting the token in a URL, and preserves the backend's CSP
+  // `sandbox` + inline headers on the proxied response.
   const htmlViewUrl =
     viewer && !viewer.loading && !viewer.error && isHtmlName(viewer.entry.name)
-      ? `${API_URL}/files/view?${query({ scope, path: viewer.target })}`
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/api/files/view?${query({ scope, path: viewer.target })}`
       : null;
 
   return (

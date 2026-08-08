@@ -50,10 +50,11 @@
 //      delete it with the two-click confirm and verify server-side cleanup
 //   10e. HTML view: create an HTML file through the /files UI, prove the
 //      in-app preview renders it inside a sandboxed iframe served inline by
-//      /api/files/view (text/html + inline + CSP sandbox headers), click
-//      "Open in new tab" and prove the same link renders the document in a
-//      fresh tab, then delete the fixture through the UI and verify
-//      server-side cleanup
+//      the same-origin frontend proxy (/api/files/view — text/html + inline
+//      + CSP sandbox headers preserved from the backend), assert the new-tab
+//      link points at that proxy, click "Open in new tab" and prove the same
+//      link renders the document in a fresh tab, then delete the fixture
+//      through the UI and verify server-side cleanup
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -2018,6 +2019,19 @@ async function htmlFlow() {
     await delay(500);
     await screenshot(c, "files-html-view.png");
 
+    // Both the in-app preview and the new-tab link must point at the
+    // same-origin view proxy, so token-protected deployments work without a
+    // raw API link (and without the token leaking into the URL).
+    const appOrigin = new URL(url).origin;
+    const htmlHref = await evalJs(
+      c,
+      `document.querySelector('a[aria-label="Open HTML in new tab"]')?.getAttribute('href') ?? null`,
+    );
+    if (!htmlHref || !htmlHref.startsWith(`${appOrigin}/api/files/view`)) {
+      throw new Error(`html-view flow: Open in new tab link is not the same-origin proxy (href=${htmlHref ?? "missing"})`);
+    }
+    flow.proxyHref = htmlHref;
+
     // "Open in new tab": click the real link with trusted input events (a
     // scripted a.click() is not a user gesture and the popup blocker can eat
     // the tab), then find the resulting page target.
@@ -2040,8 +2054,8 @@ async function htmlFlow() {
       if (!newTab) await delay(300);
     }
     if (!newTab) {
-      log("  html-view flow: new tab from click not observed — verifying the direct link in a fresh tab instead");
-      newTab = await openTab(`${API}/files/view?scope=${encodeURIComponent(flow.scope)}&path=${encodeURIComponent(file)}`);
+      log("  html-view flow: new tab from click not observed — verifying the proxy link in a fresh tab instead");
+      newTab = await openTab(htmlHref);
     }
     const t2 = new CDP(newTab.webSocketDebuggerUrl ?? newTab.wsUrl);
     await t2.open();
