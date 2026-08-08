@@ -7,6 +7,7 @@ import { AgentModule } from './agent/agent.module';
 import { ConnectionsModule } from './connections/connections.module';
 import { ApiTokenGuard } from './common/api-token.guard';
 import { AppThrottlerGuard, envPositiveInt } from './common/throttle.guard';
+import { BucketsModule } from './buckets/buckets.module';
 import { FilesModule } from './files/files.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -16,6 +17,7 @@ import { PrismaModule } from './prisma/prisma.module';
     PrismaModule,
     AgentModule,
     FilesModule,
+    BucketsModule,
     // Global per-IP throttling; limits are resolved per request (see
     // AppThrottlerGuard), and the defaults never trip local development.
     ThrottlerModule.forRoot([

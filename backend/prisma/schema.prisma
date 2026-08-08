@@ -124,3 +124,44 @@ model AgentSession {
   @@index([connectionId])
   @@map("agent_sessions")
 }
+
+/**
+ * Managed document bucket (DIRECTION.md item 1). A bucket is a uniquely
+ * named, read-only container mapped to either a project folder or an agent
+ * folder; a project/agent folder can carry many buckets. Bucket metadata is
+ * immutable after creation (no update or delete endpoints), and documents
+ * inside a bucket can be added/read but never edited or overwritten.
+ */
+model Bucket {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  folderType String // "project" | "agent"
+  folderName String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  documents ManagedDocument[]
+
+  @@map("buckets")
+}
+
+/**
+ * A managed document inside a Bucket. Physical content is written once to
+ * <mapped folder>/<bucket name>/<sanitized file name> and never overwritten;
+ * the unique [bucketId, name] pair (plus `wx` file creation) enforces that.
+ */
+model ManagedDocument {
+  id        String   @id @default(uuid())
+  bucketId  String
+  name      String
+  kind      String // "pdf" | "text" | "video" | "audio" | "other"
+  mimeType  String?
+  sizeBytes Int      @default(0)
+  createdAt DateTime @default(now())
+
+  bucket Bucket @relation(fields: [bucketId], references: [id], onDelete: Cascade)
+
+  @@unique([bucketId, name])
+  @@index([bucketId])
+  @@map("managed_documents")
+}
