@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./cron.module.css";
 import { apiFetch, apiError, errText } from "../../lib/api";
 
@@ -207,6 +207,37 @@ export default function CronPanel() {
     return () => clearTimeout(timer);
   }, [confirmDeleteId]);
 
+  // Auto-refresh expanded run histories (Round 70): while a history list is
+  // open, poll it every 5 s and also refresh right after a manual run
+  // returns, so a freshly completed run appears without collapsing and
+  // reopening the toggle.
+  const runsByJobRef = useRef(runsByJob);
+  useEffect(() => {
+    runsByJobRef.current = runsByJob;
+  }, [runsByJob]);
+  const refreshExpandedRuns = useCallback(async () => {
+    const expanded = Object.entries(runsByJobRef.current)
+      .filter(([, runs]) => runs !== null)
+      .map(([id]) => id);
+    await Promise.all(
+      expanded.map(async (id) => {
+        try {
+          const res = await apiFetch(`/cron/${id}/runs`);
+          if (!res.ok) throw new Error(await apiError(res));
+          const body = (await res.json()) as CronRunRow[];
+          setRunsByJob((m) => (m[id] === null ? m : { ...m, [id]: body }));
+        } catch {
+          // Keep the last known list: a transient poll failure must not
+          // clobber an open history list or spam the error banner.
+        }
+      }),
+    );
+  }, []);
+  useEffect(() => {
+    const timer = setInterval(() => void refreshExpandedRuns(), 5000);
+    return () => clearInterval(timer);
+  }, [refreshExpandedRuns]);
+
   const refresh = () => setReloadKey((k) => k + 1);
 
   const openCreate = () => {
@@ -299,6 +330,7 @@ export default function CronPanel() {
           : `Ran ${job.name} — ${row.lastRunStatus ?? "unknown"}`,
       );
       refresh();
+      void refreshExpandedRuns();
     } catch (e) {
       setError(errText(e));
     } finally {

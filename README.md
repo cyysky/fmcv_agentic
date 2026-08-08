@@ -101,7 +101,10 @@ and coordinate multi-agent teams in Slack-style channels.
   recurring agent-turn job (five-field cron expression, prompt, optional
   model/max-steps, enabled toggle), edit, pause/resume, run it now, delete
   it with a two-click confirm, and expand each job's append-only run history
-  (History button: status, time, model, duration, message; newest first).
+  (History button: status, time, model, duration, message; newest first;
+  an open history list auto-refreshes every 5 s and right after a manual
+  run returns). The page also shows a cluster overview panel with every
+  scheduler lease group plus aggregate run throughput.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, message, model,
@@ -436,7 +439,11 @@ node scripts/verify-rest-docs.mjs
   and waits for the status pill to reach `Done`/`Failed` (whichever the live
   LLM produces; the compose gateway is configured from the local provider
   key), expands the job's **History** list and asserts the terminal run row
-  (status pill, time/model meta, non-empty message) then collapses it again,
+  (status pill, time/model meta, non-empty message), runs the job a second
+  time **without collapsing the history** and asserts the newest row joins
+  the open list (auto-refresh), asserts the cluster overview panel shows an
+  active lease group plus the job's run in the throughput stats, then
+  collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
   deletes it with the two-click confirm (fixture removed server-side
   afterwards via the cron DELETE API, which also cascade-prunes its run

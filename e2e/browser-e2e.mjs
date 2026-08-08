@@ -2946,6 +2946,37 @@ async function cronFlow() {
     if (!historyRow) throw new Error("cron flow: run history row missing meta/message");
     flow.historyShown = true;
     flow.steps.push("run-history");
+
+    // 2c. Auto-refresh: with the history list still open, run the job again
+    //     and assert the newest terminal row joins the list without
+    //     collapsing/reopening the toggle (Round 70).
+    const runAgainClicked = await evalJs(c, rowBtnExpr(jobName, "Run now"));
+    if (!runAgainClicked) throw new Error("cron flow: second Run now button missing");
+    const secondRunRows = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const pills = [...box.querySelectorAll('[class*="statusPill"]')];
+        if (pills.length !== 2) return null;
+        return pills.every((pill) => {
+          const t = pill.textContent.trim();
+          return t === "Done" || t === "Failed";
+        })
+          ? "2-terminal-runs"
+          : null;
+      })()`,
+      120000,
+      1000,
+      "second run in open history",
+    );
+    if (secondRunRows !== "2-terminal-runs") {
+      throw new Error("cron flow: open history did not auto-refresh with the second run");
+    }
+    flow.historyAutoRefreshed = true;
+    flow.steps.push("history-auto-refresh");
+    await screenshot(c, "cron-history-auto.png");
+
     const hideClicked = await evalJs(c, rowBtnExpr(jobName, "Hide history"));
     if (!hideClicked) throw new Error("cron flow: Hide history button missing");
     const runsHidden = await waitFor(
@@ -2958,7 +2989,7 @@ async function cronFlow() {
     if (!runsHidden) throw new Error("cron flow: run history did not collapse");
     await screenshot(c, "cron-history.png");
 
-    // 2c. Cluster overview: the panel must show the default lease group as
+    // 2e. Cluster overview: the panel must show the default lease group as
     //     active/held and surface this job's fresh run in the throughput
     //     stats (real stack, so the busiest-job name comes from the DB).
     const overviewBox = await waitFor(
