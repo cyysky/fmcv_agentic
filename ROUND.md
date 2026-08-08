@@ -1,44 +1,40 @@
-# Round 90 — Connection-less agent walk + feed-format regression guard (2026-08-09)
+# Round 91 — Bundle/frontend hygiene: measured + guarded (2026-08-09)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 89's first focus item (connection-less agent walk) and
-closed the loop on the Round 89 timestamp fix with a regression guard in the
-browser E2E.
+round executed Round 90's first focus item (bundle/frontend hygiene):
+measured the `next build` first-load bundles, looked for duplicated client
+modules, and added a bundle-size guard to the build gate.
 
 ## What changed this round
 
-- **Connection-less agent walk (live Chrome, CDP)** — with zero saved
-  connections and one persisted session, walked `/agent` end to end: Chat
-  empty state (helpful "Ask the agent to do something…" example), model
-  picker (active, both catalog models + Default gateway), Sessions tab
-  (`SESSIONS (1)` row, localized session meta, empty-state hint), and
-  Channels tab with pre-existing `#FMCV` (members, delete buttons, member
-  debug pane, live feed). **No friction found** — zero console errors,
-  zero failed network requests, zero exceptions. The pre-existing `#FMCV`
-  feed renders localized timestamps (`8/5/2026, 4:14:06 PM`); the raw UTC
-  values seen once were a stale pre-fix tab that resolved on reload.
-- **Feed-format regression guard (`e2e/browser-e2e.mjs`)** — the channel
-  journey now fails the run if the feed contains a raw UTC ISO timestamp
-  (`AAAA-MM-DDTHH:MM:SS`) or shows no local-time timestamp, so the shared
-  local-time formatting fix cannot silently regress. Proved live: agent
-  journey green, feed snippet all `8/9/2026, 1:39:43 AM`-style.
-- **Docs** — `e2e/README.md` documents the new feed-format assertion in the
-  channel journey.
-- **E2E report refresh** — enabled-mode report updated by the agent-journey
-  run with the guard active (zero console/network/HTTP errors).
+- **First-load bundle measurement** — parsed
+  `frontend/.next/diagnostics/route-bundle-stats.json`: every route pays a
+  ~451-513 KB uncompressed Next/React framework baseline (shared chunks,
+  ~156 KB gzipped) plus a small page chunk (13-50 KB). No duplicated app
+  modules were found: Turbopack emits each app module in exactly one chunk
+  (checked `Default gateway`, `channelRow`, and page-specific identifiers
+  across the static chunk set). `/agent` is the largest first load at
+  ~501 KB uncompressed; `/cron` ~475 KB; the rest ~460-464 KB.
+- **Bundle-size guard (`scripts/verify-bundle-size.mjs`)** — new
+  zero-dependency script that reads `route-bundle-stats.json` after
+  `next build` and fails the gate when any route's uncompressed
+  first-load JS exceeds the budget (default 600 KB,
+  `FMCV_BUNDLE_BUDGET_BYTES` override). Wired into
+  `node scripts/verify.mjs --build` as a final step.
+- **Docs** — README Testing block and the one-command-verify bullet
+  document the new guard and the Round 91 baseline numbers.
 
 ## Test status
 
 - Backend unit: **14 suites / 182 tests passed.**
-- Backend API E2E (real Postgres, mode flip + restore, run earlier this
-  session): **12 suites / 123 tests passed** (known Jest keep-alive warning
-  only).
+- Backend API E2E (real Postgres, run earlier this session): **12 suites /
+  123 tests passed** (known Jest keep-alive warning only).
 - Frontend: `tsc --noEmit`, ESLint, `next build` — all green; backend
   `nest build` green.
-- Guards: REST docs drift and test-count guards pass.
-- Browser E2E (enabled mode): **agent journey green with the new feed-format
-  guard**; routes/agent/buckets/skills and cron journeys were also green
-  this session (Round 89 runs, un-changed code paths).
+- Guards: REST docs drift, test-count, and the new bundle-size guard all
+  pass — largest first-load `/agent` 501 KB within the 600 KB budget.
+- Browser E2E: unchanged code paths (agent-journey run with the feed guard
+  was green in Round 90; the full default run is scheduled for Round 92).
 
 ## Known issues / open tickets
 
@@ -50,23 +46,28 @@ browser E2E.
 - **Low** — `E2E_JOURNEYS` is a flat list, not per-mode shorthands; users
   must spell out the flows they care about (a `cron-only` / `ui-only`
   preset could come later).
+- **Ticket** — `frontend/app/agent/agent-client.tsx` is a ~1.5 MB single
+  client file (composite of chat, sessions, channels, member debug).
+  Route-level chunks stay small because Turbopack splits per page, but the
+  file is a maintainability risk; a lazy component split is a candidate
+  refactor, not worth the risk in a hygiene-only round.
 - Load-all is deliberately capped (200 runs, 500 transition events,
   5 pages); a history deeper than that shows "First N runs/transitions"
   (bounded UI memory).
 
 ## Next round focus
 
-- **Bundle/frontend hygiene** — inspect `next build` size output for
-  large/duplicated client bundles and ticket real wins.
 - **Journey presets** — add `E2E_JOURNEYS=cron-only|ui-only|core` shorthands
   so quick runs are one word instead of a flow list.
 - **Full default browser E2E run** — exercise all ten journeys together for
   the first time since the feed-format guard landed, and refresh the
   report accordingly.
+- **Lazy agent-client split (ticket)** — split the heaviest client file
+  into lazy-loaded views if the first two land cleanly.
 
 ## Loop state
 
-Loop state: running — Round 90 walked the connection-less agent journey
-(friction-free), proved the Round 89 local-time fix live on pre-existing
-channel history, and added a browser-E2E guard so raw UTC feed timestamps
-fail the suite. No exit condition fires; proceed to Round 91.
+Loop state: running — Round 91 measured the frontend bundles (no duplication;
+~460-513 KB framework baseline per route, app chunks 13-50 KB) and locked the
+baseline behind a budget guard in `verify --build`. No exit condition fires;
+proceed to Round 92.
