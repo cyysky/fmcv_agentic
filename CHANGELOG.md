@@ -1,4 +1,30 @@
 
+## Round 2026-08-08 — autonomous iteration round 56 (tag `round-56`)
+
+### Added
+- **Committed REST docs drift guard** — `scripts/verify-rest-docs.mjs`
+  (zero-dependency Node) parses every `backend/src/**/*.controller.ts` route
+  decorator and cross-checks the normalized `METHOD /api/...` set against
+  the "## REST API" tables in `README.md`; exits non-zero listing the exact
+  missing/extra rows (mutation-tested against a bogus docs row). Replaces
+  the one-off route-vs-doc scans from rounds 49–55 with a re-runnable gate;
+  README Testing documents the command.
+
+### Changed
+- Full gate re-verified green: backend unit 146/146, API E2E 107/107,
+  backend lint/build/tsc clean, frontend lint/tsc/build clean, and browser
+  E2E exit 0 (all route probes + channel/sessions/connections/files/HTML
+  view/buckets/cron/skills/settings journeys, zero console/network errors);
+  `e2e/report.json` + screenshots refreshed.
+
+### Known issues / accepted limitations
+- Unchanged from round 55: CSP `sandbox` inline-preview limits, in-process
+  cron scheduler (single-instance deployment assumed), read-only buckets,
+  `AGENT_API_KEY` not committed (fresh stacks must supply it or use
+  `AGENT_LLM_STUB=1`), and the recoverable pre-existing dev leftovers
+  (`/data/.trash-round34` plus `coder` scratch files) left untouched until
+  a human asks for them to be pruned.
+
 ## Round 2026-08-08 — autonomous iteration round 55 (tag `round-55`)
 
 ### Fixed
