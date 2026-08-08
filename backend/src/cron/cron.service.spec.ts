@@ -80,6 +80,7 @@ function row(over: Partial<CronJob> = {}): CronJob {
     connectionId: null,
     maxSteps: null,
     enabled: true,
+    schedulerGroup: 'default',
     lastRunAt: null,
     lastRunStatus: null,
     lastRunMessage: null,
@@ -849,11 +850,71 @@ describe('CronService', () => {
     expect(prisma.cronJob.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
+          schedulerGroup: 'default',
           enabled: true,
           OR: [{ lastRunStatus: { not: 'running' } }, { lastRunStatus: null }],
         }),
       }),
     );
+  });
+
+  describe('CRON_LEASE_GROUP job ownership (Round 80)', () => {
+    const original = process.env.CRON_LEASE_GROUP;
+
+    afterEach(() => {
+      if (original === undefined) {
+        delete process.env.CRON_LEASE_GROUP;
+      } else {
+        process.env.CRON_LEASE_GROUP = original;
+      }
+    });
+
+    it('stamps create with the current lease group', async () => {
+      process.env.CRON_LEASE_GROUP = 'deploy-a';
+      const { service, prisma } = makeSvc();
+      prisma.cronJob.create.mockResolvedValue(
+        row({ schedulerGroup: 'deploy-a' }),
+      );
+      const created = await service.create(createDto);
+      expect(prisma.cronJob.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ schedulerGroup: 'deploy-a' }),
+        }),
+      );
+      expect(created.schedulerGroup).toBe('deploy-a');
+    });
+
+    it('scopes boot recovery, the startup cache, and the due scan to the owner group', async () => {
+      process.env.CRON_LEASE_GROUP = 'deploy-a';
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockResolvedValue(1);
+      prisma.cronJob.findMany.mockResolvedValue([
+        row({ id: 'j1', lastRunStatus: 'running' }),
+      ]);
+      await service.onModuleInit();
+      service.onModuleDestroy();
+      // Only deploy-a's interrupted rows are swept on boot.
+      expect(prisma.cronJob.updateMany).toHaveBeenCalledWith({
+        where: { lastRunStatus: 'running', schedulerGroup: 'deploy-a' },
+        data: expect.objectContaining({ lastRunStatus: 'error' }),
+      });
+      // The startup cache load never pulls another deployment's jobs in.
+      expect(prisma.cronJob.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { schedulerGroup: 'deploy-a' } }),
+      );
+      // The due scan carries the owner filter, so a cross-group job can
+      // never be returned (and therefore never fired) by this deployment.
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await (service as unknown as { tick(): Promise<void> }).tick();
+      expect(prisma.cronJob.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            schedulerGroup: 'deploy-a',
+            enabled: true,
+          }),
+        }),
+      );
+    });
   });
 
   it('rejects deleting a job whose run is stored as running on another replica', async () => {
@@ -878,7 +939,7 @@ describe('CronService', () => {
     );
     await service.onModuleInit();
     expect(prisma.cronJob.updateMany).toHaveBeenCalledWith({
-      where: { lastRunStatus: 'running' },
+      where: { lastRunStatus: 'running', schedulerGroup: 'default' },
       data: expect.objectContaining({ lastRunStatus: 'error' }),
     });
     expect(prisma.cronJob.update).toHaveBeenCalledWith(

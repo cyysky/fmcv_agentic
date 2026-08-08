@@ -14,6 +14,7 @@ interface CronJobRow {
   connectionId?: string | null;
   maxSteps?: number | null;
   enabled: boolean;
+  schedulerGroup?: string | null;
   lastRunAt?: string | null;
   lastRunStatus?: string | null;
   lastRunMessage?: string | null;
@@ -84,6 +85,7 @@ interface TypedResponse {
   headers: Record<string, string | string[] | undefined>;
 }
 const json = <T>(res: TypedResponse): T => res.body as T;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe('Cron API (e2e, real Postgres, stub agent)', () => {
   let app: INestApplication<App>;
@@ -95,6 +97,7 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     invalid: `e2e-cron-invalid-${stamp}`,
     disabled: `e2e-cron-disabled-${stamp}`,
     restart: `e2e-cron-restart-${stamp}`,
+    grouped: `e2e-cron-group-${stamp}`,
   };
   let jobId = '';
   const http = () => request(app.getHttpServer());
@@ -324,6 +327,66 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     );
     expect(beyond).toHaveLength(0);
   });
+
+  it("never fires a job reassigned to another deployment's lease group, then fires it on return", async () => {
+    const created = json<CronJobRow>(
+      await http()
+        .post('/api/cron')
+        .send({
+          name: names.grouped,
+          schedule: '* * * * *',
+          prompt: 'Stay in my group',
+          maxSteps: 2,
+        })
+        .expect(201),
+    );
+    // The creating backend stamps the row with its own lease group.
+    expect(created.schedulerGroup).toBe('default');
+
+    // Reassign the job to a foreign deployment before making it due, so no
+    // tick can race the hand-off: even though it is enabled/due afterward,
+    // the default group's scheduler must never see it.
+    await prisma.cronJob.update({
+      where: { id: created.id },
+      data: { schedulerGroup: `e2e-foreign-${stamp}` },
+    });
+    await prisma.cronJob.update({
+      where: { id: created.id },
+      data: { nextRunAt: new Date(Date.now() - 2000) },
+    });
+    await sleep(2500);
+    const unfired = await prisma.cronJob.findUnique({
+      where: { id: created.id },
+    });
+    expect(unfired?.lastRunStatus).toBeNull();
+    expect(unfired?.lastRunMessage).toBeNull();
+    expect(
+      await prisma.cronRun.count({ where: { cronJobId: created.id } }),
+    ).toBe(0);
+
+    // Give the job back to this deployment: the next tick fires it normally
+    // (still due), so ownership, not schedule, was the blocker.
+    await prisma.cronJob.update({
+      where: { id: created.id },
+      data: { schedulerGroup: 'default' },
+    });
+    let fired = false;
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const row = await prisma.cronJob.findUnique({
+        where: { id: created.id },
+      });
+      if (row?.lastRunStatus === 'done') {
+        fired = true;
+        break;
+      }
+      await sleep(200);
+    }
+    expect(fired).toBe(true);
+    expect(
+      await prisma.cronRun.count({ where: { cronJobId: created.id } }),
+    ).toBe(1);
+  }, 30000);
 
   it('exposes cluster-wide scheduler overview with leases and run throughput', async () => {
     const res = await http().get('/api/cron/overview').expect(200);

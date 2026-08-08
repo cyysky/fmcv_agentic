@@ -172,6 +172,8 @@ model ManagedDocument {
  * agent-turn task on a 5-field cron schedule (minute hour day-of-month
  * month day-of-week). `nextRunAt` is the scheduler's next due time (null
  * while disabled); `lastRun*` records the most recent execution and result.
+ * `schedulerGroup` is the lease group whose backend created the job, so a
+ * deployment sharing one Postgres only scans/sweeps its own jobs.
  */
 model CronJob {
   id             String    @id @default(uuid())
@@ -183,6 +185,10 @@ model CronJob {
   connectionId   String?
   maxSteps       Int?
   enabled        Boolean   @default(true)
+  /** Scheduler lease group that owns this job (Round 80): scopes the due-job
+   *  scan and boot-recovery sweep so a shared-DB deployment only touches the
+   *  jobs its own backend created. */
+  schedulerGroup String    @default("default")
   lastRunAt      DateTime?
   lastRunStatus  String? // "running" | "done" | "error"
   lastRunMessage String?
@@ -196,6 +202,7 @@ model CronJob {
   runs       CronRun[]
 
   @@index([connectionId])
+  @@index([schedulerGroup, nextRunAt])
   @@map("cron_jobs")
 }
 

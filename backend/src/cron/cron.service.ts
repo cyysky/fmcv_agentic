@@ -181,6 +181,9 @@ export function truncate(
  * the row as `lastRun*`. The scheduler is an in-process ticker that checks
  * due jobs every second; `nextRunAt` and `lastRun*` survive backend
  * restarts, and jobs left "running" by a crash are marked "error" on boot.
+ * Since Round 80 every job carries its creating deployment's lease group and
+ * the boot sweep/due scan only touch that group, so deployments sharing one
+ * Postgres never claim each other's jobs.
  */
 @Injectable()
 export class CronService implements OnModuleInit, OnModuleDestroy {
@@ -198,6 +201,12 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   private readonly schedulerEnabled =
     (process.env.CRON_SCHEDULER_ENABLED?.trim() ?? 'true').toLowerCase() !==
     'false';
+  /** This deployment's lease group (Round 80): jobs are stamped with it on
+   *  create, and the due-job scan + boot recovery sweep are scoped to it so
+   *  a shared-DB deployment never touches another group's jobs. */
+  private get leaseGroup(): string {
+    return process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+  }
   /** True while this instance holds a fresh scheduler lease. */
   private leaseHeld = false;
   /** Expiry this instance last negotiated when claiming/renewing the lease. */
@@ -226,7 +235,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     // from ever inserting AND made the PK collide across groups. Sweep any
     // old-scheme rows for our group (safe now: new replicas come up after the
     // old holder is stopped, so nothing renews them).
-    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    const group = this.leaseGroup;
     await this.prisma
       .$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${group} AND id <> ${group}`.catch(
       (err) => {
@@ -237,7 +246,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     );
     await this.prisma.cronJob
       .updateMany({
-        where: { lastRunStatus: STATUS_RUNNING },
+        where: { lastRunStatus: STATUS_RUNNING, schedulerGroup: group },
         data: {
           lastRunStatus: 'error',
           lastRunMessage: 'Interrupted by backend restart',
@@ -252,6 +261,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     let rows: CronJob[] = [];
     try {
       rows = await this.prisma.cronJob.findMany({
+        where: { schedulerGroup: group },
         orderBy: { createdAt: 'desc' },
       });
     } catch (err) {
@@ -308,6 +318,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
           ...(dto.maxSteps ? { maxSteps: dto.maxSteps } : {}),
           enabled,
           nextRunAt,
+          schedulerGroup: this.leaseGroup,
         },
       });
     } catch (err) {
@@ -472,7 +483,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   private async acquireLease(): Promise<boolean> {
     const now = Date.now();
     const expireAt = new Date(now + CRON_LEASE_DURATION_MS);
-    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    const group = this.leaseGroup;
     // Single atomic INSERT ... ON CONFLICT: insert this group's row when
     // missing; otherwise renew only when we already own it or its lease has
     // expired. A replica that loses the race simply stays in standby.
@@ -499,7 +510,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     this.lastTickAt = new Date();
     // Only the replica holding a fresh lease fires due jobs. Standby
     // replicas keep serving CRUD/run-now and reclaim the lease on failover.
-    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    const group = this.leaseGroup;
     // While standing by, learn who currently holds the lease so a takeover
     // can record the previous owner in the transition audit.
     const previousOwner = !this.leaseHeld
@@ -542,6 +553,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     // only a cache; the DB is the source of truth for enabled/due/running.
     const due: Pick<CronJob, 'id'>[] = await this.prisma.cronJob.findMany({
       where: {
+        schedulerGroup: group,
         enabled: true,
         nextRunAt: { lte: new Date(now) },
         ...NOT_RUNNING_FILTER,
@@ -704,7 +716,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         this.leaseExpiresAt &&
         this.leaseExpiresAt.getTime() > Date.now()
       ),
-      leaseGroup: process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP,
+      leaseGroup: this.leaseGroup,
       leaseExpireAt: this.leaseExpiresAt?.toISOString() ?? null,
       tickIntervalMs: CRON_TICK_MS,
       failoverMs: CRON_LEASE_DURATION_MS,
