@@ -103,10 +103,12 @@ and coordinate multi-agent teams in Slack-style channels.
   delete it with a two-click confirm. The backend scheduler ticks every
   second, validates expressions up front, refuses deletes while a job is
   running, restores next-run timing on boot, and persists every run's
-  terminal result (done/error, message, model, duration) on the row.
-  Scheduling is multi-instance safe: a distributed Postgres lease elects one
-  replica as the ticker (a dead holder fails over in ~5 s), and each firing
-  is an atomic row claim, so the same due job never runs twice even under a
+  terminal result (done/error, message, model, duration) on the row. The
+  page also shows the local scheduler/lease status (active on this node vs
+  standby, last tick/beat, lease expiry) refreshed every 5 s. Scheduling is
+  multi-instance safe: a distributed Postgres lease elects one replica as
+  the ticker (a dead holder fails over in ~5 s), and each firing is an
+  atomic row claim, so the same due job never runs twice even under a
   split-brain lease or an overlapping `run now` request.
 - **Agent skills (`/skills`)** — human-facing page over the skills API:
   authors create uniquely named, slug-form skills (name, description, and a
@@ -205,6 +207,7 @@ and awaits the agent turn):
 |--------|----------------------|-----------------------------------------------------------|
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
+| GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -331,12 +334,15 @@ node scripts/verify-rest-docs.mjs
   list after upload, download bytes + attachment headers, missing document
   404, rename moves the folder on disk, invalid rename 400, rename-to-taken
   409 with the conflict bucket deleted, delete removes folder + rows + 404s),
-  cron jobs (12: create + nextRunAt, duplicate name 409, invalid
-  schedule 400, list/get/404, PATCH name/schedule/enabled + nextRunAt
-  semantics, empty PATCH 400, run-now drives a stubbed agent turn and
-  persists done/error/message/model/duration, delete, delete-while-running
-  409, a restart restores the job and recomputes nextRunAt — the agent
-  service is stubbed so the suite stays hermetic), skills
+  cron jobs (13: create + nextRunAt, duplicate name 409, invalid schedule
+  400, unknown pinned connection 400, list/get/404, PATCH
+  name/schedule/enabled + nextRunAt semantics, empty PATCH 400, run-now
+  drives a stubbed agent turn and persists done/error/message/model/
+  duration, delete, delete-while-running 409, a restart restores the job and
+  recomputes nextRunAt — the agent service is stubbed so the suite stays
+  hermetic; plus a two-replica scheduler suite covering lease election, a
+  ticker-vs-run-now race that fires the due job exactly once, and failover
+  firing after the holder stops), skills
   (11: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes

@@ -287,6 +287,51 @@ describe('CronService', () => {
     );
   });
 
+  it('computes the next run from the DB row when this replica never cached the job', async () => {
+    const { service, prisma, agent } = makeSvc();
+    prisma.cronJob.findMany.mockResolvedValue([row()]);
+    await service.onModuleInit();
+    service.onModuleDestroy();
+    agent.runTurn.mockResolvedValue({
+      answer: 'cross-replica',
+      model: 'ds4-flash',
+      steps: 1,
+    });
+    prisma.cronJob.create.mockResolvedValue(row());
+    prisma.cronJob.findUnique.mockResolvedValue(
+      row({ lastRunStatus: 'done', lastRunMessage: 'cross-replica' }),
+    );
+    const created = await service.create(createDto);
+    // This replica fired a job that another replica created: no cache entry.
+    (service as unknown as { jobs: Map<string, CronJob> }).jobs.clear();
+    await service.runNow(created.id);
+    expect(prisma.cronJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          lastRunStatus: 'done',
+          nextRunAt: expect.any(Date),
+        }),
+      }),
+    );
+  });
+
+  it('reports the local scheduler/lease status', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronJob.create.mockResolvedValue(row());
+    await service.create(createDto);
+    const status = await service.schedulerStatus();
+    expect(status).toMatchObject({
+      leaseHeld: false,
+      leaseGroup: 'default',
+      tickIntervalMs: 1000,
+      failoverMs: 5000,
+      jobCount: 1,
+      enabledCount: 1,
+      lastTickAt: null,
+    });
+    expect(status.leaseExpireAt).toBeNull();
+  });
+
   it('rejects a concurrent run after another replica claimed the job', async () => {
     const { service, prisma, agent } = makeSvc();
     prisma.cronJob.create.mockResolvedValue(row());

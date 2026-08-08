@@ -18,6 +18,7 @@ import { CronService } from './cron.service';
  *                              agent-turn task: prompt + optional model /
  *                              connection / maxSteps)
  *   GET    /api/cron           list jobs (with last/next run info)
+ *   GET    /api/cron/scheduler this replica's scheduler lease/beat status
  *   GET    /api/cron/:id       get one job
  *   PATCH  /api/cron/:id       update name/schedule/prompt/task/enabled
  *   DELETE /api/cron/:id       delete a job (rejected while running)
@@ -35,6 +36,11 @@ export class CronController {
   @Get()
   list() {
     return this.cron.list();
+  }
+
+  @Get('scheduler')
+  scheduler() {
+    return this.cron.schedulerStatus();
   }
 
   @Get(':id')

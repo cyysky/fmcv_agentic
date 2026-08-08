@@ -22,8 +22,9 @@ export const CRON_TICK_MS = 1000;
  * LEASE_DURATION_MS; the lease is renewed atomically with each tick.
  */
 export const CRON_LEASE_DURATION_MS = 5000;
+/** Default scheduler lease group; override per deployment with
+ *  CRON_LEASE_GROUP (e.g. an isolated group per e2e run). */
 export const CRON_LEASE_GROUP = 'default';
-export const CRON_LEASE_ROW_ID = 'singleton';
 /** Truncation cap for the run result stored/displayed on the job row. */
 export const MAX_RUN_MESSAGE = 500;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
@@ -84,6 +85,10 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   private readonly leaseOwner = randomUUID();
   /** True while this instance holds a fresh scheduler lease. */
   private leaseHeld = false;
+  /** Expiry this instance last negotiated when claiming/renewing the lease. */
+  private leaseExpiresAt: Date | null = null;
+  /** Wall-clock time of this instance's most recent scheduler beat. */
+  private lastTickAt: Date | null = null;
   /** In-memory mirror of cron rows so the per-second tick never hammers the DB. */
   private readonly jobs = new Map<string, CronJob>();
   /** Per-job concurrency guard (one in-flight execution per job). */
@@ -95,6 +100,19 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // Row identity is the lease group itself (id is the PK). In Round 65 the
+    // row id was a fixed 'singleton', which prevented more than one group
+    // from ever inserting AND made the PK collide across groups. Sweep any
+    // old-scheme rows for our group (safe now: new replicas come up after the
+    // old holder is stopped, so nothing renews them).
+    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    await this.prisma
+      .$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${group} AND id <> ${group}`
+      .catch((err) => {
+        this.logger.warn(
+          `Could not clean legacy cron lease rows: ${(err as Error).message}`,
+        );
+      });
     await this.prisma.cronJob
       .updateMany({
         where: { lastRunStatus: STATUS_RUNNING },
@@ -258,13 +276,14 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   private async acquireLease(): Promise<boolean> {
     const now = Date.now();
     const expireAt = new Date(now + CRON_LEASE_DURATION_MS);
-    // Single atomic INSERT ... ON CONFLICT: insert the singleton row when
+    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    // Single atomic INSERT ... ON CONFLICT: insert this group's row when
     // missing; otherwise renew only when we already own it or its lease has
     // expired. A replica that loses the race simply stays in standby.
     const count =
       await this.prisma.$executeRaw`
         INSERT INTO cron_scheduler_leases (id, "schedulerGroup", owner, "expireAt", "createdAt", "updatedAt")
-        VALUES (${CRON_LEASE_ROW_ID}, ${CRON_LEASE_GROUP}, ${this.leaseOwner}, ${expireAt}, now(), now())
+        VALUES (${group}, ${group}, ${this.leaseOwner}, ${expireAt}, now(), now())
         ON CONFLICT (id) DO UPDATE SET
           owner = EXCLUDED.owner,
           "expireAt" = EXCLUDED."expireAt",
@@ -272,10 +291,14 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         WHERE cron_scheduler_leases.owner = EXCLUDED.owner
            OR cron_scheduler_leases."expireAt" <= now()
       `;
+    if (count === 1) {
+      this.leaseExpiresAt = expireAt;
+    }
     return count === 1;
   }
 
   private async tick(): Promise<void> {
+    this.lastTickAt = new Date();
     // Only the replica holding a fresh lease fires due jobs. Standby
     // replicas keep serving CRUD/run-now and reclaim the lease on failover.
     const held = await this.acquireLease();
@@ -374,7 +397,12 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     model: string | undefined,
     ms: number,
   ): Promise<void> {
-    const current = this.jobs.get(id);
+    // The firing replica may not have this row cached (a job created on a
+    // different replica gets fired by the lease holder), so derive the next
+    // slot from the DB row, not the in-memory mirror.
+    const current =
+      this.jobs.get(id) ??
+      (await this.prisma.cronJob.findUnique({ where: { id } }).catch(() => null));
     const updated = await this.prisma.cronJob.updateMany({
       where: {
         id,
@@ -398,6 +426,34 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
           (current as CronJob),
       );
     }
+  }
+
+  /** Local scheduler/lease view for ops and the UI (Round 66). */
+  async schedulerStatus(): Promise<{
+    leaseHeld: boolean;
+    leaseGroup: string;
+    leaseExpireAt: string | null;
+    tickIntervalMs: number;
+    failoverMs: number;
+    lastTickAt: string | null;
+    jobCount: number;
+    enabledCount: number;
+  }> {
+    const rows = [...this.jobs.values()];
+    return {
+      leaseHeld: !!(
+        this.leaseHeld &&
+        this.leaseExpiresAt &&
+        this.leaseExpiresAt.getTime() > Date.now()
+      ),
+      leaseGroup: process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP,
+      leaseExpireAt: this.leaseExpiresAt?.toISOString() ?? null,
+      tickIntervalMs: CRON_TICK_MS,
+      failoverMs: CRON_LEASE_DURATION_MS,
+      lastTickAt: this.lastTickAt?.toISOString() ?? null,
+      jobCount: rows.length,
+      enabledCount: rows.filter((row) => row.enabled).length,
+    };
   }
 
   private async refreshed(id: string): Promise<CronJob> {

@@ -35,6 +35,17 @@ interface CronDraft {
   enabled: boolean;
 }
 
+interface SchedulerStatus {
+  leaseHeld: boolean;
+  leaseGroup: string;
+  leaseExpireAt: string | null;
+  tickIntervalMs: number;
+  failoverMs: number;
+  lastTickAt: string | null;
+  jobCount: number;
+  enabledCount: number;
+}
+
 const EMPTY_DRAFT: CronDraft = {
   name: "",
   schedule: "*/15 * * * *",
@@ -73,6 +84,8 @@ export default function CronPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
+  const [schedulerError, setSchedulerError] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CronJobRow | null>(null);
@@ -105,6 +118,31 @@ export default function CronPanel() {
       cancelled = true;
     };
   }, [reloadKey]);
+
+  // Scheduler/lease status (Round 66): refresh every 5 s so the chip tracks
+  // lease failover without needing a page reload.
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await apiFetch("/cron/scheduler");
+        if (!res.ok) throw new Error(await apiError(res));
+        const body = (await res.json()) as SchedulerStatus;
+        if (!cancelled) {
+          setScheduler(body);
+          setSchedulerError(false);
+        }
+      } catch {
+        if (!cancelled) setSchedulerError(true);
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Two-click delete disarm after a few seconds.
   useEffect(() => {
@@ -270,6 +308,36 @@ export default function CronPanel() {
           <p className={styles.subtitle}>
             Schedule recurring agent tasks with five-field cron expressions.
           </p>
+          <div className={styles.schedulerRow}>
+            {scheduler ? (
+              <>
+                <span
+                  className={`${styles.schedulerChip} ${
+                    scheduler.leaseHeld
+                      ? styles.schedulerActive
+                      : styles.schedulerStandby
+                  }`}
+                  title={
+                    scheduler.leaseHeld
+                      ? "This backend replica owns the scheduler lease; due jobs fire here with failover in ~5 s."
+                      : "Another backend replica owns the scheduler lease; this node stands by (failover in ~5 s) but still serves CRUD and Run now."
+                  }
+                >
+                  {scheduler.leaseHeld
+                    ? "Scheduler active on this node"
+                    : "Scheduler standby — lease held elsewhere"}
+                </span>
+                <span className={styles.schedulerMeta}>
+                  last beat {scheduler.lastTickAt ? formatTime(scheduler.lastTickAt) : "—"}
+                  {scheduler.leaseHeld &&
+                    scheduler.leaseExpireAt &&
+                    ` · lease to ${formatTime(scheduler.leaseExpireAt)}`}
+                </span>
+              </>
+            ) : schedulerError ? (
+              <span className={styles.schedulerMeta}>Scheduler status unavailable</span>
+            ) : null}
+          </div>
         </div>
         <div className={styles.headerActions}>
           <button className={styles.btnGhost} onClick={refresh}>
