@@ -1,3 +1,42 @@
+## Round 2026-08-08 — autonomous iteration round 24 (tag `round-24`)
+
+### Added
+- **Managed document buckets** (DIRECTION.md item 1, backend slice) — new
+  `Bucket` + `ManagedDocument` models (migration
+  `20260808064954_add_buckets`): bucket names are unique, buckets are
+  read-only, and each bucket maps to a project folder or an agent folder (one
+  folder can hold many buckets). New `/api/buckets*` endpoints create/list/read
+  buckets, list documents, upload documents, and download them.
+- **Immutable managed documents** — uploads are memory-buffered (100 MB cap),
+  filenames are sanitized (basename, printable chars only, ≤ 180 chars), the
+  kind is derived from MIME then extension (`pdf|text|video|audio|other`),
+  and each file is written exactly once with `wx` under
+  `<mapped folder>/<bucket>/<name>`. The unique `[bucketId, name]` pair plus
+  no-overwrite file creation means duplicate uploads always 409 and no
+  document can be overwritten, renamed, edited, or deleted through the API;
+  downloads stream with `Content-Disposition: attachment`.
+- **Validation + safety** — unknown projects, unknown agents, and invalid
+  folder types are 400s; a duplicate bucket name rolls its created folder
+  back; the workspace anti-traversal rules apply to bucket folder mapping.
+- **Tests** — 18 new unit tests (bucket service) and 14 new API E2E tests
+  (real Postgres + temp workspace) covering the full create → list → upload →
+  list → download journey plus all failure modes.
+
+### Fixed
+- `test/buckets.e2e-spec.ts` is fully type-safe (typed `json<T>` response
+  helper) so the new spec adds no `no-unsafe-*` eslint hits.
+
+### Test status
+- Unit **112 passed / 12 suites** (94 → +18 bucket-service tests).
+- API E2E **79 passed / 8 suites** (65 → +14 buckets suite).
+- Backend `nest build` + `tsc --noEmit` clean; eslint clean on new
+  `src/buckets/` + `test/buckets.e2e-spec.ts`; migration applied and the
+  backend container rebuilt with the buckets code; the buckets journey was
+  walked by hand over HTTP (create/list/upload/list/download, 409s, headers).
+- Browser E2E all green against the rebuilt backend (exit 0, zero
+  console/network errors; report + screenshots refreshed). Buckets are API-only
+  this round, so the browser E2E does not cover them yet.
+
 ## Round 2026-08-08 — autonomous iteration round 23 (tag `round-23`)
 
 ### Added

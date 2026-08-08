@@ -80,6 +80,13 @@ and coordinate multi-agent teams in Slack-style channels.
   path escapes are rejected by the API, the create/edit panel submits from the
   name field (Enter), and every create/save/download/delete action shows a
   dismissible success notice.
+- **Managed document buckets (API)** — uniquely named, read-only buckets
+  mapped to a project folder or an agent folder (one folder can carry many
+  buckets). Uploaded documents (PDF/text/video/audio/other, 100 MB cap) are
+  stored exactly once under `<folder>/<bucket>/<name>` and are immutable:
+  there are no overwrite/rename/edit/delete endpoints, only
+  list/read/download. Bucket listing includes document counts. API only for
+  now; a UI is planned (see REST table below).
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -144,6 +151,18 @@ check):
 | POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
 | DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
 
+Managed document buckets (read-only; document uploads use a multipart
+`file` field; 100 MB cap; duplicate names are 409s):
+
+| Method | Path                                              | Purpose                             |
+|--------|---------------------------------------------------|-------------------------------------|
+| POST   | `/api/buckets`                                    | create bucket (unique `name`, `folderType` project/agent, `folderName`) |
+| GET    | `/api/buckets`                                    | list buckets (with per-bucket document counts) |
+| GET    | `/api/buckets/:id`                                | get one bucket + its documents      |
+| GET    | `/api/buckets/:id/documents`                      | list documents in a bucket          |
+| POST   | `/api/buckets/:id/documents`                      | upload a managed document (immutable, never overwritten) |
+| GET    | `/api/buckets/:id/documents/:documentId/download` | stream a document as an attachment  |
+
 Channels:
 
 | Method | Path                                          | Purpose                                     |
@@ -180,7 +199,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 84 tests / 11 suites** — model catalog, workspace service + tools,
+- **Unit: 112 tests / 12 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -199,8 +218,12 @@ cd e2e && node browser-e2e.mjs
   self-heals to the default endpoint, attaching a connection to an existing
   session via converse, explicit catalog-model overrides through a connection
   on both turns and sessions, and a non-catalog model id used verbatim on the
-  wire + stored verbatim on the session).
-- **API E2E: 58 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
+  wire + stored verbatim on the session), and the bucket service
+  (create/list/get mapped to project/agent folders, unknown project / unknown
+  agent / invalid folder-type 400s, duplicate bucket 409 with folder
+  rollback, sanitized immutable uploads with kind derivation, duplicate
+  document 409, 100 MB cap, download resolution).
+- **API E2E: 79 tests / 8 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -217,7 +240,13 @@ cd e2e && node browser-e2e.mjs
   jobs (12), files manager (9: CRUD round-trip, directory-first ordering,
   empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
-  directory/escape download 400), the API token gate (3), and throttling
+  directory/escape download 400), managed document buckets (14: create a
+  unique bucket mapped to a project folder, duplicate bucket and invalid
+  folder-type / missing-project / unknown-agent 400s, list with document
+  counts, get-one with empty documents, unknown bucket 404, PDF upload with
+  kind/mime/size, duplicate document name 409, missing multipart field 400,
+  list after upload, download bytes + attachment headers, missing document
+  404), the API token gate (3), and throttling
   (2: over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
