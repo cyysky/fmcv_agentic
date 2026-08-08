@@ -31,7 +31,23 @@ function prismaDouble() {
         }
         return null;
       }),
-      findMany: jest.fn(async () => [...rows.values()]),
+      findMany: jest.fn(async (p: any) => {
+        let out = [...rows.values()];
+        if (p?.where?.parentId !== undefined) {
+          out = out.filter((r) => (r as any).parentId === p.where.parentId);
+          if (p?.select) return out.map((r) => ({ id: (r as any).id }));
+        }
+        if (p?.include?._count) {
+          return out.map((r) => ({
+            ...r,
+            _count: {
+              members: members.filter((m) => m.channelId === (r as any).id)
+                .length,
+            },
+          }));
+        }
+        return out;
+      }),
       create: jest.fn(async (p: any) => {
         const row = {
           id: `ch-${rows.size + 1}`,
@@ -115,6 +131,15 @@ function workspacesDouble() {
       path: `/data/workspaces/projects/${name}`,
     })),
     listProjectContent: jest.fn(async () => ({})),
+  } as never;
+}
+
+function baseAgentDouble() {
+  return {
+    runChannelTurn: jest.fn(async ({ channelPost }: any) => {
+      await channelPost('working...');
+      return { answer: 'final answer', steps: 3, trace: [{ step: 'x' }] };
+    }),
   } as never;
 }
 
@@ -338,5 +363,100 @@ describe('ChannelService', () => {
       }),
     ).rejects.toThrow(BadRequestException);
     expect(messages.length).toBe(before);
+  });
+
+  it('list() returns ordered summaries with member counts', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const alpha = await svc.create({ name: 'alpha', creatorAgent: 'coder' });
+    const beta = await svc.create({ name: 'beta' });
+    await svc.addMember(beta.id, 'researcher');
+
+    const list = await svc.list();
+    expect(list.map((c) => c.slug)).toEqual(['alpha', 'beta']);
+    expect(list[0]).toMatchObject({
+      id: alpha.id,
+      name: 'alpha',
+      memberCount: 1,
+    });
+    expect(list[1]).toMatchObject({ name: 'beta', memberCount: 1 });
+    expect(list[0].createdAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('deletionCandidates returns the channel and all sub-channels', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const parent = await svc.create({ name: 'team', creatorAgent: 'coder' });
+    const sub = await svc.ensureSubChannel(parent.id, 'coder');
+    const solo = await svc.create({ name: 'solo' });
+
+    await expect(svc.deletionCandidates('nope')).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(svc.deletionCandidates(parent.id)).resolves.toEqual([
+      parent.id,
+      sub.id,
+    ]);
+    await expect(svc.deletionCandidates(solo.id)).resolves.toEqual([solo.id]);
+  });
+
+  it('remove() deletes the row and prunes the empty project folder', async () => {
+    const { prisma, rows } = prismaDouble();
+    const ws = workspacesDouble();
+    (ws as any).removeProjectIfEmpty = jest.fn(async () => ({ removed: true }));
+    const svc = new ChannelService(prisma, ws);
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+
+    await expect(svc.remove('nope')).rejects.toThrow(NotFoundException);
+    await expect(svc.remove(d.id)).resolves.toEqual({ deleted: true });
+    expect(rows.has(d.id)).toBe(false);
+    expect((ws as any).removeProjectIfEmpty).toHaveBeenCalledWith('team');
+  });
+
+  it('prepareChannelTurn rejects unknown channels with 404', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    await expect(
+      svc.prepareChannelTurn({
+        channelId: 'ghost',
+        agentName: 'coder',
+        message: 'hi',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('runTurn delegates to the base agent and persists its final answer', async () => {
+    const { prisma, messages } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+    const base = baseAgentDouble();
+
+    const out = await svc.runTurn(base, d.id, 'coder', 'do the thing', 'fast');
+    expect(out).toEqual({
+      answer: 'final answer',
+      steps: 3,
+      trace: [{ step: 'x' }],
+    });
+    expect((base as any).runChannelTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentName: 'coder',
+        channelSlug: 'team',
+        channelProjectName: 'team',
+        message: 'do the thing',
+        model: 'fast',
+      }),
+    );
+
+    const posted = messages.filter((m) => (m as any).channelId === d.id);
+    expect(posted.at(-2)).toMatchObject({
+      role: 'agent',
+      author: 'coder',
+      text: 'working...',
+    });
+    expect(posted.at(-1)).toMatchObject({
+      role: 'agent',
+      author: 'coder',
+      text: 'final answer',
+    });
   });
 });
