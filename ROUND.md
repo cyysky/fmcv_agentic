@@ -1,32 +1,35 @@
-# Round 98 — visibility-gated channel polling + startup-safe stale sweep (2026-08-09)
+# Round 99 — measured `/agent` headroom + permanent guard (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 97's focus item #3: the `/agent` channel-list refresh now
-stops polling while the tab is hidden, guarded by a browser E2E test that
-proves the network goes quiet and resumes on return. Also fixed an E2E
-harness flake where the pre-run stale sweep could fail right after a
-container recreate while the backend was still binding its port.
+executed Round 98's focus item #1 as a measurement-only pass on the eager
+`/agent` first load. The measurement settled the open question (no picker
+split is justified) and became a permanent gate so the agent page cannot
+creep inside the shared framework floor unnoticed.
 
 ## What changed this round
 
-- **Visibility-gated channel polling** — `frontend/app/agent/agent-client.tsx`:
-  the 8s channel-list refresh skips `loadChannels()` whenever
-  `document.visibilityState === "hidden"` and resumes on the next interval
-  tick when the tab becomes visible again; idle background tabs no longer
-  poll `/api/channels` every 8s.
-- **Polling E2E guard** — `agentChannelFlow()` in `e2e/browser-e2e.mjs`
-  records `/api/channels` list responses via CDP `Network.responseReceived`,
-  opens a spare `about:blank` tab to hide the agent tab (visibility flips
-  verified), waits two+ poll intervals with zero list fetches while hidden,
-  then restores the tab and asserts refreshes resume (baseline 2 / hidden 2 /
-  resumed 3 on both modes; tracked as `flow.pollingGuard`).
-- **Startup-safe stale sweep** — `staleSweep()` retries each list read
-  (channels, sessions, connections, cron, skills, workspaces) up to 5 times
-  with a 2s pause; the earlier API-only flake (`fetch failed` x6 immediately
-  after `--force-recreate backend`) is gone — the recreated backend comes up
-  under the retries and the suite exits clean.
-- **README bundle docs refreshed** — eager-chunk inventory and the 484 KB
-  `/agent` baseline updated.
+- **Measured the real `/agent` headroom** — `route-bundle-stats.json`
+  (fresh `next build`): `/agent` 495,803 B (484 KB / 8 chunks) vs the
+  shared baseline `/` 461,553 B (451 KB / 6 chunks) -> **34,250 B
+  (33.4 KB) agent-specific delta**: one 33,934 B page chunk plus a 316 B
+  utility chunk. Previous docs guessed "~20 KB above baseline"; the actual
+  number is now documented and policed.
+- **No picker split (by design)** — the remaining first-load code is the
+  chat composer, trace viewer, and the models/connections header pickers.
+  The pickers are inline `<select>`s (~2-3 KB of JSX combined), well under
+  the >5 KB split threshold; a dynamic boundary would add a render flash
+  and context plumbing to save ~2-3 KB. Deliberately left as-is.
+- **New `/agent` headroom guard** — `scripts/verify-agent-headroom.mjs`:
+  zero-dependency; reads `route-bundle-stats.json` after `next build`,
+  computes `/agent` minus the smallest shared-baseline route, prints the
+  per-chunk delta, and fails when the delta exceeds a budget (default
+  45,000 B, override `FMCV_AGENT_HEADROOM_BUDGET_BYTES`). The absolute
+  bundle-size guard alone can hide agent-page creep inside the ~460 KB
+  framework floor, so this guard polices the per-route delta directly.
+- **Wired into the gate + docs** — `verify.mjs --build` now runs the
+  headroom guard right after the bundle-size guard; README verify docs
+  updated with the measured baseline, the split rationale, and the
+  corrected ~9-34 KB per-route app-chunk range.
 
 ## Test status
 
@@ -34,14 +37,15 @@ container recreate while the backend was still binding its port.
   `verify --build --api-e2e` this round).
 - Backend API E2E (real Postgres, multi-replica): **12 suites / 123 tests
   passed** (fresh this round; known Jest keep-alive warning only).
-- Frontend: `tsc --noEmit`, ESLint, Nest + Next builds green; bundle guard
-  largest first-load **484 KB (`/agent`, 8 chunks)** within the 600 KB budget.
-- Browser E2E (real Chrome 151 over CDP): full all-journey runs green in
-  **both** enabled and API-only modes — 21 route probes each, zero
-  console/network errors; workspace-viewer lazy guard 14 eager / 1
-  workspace-lazy / 1 panel-lazy on both; visibility polling guard
-  `baseline 2 / hidden 2 / resumed 3` on both; stale sweep clean on both.
-  Reports refreshed in `report-enabled.json` + `report-api-only.json`.
+- Frontend: `tsc --noEmit`, ESLint, Nest + Next builds green; bundle-size
+  guard `/agent` **484 KB / 8 chunks** within 600 KB; new headroom guard
+  **33.4 KB** agent-specific delta within the 44 KB budget.
+- Browser E2E: **not re-run this round** — no frontend runtime code
+  changed (verify scripts, guards, and docs only), so the frontend
+  container was not rebuilt. Round 98's full both-mode runs (21 route
+  probes each, zero console/network errors, polling + lazy guards green)
+  remain the current runtime evidence; re-run both modes with the next
+  runtime change.
 
 ## Known issues / open tickets
 
@@ -49,21 +53,19 @@ container recreate while the backend was still binding its port.
   after the multi-replica suite closes; suites pass with exit code 0.
 - **Low** — `e2e/report.json` is the latest-run mirror only; per-mode
   archives live in git history via committed `report-<mode>.json` (by design).
-- **Closed this round** — hidden `/agent` tabs kept polling channels every 8s
-  (now gated behind tab visibility with an E2E guard); API-only E2E flaked on
-  backend startup after a container recreate (now retried in the stale sweep).
+- **Closed this round** — the "~20 KB headroom" guess in the docs (now
+  measured 33.4 KB and enforced by a guard); the "13-50 KB" per-route
+  app-chunk doc range (now the measured ~9-34 KB).
 
 ## Next round focus
 
-1. **Measurement-only eager `/agent` headroom pass** — compare `/agent`
-   (484 KB / 8 chunks) against the framework baseline (`/`, `/files`) in
-   `frontend/.next/diagnostics/route-bundle-stats.json`; the remaining
-   first-load agent code is the composer, trace viewer, and the
-   models/connections header pickers by design. Split a picker only if
-   profiling shows it costs >~5 KB; otherwise leave the route as-is.
-2. **Optional** — refresh channels immediately on `visibilitychange` when the
-   tab returns (today the first visible refresh waits for the next 8s tick);
-   implement only if the 0-8s staleness on return is user-visible in practice.
-3. **Keep the E2E gate current** — after any future frontend change, re-run
-   `verify --build --api-e2e` + both browser modes and keep the 484 KB
-   `/agent` baseline.
+1. **Optional** — refresh channels immediately on `visibilitychange` when
+   the tab returns (today the first visible refresh waits for the next 8s
+   tick); adopt only if the 0-8s staleness on return is user-visible in
+   practice.
+2. **Optional** — see whether the 316 B `/agent` edge chunk can be folded
+   into the page chunk (Turbopack emitted it as a separate module edge;
+   negligible, but a cheap clean-up if trivial).
+3. **Keep the gates current** — re-run `verify --build --api-e2e` + both
+   browser modes after any future frontend change; keep the baseline
+   `/agent` 484 KB / 33.4 KB headroom.
