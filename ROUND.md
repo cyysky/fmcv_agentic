@@ -1,54 +1,42 @@
-# ROUND 71 — 2026-08-08 (autonomous iteration round 71)
+# ROUND 72 — 2026-08-08 (autonomous iteration round 72)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 70's first focus item: scheduler failover history
-(lease transition audit + overview surfacing).
+round executed Round 71's first focus item: deep-history browsing in the
+cron UI.
 
 ## What changed this round
 
-- **Lease transition audit** — new append-only `CronSchedulerEvent`
-  (`cron_scheduler_events`) table records every lease `acquired`/`lost`
-  transition per scheduler group. The ticker writes the event (best effort,
-  log-and-continue) whenever an instance's `leaseHeld` flips: a takeover
-  stores the dead holder as `previousOwner`, and a lost renewal records the
-  losing replica as the previous holder.
-- **Failover history in the overview** — `GET /api/cron/overview` (and the
-  `CronOverview` type) now include `events` (newest 10, stable order): id,
-  group, event, owner, previousOwner, createdAt. The Cluster overview panel
-  on `/cron` gained a **Transitions:** line rendering each recent event
-  with short owner ids and timestamps (full ids on hover); empty when no
-  transition has ever happened.
-- **E2E proof** — the two-replica failover test now black-box asserts the
-  lease row's owner changes from the holder to the standby and that exactly
-  one `acquired` event exists with `previousOwner` = the dead holder; the
-  isolated e2e group's events are cleaned up in `afterAll`.
-- **Browser proof** — the cron journey asserts the overview's Transitions
-  line renders (it saw a real `acquired` event captured when the live
-  backend re-took the `default` lease after API-e2e), and screenshots +
-  report were refreshed.
-- **Docs** — README feature prose, the `/api/cron/overview` row, and the
-  e2e-suite paragraph now mention transition events / failover audit.
+- **Paged run history in the UI** — the cron page's per-job history list now
+  pages through the Round 68 `limit`/`offset` API with 20 rows per page: it
+  fetches page 0 on expand, keeps the current page across the 5 s
+  auto-refresh, and renders a `Newer` / `Page N` / `Older` pager whenever a
+  page is not the first or older runs remain. Jobs with fewer than 20 runs
+  show no pager, preserving the old single-page look.
+- **Browser E2E proof** — the cron journey now seeds 21 synthetic terminal
+  runs server-side (psql, cascade-cleaned with the fixture job) and asserts
+  20 rows on page 1 with `hasMore`, the final 3-row page via `Older` with
+  `hasMore=false`, and the round-trip back to page 1 via `Newer`. The pager
+  exposes `data-runs-page` / `data-runs-has-more` for stable assertions.
+- **Docs** — README cron feature prose and the browser-journey paragraph now
+  describe paging through deep histories with Newer/Older.
 
 ## Test status
 
-- Backend unit: **165 passed / 14 suites** (+2: acquired-on-takeover with
-  previous owner + no event on ordinary renewal; lost-on-expiry with
-  previous owner; overview now also asserts recent events and the
-  `OVERVIEW_RECENT_EVENTS` fetch).
-- Backend API E2E: **117 passed / 11 suites** (run with only Postgres up;
-  live backend stopped and restarted immediately after). The failover test
-  additionally asserts the transition audit. Jest's keep-alive warning is
-  unchanged (exit code 0).
+- Backend unit: **165 passed / 14 suites** (unchanged; state diff empty).
+- Backend API E2E: **117 passed / 11 suites** (live backend stopped, suite
+  run, backend restarted immediately after; known keep-alive warning
+  unchanged, exit code 0).
 - Backend `npx tsc --noEmit` + `npx eslint .` clean; docs guard OK —
   routes 69 / docs rows 68.
 - Frontend `npx tsc --noEmit` + `npx eslint app/cron` + `next build` clean;
   backend + frontend images rebuilt and recreated; live stack healthy
-  (backend 200, frontend 200, overview returns leases + events).
-- Browser E2E: **all checks passed** — cron journey includes the new
-  Transitions-line assertion; zero console/network/HTTP errors.
-- Baseline afterwards: 0 cron jobs / 0 cron_runs (one authentic
-  `default`-group `acquired` event from the e2e-driven backend restart is
-  retained as demo history).
+  (frontend 200, overview 200).
+- Browser E2E: **all checks passed** — cron journey includes the paging
+  proof (`historyPaged`, 23 seeded runs); zero console/network/HTTP errors;
+  report + screenshots refreshed (new `cron-history-paging.png`).
+- Baseline afterwards: 0 cron jobs / 0 cron_runs; 2 authentic
+  `default`-group `acquired` events (one from each backend restart during
+  API-e2e) retained as demo failover history.
 
 ## Known issues / open tickets
 
@@ -60,25 +48,21 @@ round executed Round 70's first focus item: scheduler failover history
   `acquired` row (keeps the table meaningful for failovers).
 - Overview events are global (newest 10 across all lease groups), not
   per-group-filterable; fine for the current single-default-group stack.
-- The history list still renders at most the API default of 20 runs; there
-  is no in-page "load more" for deep histories (the API supports
-  limit/offset since Round 68).
-- The cron browser journey performs two live-LLM runs, so it takes longer
-  than other journeys (still well inside its 120 s timeouts).
 
 ## Next round focus
 
-- **Deep-history browsing in the UI** — add a "load more"/page control to
-  the history list that uses the Round 68 `limit`/`offset` pagination for
-  jobs with more than 20 runs.
-- **Optional audit polish** — record startup acquisition events (or make
-  overview events per-group) if the failover history needs first-boot
-  visibility; otherwise keep the current minimal semantics.
+- **Per-group overview transitions** — make the overview's events
+  per-group/filterable (the UI currently shows the newest 10 globally), or
+  record startup `acquired` events for boot-into-free-lease visibility if
+  the audit needs first-boot history.
+- **History UX polish** — consider a "load all" / infinite-scroll option or
+  a jump-to-newest affordance for paged histories (current pager requires
+  clicking Newer back through many pages after deep browsing).
 - Any DIRECTION.md instruction.
 
 ## Loop state
 
-Loop state: running — Round 71 made scheduler failover history auditable
-(lease transition events persisted per group, surfaced in the cluster
-overview, proven by unit/API/browser tests), all gates green, baseline
-clean. No exit condition fires; proceed to Round 72.
+Loop state: running — Round 72 added page controls to the cron run-history
+list (Older/Newer over the existing limit/offset API), proved deep-history
+paging end to end in the browser journey, all gates green, baseline clean.
+No exit condition fires; proceed to Round 73.

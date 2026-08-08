@@ -90,6 +90,13 @@ interface CronRunRow {
   createdAt: string;
 }
 
+/** One loaded page of run history (Round 72). */
+interface CronRunPage {
+  runs: CronRunRow[];
+  page: number;
+  hasMore: boolean;
+}
+
 const EMPTY_DRAFT: CronDraft = {
   name: "",
   schedule: "*/15 * * * *",
@@ -100,6 +107,9 @@ const EMPTY_DRAFT: CronDraft = {
 };
 
 const SCHEDULE_RE = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/;
+/** History page size (Round 72): the list pages through the API's Round 68
+ *  limit/offset pagination with this many rows per page. */
+const RUNS_PAGE_SIZE = 20;
 
 /* ------------------------------- helpers -------------------------------- */
 
@@ -140,7 +150,7 @@ export default function CronPanel() {
 
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [runsByJob, setRunsByJob] = useState<Record<string, CronRunRow[] | null>>({});
+  const [runsByJob, setRunsByJob] = useState<Record<string, CronRunPage | null>>({});
   const [runsLoading, setRunsLoading] = useState<string | null>(null);
 
   // Load the job list.
@@ -217,32 +227,44 @@ export default function CronPanel() {
     return () => clearTimeout(timer);
   }, [confirmDeleteId]);
 
-  // Auto-refresh expanded run histories (Round 70): while a history list is
-  // open, poll it every 5 s and also refresh right after a manual run
-  // returns, so a freshly completed run appears without collapsing and
-  // reopening the toggle.
+  // Page one history page through the API's limit/offset pagination
+  // (Round 72): a full page means older runs may exist.
+  const fetchRunPage = useCallback(
+    async (id: string, page: number): Promise<CronRunPage> => {
+      const res = await apiFetch(
+        `/cron/${id}/runs?limit=${RUNS_PAGE_SIZE}&offset=${page * RUNS_PAGE_SIZE}`,
+      );
+      if (!res.ok) throw new Error(await apiError(res));
+      const runs = (await res.json()) as CronRunRow[];
+      return { runs, page, hasMore: runs.length === RUNS_PAGE_SIZE };
+    },
+    [],
+  );
+
+  // Auto-refresh expanded run histories (Round 70, page-aware in Round 72):
+  // while a history list is open, re-fetch its current page every 5 s and
+  // also refresh right after a manual run returns, so a freshly completed
+  // run appears on page one without collapsing and reopening the toggle.
   const runsByJobRef = useRef(runsByJob);
   useEffect(() => {
     runsByJobRef.current = runsByJob;
   }, [runsByJob]);
   const refreshExpandedRuns = useCallback(async () => {
     const expanded = Object.entries(runsByJobRef.current)
-      .filter(([, runs]) => runs !== null)
-      .map(([id]) => id);
+      .filter(([, page]) => page !== null)
+      .map(([id, page]) => [id, page!.page] as const);
     await Promise.all(
-      expanded.map(async (id) => {
+      expanded.map(async ([id, page]) => {
         try {
-          const res = await apiFetch(`/cron/${id}/runs`);
-          if (!res.ok) throw new Error(await apiError(res));
-          const body = (await res.json()) as CronRunRow[];
-          setRunsByJob((m) => (m[id] === null ? m : { ...m, [id]: body }));
+          const next = await fetchRunPage(id, page);
+          setRunsByJob((m) => (m[id] === null ? m : { ...m, [id]: next }));
         } catch {
           // Keep the last known list: a transient poll failure must not
           // clobber an open history list or spam the error banner.
         }
       }),
     );
-  }, []);
+  }, [fetchRunPage]);
   useEffect(() => {
     const timer = setInterval(() => void refreshExpandedRuns(), 5000);
     return () => clearInterval(timer);
@@ -399,10 +421,24 @@ export default function CronPanel() {
     setError(null);
     setNotice(null);
     try {
-      const res = await apiFetch(`/cron/${job.id}/runs`);
-      if (!res.ok) throw new Error(await apiError(res));
-      const body = (await res.json()) as CronRunRow[];
-      setRunsByJob((m) => ({ ...m, [job.id]: body }));
+      const page = await fetchRunPage(job.id, 0);
+      setRunsByJob((m) => ({ ...m, [job.id]: page }));
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setRunsLoading(null);
+    }
+  };
+
+  /** Flip the open history list to an adjacent page (Round 72). */
+  const goRunPage = async (job: CronJobRow, page: number) => {
+    if (page < 0) return;
+    setRunsLoading(job.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const next = await fetchRunPage(job.id, page);
+      setRunsByJob((m) => (m[job.id] === null ? m : { ...m, [job.id]: next }));
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -694,7 +730,9 @@ export default function CronPanel() {
         </div>
       ) : (
         <ul className={styles.list}>
-          {jobs.map((job) => (
+          {jobs.map((job) => {
+            const runPage = runsByJob[job.id] ?? null;
+            return (
             <li key={job.id} className={styles.row} data-name={job.name}>
               <div className={styles.rowMain}>
                 <div className={styles.rowTitleLine}>
@@ -722,12 +760,17 @@ export default function CronPanel() {
                   Next run:{" "}
                   {job.enabled ? formatTime(job.nextRunAt) : "paused"}
                 </div>
-                {runsByJob[job.id] && (
-                  <div className={styles.runList} data-runs={job.id}>
-                    {runsByJob[job.id]!.length === 0 ? (
+                {runPage && (
+                  <div
+                    className={styles.runList}
+                    data-runs={job.id}
+                    data-runs-page={runPage.page}
+                    data-runs-has-more={runPage.hasMore ? "1" : "0"}
+                  >
+                    {runPage.runs.length === 0 ? (
                       <div className={styles.muted}>No runs recorded yet.</div>
                     ) : (
-                      runsByJob[job.id]!.map((run) => (
+                      runPage.runs.map((run) => (
                         <div
                           key={run.id}
                           className={styles.runRow}
@@ -760,6 +803,31 @@ export default function CronPanel() {
                           )}
                         </div>
                       ))
+                    )}
+                    {(runPage.page > 0 || runPage.hasMore) && (
+                      <div className={styles.runPager}>
+                        {runPage.page > 0 && (
+                          <button
+                            className={styles.btnGhost}
+                            disabled={runsLoading === job.id}
+                            onClick={() => goRunPage(job, runPage.page - 1)}
+                          >
+                            Newer
+                          </button>
+                        )}
+                        <span className={styles.runMeta}>
+                          Page {runPage.page + 1}
+                        </span>
+                        {runPage.hasMore && (
+                          <button
+                            className={styles.btnGhost}
+                            disabled={runsLoading === job.id}
+                            onClick={() => goRunPage(job, runPage.page + 1)}
+                          >
+                            Older
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -815,7 +883,8 @@ export default function CronPanel() {
                 </button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </div>

@@ -103,7 +103,9 @@ and coordinate multi-agent teams in Slack-style channels.
   it with a two-click confirm, and expand each job's append-only run history
   (History button: status, time, model, duration, message; newest first;
   an open history list auto-refreshes every 5 s and right after a manual
-  run returns). The page also shows a cluster overview panel with every
+  run returns; histories deeper than 20 runs page through the API's
+  limit/offset pagination with Newer/Older buttons keeping the current page).
+  The page also shows a cluster overview panel with every
   scheduler lease group, the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
   auditable after the fact), and aggregate run throughput.
@@ -445,7 +447,10 @@ node scripts/verify-rest-docs.mjs
   key), expands the job's **History** list and asserts the terminal run row
   (status pill, time/model meta, non-empty message), runs the job a second
   time **without collapsing the history** and asserts the newest row joins
-  the open list (auto-refresh), asserts the cluster overview panel shows an
+  the open list (auto-refresh), seeds 21 synthetic terminal runs server-side
+  to prove histories deeper than one page work: reopen History, assert 20
+  rows on page 1 with an Older button, page to the final 3-row page and back
+  with Newer, asserts the cluster overview panel shows an
   active lease group plus the job's run in the throughput stats, then
   collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and

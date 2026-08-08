@@ -2989,6 +2989,112 @@ async function cronFlow() {
     if (!runsHidden) throw new Error("cron flow: run history did not collapse");
     await screenshot(c, "cron-history.png");
 
+    // 2d. Deep-history paging (Round 72): seed 21 synthetic terminal runs
+    //     straight into Postgres so the fixture job holds 23 rows, then
+    //     verify the UI pages through the API limit/offset contract with
+    //     Older/Newer. Cleanup is free: deleting the job cascades the runs.
+    const seeded = (() => {
+      const job = String(flow.jobId).replace(/'/g, "''");
+      const sql = `INSERT INTO cron_runs (id, "cronJobId", status, message, "startedAt", "createdAt")
+        SELECT 'browser-paging-' || '${job}' || '-' || n, '${job}', 'done',
+          'synthetic deep-history run ' || n,
+          now() - (n || ' minutes')::interval,
+          now() - (n || ' minutes')::interval
+        FROM generate_series(1, 21) AS n;`;
+      execFileSync(
+        "docker",
+        ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c", sql],
+        { encoding: "utf8", timeout: 15000 },
+      );
+      const count = execFileSync(
+        "docker",
+        ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+          `SELECT count(*) FROM cron_runs WHERE "cronJobId" = '${job}'`],
+        { encoding: "utf8", timeout: 15000 },
+      ).trim();
+      return Number(count);
+    })();
+    if (seeded !== 23) {
+      throw new Error(`cron flow: expected 23 runs after seeding, got ${seeded}`);
+    }
+    flow.pagingRunsSeeded = seeded;
+    const reopenClicked = await evalJs(c, rowBtnExpr(jobName, "History"));
+    if (!reopenClicked) throw new Error("cron flow: History button missing after seeding");
+    const pagingBox = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return rows === 20 && page === "0" && hasMore === "1" &&
+          box.innerText.includes("Page 1")
+          ? { rows, page, hasMore }
+          : null;
+      })()`,
+      15000,
+      500,
+      "deep-history first page",
+    );
+    if (!pagingBox) throw new Error("cron flow: deep history page 0 did not render 20 rows");
+
+    const olderClicked = await evalJs(c, rowBtnExpr(jobName, "Older"));
+    if (!olderClicked) throw new Error("cron flow: Older pager button missing");
+    const olderPage = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return rows === 3 && page === "1" && hasMore === "0" &&
+          box.innerText.includes("Page 2")
+          ? { rows, page, hasMore }
+          : null;
+      })()`,
+      15000,
+      500,
+      "deep-history older page",
+    );
+    if (!olderPage) throw new Error("cron flow: deep history page 1 did not render 3 rows");
+
+    const newerClicked = await evalJs(c, rowBtnExpr(jobName, "Newer"));
+    if (!newerClicked) throw new Error("cron flow: Newer pager button missing");
+    const newerPage = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return rows === 20 && page === "0" && hasMore === "1" &&
+          box.innerText.includes("Page 1")
+          ? { rows, page, hasMore }
+          : null;
+      })()`,
+      15000,
+      500,
+      "deep-history newer page",
+    );
+    if (!newerPage) throw new Error("cron flow: deep history page 0 did not restore after Newer");
+    flow.historyPaged = true;
+    flow.steps.push("history-paging");
+    await screenshot(c, "cron-history-paging.png");
+
+    const hideAgainClicked = await evalJs(c, rowBtnExpr(jobName, "Hide history"));
+    if (!hideAgainClicked) throw new Error("cron flow: Hide history button missing after paging");
+    const runsHiddenAgain = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)})`,
+      10000,
+      400,
+      "run history hidden after paging",
+    );
+    if (!runsHiddenAgain) throw new Error("cron flow: run history did not collapse after paging");
+
     // 2e. Cluster overview: the panel must show the default lease group as
     //     active/held and surface this job's fresh run in the throughput
     //     stats (real stack, so the busiest-job name comes from the DB).
@@ -3174,6 +3280,7 @@ async function cronFlow() {
       runStatus: flow.runStatus,
       runNoticeSeen: true,
       historyShown: true,
+      historyPaged: true,
       editedViaUi: true,
       paused: true,
       resumed: true,

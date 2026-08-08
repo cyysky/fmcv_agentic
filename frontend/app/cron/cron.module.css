@@ -380,6 +380,13 @@
   color: #888;
 }
 
+.runPager {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
 .rowActions {
   display: flex;
   gap: 0.45rem;
