@@ -1,50 +1,52 @@
-# ROUND 29 — 2026-08-08 (autonomous iteration round 29)
+# ROUND 30 — 2026-08-08 (autonomous iteration round 30)
 
 User instruction: **read on loop.md and do works**. `DIRECTION.md` carries
 active human direction; items 1–4 (managed buckets, cron jobs, agent skills,
-view HTML) were all complete as of Round 28. This round's goal, inherited from
-Round 28's "Next round focus", was the **backend eslint backlog
-housekeeping**: clear the legacy strict-TS violations so full-repo
-`npm run lint` is green.
+view HTML) were all complete as of Round 28. Round 29 left no concrete next
+item, but the known-issue list still carried one real-use friction named in
+its handoff: HTML viewing by link/new tab was broken on `API_TOKEN`-protected
+deployments. That was this round's goal — close the ticket rather than spin.
 
 ## What changed this round
 
-- **Lint config** — `backend/eslint.config.mjs` now ignores `dist/` and
-  `coverage/` (generated build output was being linted — the bulk of the
-  "backlog") and adds a scoped test-only rule block: `no-unsafe-*` and
-  `require-await` are relaxed for `src/**/*.spec.ts` and
-  `test/**/*.e2e-spec.ts` only. Production `src/**/*.ts` keeps the strict
-  `recommendedTypeChecked` set.
-- **Production type tightening** — 5 files cleaned against strict typed lint +
-  `tsc --noEmit`: `base-agent.service.ts` (`BaseTool.run` narrowed to
-  `unknown`, `JSON.parse` results typed at 3 sites), `connection.dto.ts` /
-  `agent.controller.ts` (unused imports removed), `cron.service.ts` (sync
-  `tick()`), `main.ts` (`void bootstrap()`).
-- **Legacy test/spec cleanup** — `npx eslint . --fix` auto-formatted ~296
-  Prettier violations across legacy files; `test/files.e2e-spec.ts` fully
-  converted to ESM imports with typed response interfaces (the model for the
-  rest); `test/app.e2e-spec.ts` and `test/auth.e2e-spec.ts` response bodies
-  typed; `channel-job.service.spec.ts` mock-call arg typed; unused
-  imports/params dropped and sync-lifecycle call sites fixed.
-- **Result: backend full-repo `npx eslint .` exits 0** (0 errors; previously
-  370+). No user-visible behavior changed.
+- **Token-safe same-origin HTML view proxy** — new frontend route handler
+  `frontend/app/api/files/view/route.ts` serves the same path as the backend
+  view endpoint on the app origin: it attaches the bearer token server-side,
+  forwards only the backend's inline-view headers (`text/html`, `inline`
+  disposition, CSP `sandbox`, `nosniff`, `no-store`), and streams the body.
+  The `/files` preview iframe and **Open in new tab** link now point at it, so
+  token-protected deployments work without leaking the token into URLs and
+  without losing the CSP sandbox.
+- **Compose** — frontend gains a runtime `API_INTERNAL_URL`
+  (default `http://backend:5555/api`) so the proxy reaches the backend
+  container; falls back to `NEXT_PUBLIC_API_URL` / `localhost` elsewhere.
+- **Tests** — backend API E2E +1: with `API_TOKEN` set, `/api/files/view`
+  returns 401 without the bearer header and streams `text/html` with it
+  (env restore deletes the key instead of setting it to `"undefined"`).
+  Browser E2E html-view journey now asserts the same-origin proxy href and
+  verifies the new tab through that href instead of falling back to the raw
+  backend URL.
+- **Docs** — README (file-manager bullet, files API table, env vars) and
+  `e2e/README.md` describe the proxy; CHANGELOG gets this entry.
 
 ## Test status
 
-- Unit: **145 passed / 14 suites**; API E2E: **104 passed / 10 suites** (both
-  re-run green after the type-only edits).
-- Backend `nest build` + `npx tsc --noEmit` clean; `npx eslint .` 0 errors.
-- Frontend unchanged (still clean from Round 28).
-- Browser E2E **exit 0** — all journeys + route probes, zero console/network
-  errors; `e2e/report.json` + screenshots refreshed.
+- Unit: **145 passed / 14 suites**; API E2E: **105 passed / 10 suites** (+1
+  token-gate view test); backend `nest build` + `npx tsc --noEmit` + lint
+  clean.
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` clean (proxy
+  compiled as dynamic `ƒ /api/files/view`).
+- Browser E2E **exit 0** — all routes + journeys, zero console/network
+  errors; report records `proxyHref` = `http://localhost:3333/api/files/view?...`;
+  screenshots + `e2e/report.json` refreshed.
+- Manual proxy check: same-origin view returned 200 with CSP `sandbox`,
+  inline disposition, `nosniff`, and `no-store` headers preserved.
 
 ## Known issues / accepted limitations
 
-- The direct HTML `view` link carries no Bearer token — fine in the compose
-  deploy (API token unset); token-protected deployments would need an
-  authenticated fetch/blob flow. No user friction reported.
-- CSP `sandbox` on the preview iframe intentionally disables scripts, forms,
-  and external navigation; interactive HTML should be opened in a new tab.
+- CSP `sandbox` intentionally disables scripts/forms and external navigation
+  inside the preview iframe; interactive HTML should be opened in a new tab
+  (where the same CSP header still applies). By design.
 - Scheduler runs in-process and skills install state is in-memory per backend
   instance (single-instance deployment assumed).
 - Buckets have no delete/rename endpoints (read-only by design).
@@ -54,7 +56,8 @@ housekeeping**: clear the legacy strict-TS violations so full-repo
 
 ## Next round focus
 
-- **No concrete next item.** DIRECTION items 1–4 are complete and the backend
-  lint backlog is cleared. Continue only if the human updates DIRECTION.md or
-  reports a real-use friction (e.g. token-protected deployments viewing HTML
-  by link).
+- **No concrete next item.** DIRECTION items 1–4 are complete, the HTML-view
+  token ticket is closed (verified in the API + browser E2E suites), and the
+  remaining items above are accepted design limitations rather than open
+  tickets. Continue only if the human updates DIRECTION.md or reports new
+  real-use friction.

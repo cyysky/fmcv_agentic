@@ -1,3 +1,43 @@
+## Round 2026-08-08 — autonomous iteration round 30 (tag `round-30`)
+
+### Added
+- **Token-safe HTML view proxy** (closes the Round 28/29 known issue) — the
+  `/files` preview iframe and **Open in new tab** link now use a same-origin
+  frontend route handler (`<app origin>/api/files/view`) that attaches the
+  API bearer token server-side, then streams the backend's response with only
+  its inline-view headers (`text/html`, `inline` disposition, CSP `sandbox`,
+  `nosniff`, `no-store`) passed through. HTML viewing by link / new tab now
+  works on `API_TOKEN`-protected deployments without leaking the token into
+  URLs. Compose gets a new runtime `API_INTERNAL_URL` (default
+  `http://backend:5555/api`) so the proxy can reach the backend container.
+
+### Changed
+- Browser E2E html-view journey asserts both the iframe and the new-tab link
+  point at the same-origin proxy and verifies the fresh tab through that
+  href (no raw-backend fallback); backend API E2E +1 — with `API_TOKEN` set,
+  `/api/files/view` is 401 without the bearer header and streams `text/html`
+  with it.
+
+### Test status
+- Unit **145 passed / 14 suites**; API E2E **105 passed / 10 suites** (+1
+  token-gate view test); backend `nest build` + `tsc --noEmit` clean.
+- Frontend lint + `tsc --noEmit` + `next build` clean (new proxy route
+  compiled as dynamic `ƒ /api/files/view`).
+- Browser E2E **exit 0**: all routes + journeys with zero console/network
+  errors; html-view report now records the same-origin `proxyHref`;
+  screenshots + `e2e/report.json` refreshed.
+
+### Known issues / accepted limitations
+- `Content-Security-Policy: sandbox` intentionally disables scripts/forms and
+  external navigation inside the preview iframe (safe viewing; interactive
+  pages open in a new tab, where the same CSP header still applies).
+- Scheduler + skills installed state are in-memory per backend instance
+  (single-instance deployment assumed).
+- Buckets are read-only by design (no delete/rename endpoints).
+- Test files are intentionally exempt from `no-unsafe-*` / `require-await`
+  (supertest `res.body` / Prisma test doubles are `any` by nature);
+  production sources stay strictly type-checked.
+
 ## Round 2026-08-08 — autonomous iteration round 29 (tag `round-29`)
 
 ### Changed
