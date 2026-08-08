@@ -1,3 +1,71 @@
+## Round 2026-08-08 — autonomous iteration round 35 (tag `round-35`)
+
+### Added
+- **Changelog backfill for Round 34** — the Round 34 handoff commit only
+  touched `ROUND.md`, so its entry never landed in `CHANGELOG.md`; this entry
+  records that round's work below and keeps the changelog aligned with the
+  tags again.
+- **Verification sweep (no production changes)** — re-ran every gate against
+  the live compose stack: backend unit 146/14, API E2E 105/10,
+  build/type-check/eslint clean on both sides, frontend production build
+  clean, and the CDP browser E2E refreshed `e2e/report.json` + screenshots
+  (exit 0, 21 route probes, all 9 journeys, zero console/network/HTTP
+  errors; fixtures cleaned down to baseline: sessions 0, connections 0,
+  buckets 0, cron 0, skills 0, channels `FMCV`/`coder` only).
+
+### Changed
+- **Browser E2E artifacts refreshed** (`e2e/report.json`, `e2e/screenshots/`)
+  against the current live stack; no source or test changes this round.
+
+### Known issues / accepted limitations
+- Unchanged from round 34: CSP `sandbox` inline-preview limits, in-process
+  scheduler / in-memory skills install state, read-only buckets, and the
+  recoverable `/data/.trash-round34` folder inside the backend container.
+
+## Round 2026-08-08 — autonomous iteration round 34 (tag `round-34`)
+
+### Added
+- **Session reconciliation (backend)** — `BaseAgentService.listSessions()`
+  and `deleteSession()` are now async and reconcile with persisted rows that
+  exist in Postgres but not in the in-memory map: GET merges them in (DB
+  failure degrades to the live list) and DELETE removes the row even when it
+  was never loaded into memory, 404ing only when neither source has it.
+  `sessionFromRow()` is shared with `onModuleInit()` so both paths map rows
+  identically; unit test
+  `'lists and deletes sessions persisted outside the live map'` added
+  (unit count 145 → 146).
+- **E2E cleanup fixes** — the channel journey's `round2.md` agent fixture is
+  now deleted by cleanup (and asserted), and the `skill-aware e2e` sessions
+  created by `skills.e2e-spec.ts` are deleted in a `finally` plus swept as a
+  fixture prefix, so leaked rows can no longer resurrect invisible sessions.
+- **Housekeeping** — stale dev project folders (`test-round`, `round-sandbox`,
+  `round2-*`, `dbg-member-check`, `dm-coder`, `e2e-stream-test`, `myproject`)
+  moved to a recoverable `/data/.trash-round34` inside the backend container;
+  8 debug channels and 7 dev sessions deleted via the API; pre-cleanup DB
+  backup kept at `logs/round34_precleanup_backup.sql` (gitignored).
+
+### Fixed
+- **Orphan session visibility/deletion** — a session row inserted directly
+  into Postgres now appears in `GET /api/agent/sessions` and `DELETE`
+  returns 200 with the DB count back to 0 (verified live after the fix).
+- **Live-stack LLM auth** — backend rebuild restored `AGENT_API_KEY` from the
+  local session record (the key is deliberately not committed), un-401ing
+  live LLM calls.
+
+### Changed
+- README unit count updated 145 → 146; browser E2E report + screenshots
+  refreshed against the fixed stack.
+
+### Known issues / accepted limitations
+- `/data/.trash-round34` (backend container) holds the retired dev folders
+  until pruned; the pre-cleanup DB backup lives in gitignored `logs/`.
+- Unchanged, by design: CSP `sandbox` disables scripts/forms/external
+  navigation inside the inline HTML preview; scheduler runs in-process and
+  skills install state is in-memory per backend instance (single-instance
+  deployment assumed); buckets have no delete/rename endpoints.
+- `AGENT_API_KEY` is not committed (by design); stacks started fresh must
+  supply it (or use `AGENT_LLM_STUB=1`) or live LLM calls will 401.
+
 ## Round 2026-08-08 — autonomous iteration round 33 (tag `round-33`)
 
 ### Added
