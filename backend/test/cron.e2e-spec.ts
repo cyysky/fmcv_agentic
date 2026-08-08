@@ -105,6 +105,7 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     disabled: `e2e-cron-disabled-${stamp}`,
     restart: `e2e-cron-restart-${stamp}`,
     grouped: `e2e-cron-group-${stamp}`,
+    foreign: `e2e-cron-foreign-${stamp}`,
   };
   let jobId = '';
   const http = () => request(app.getHttpServer());
@@ -191,6 +192,35 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     const row = rows.find((j) => j.id === jobId);
     expect(row).toBeTruthy();
     expect(row?.name).toBe(names.main);
+  });
+
+  it('filters the job list by lease group (Round 83)', async () => {
+    const foreignGroup = `e2e-list-${stamp}`;
+    const foreign = await prisma.cronJob.create({
+      data: {
+        name: names.foreign,
+        schedule: '0 8 * * *',
+        prompt: 'Foreign lease group filtering',
+        schedulerGroup: foreignGroup,
+      },
+    });
+    try {
+      const all = json<CronJobRow[]>(await http().get('/api/cron').expect(200));
+      expect(all.find((j) => j.id === foreign.id)?.schedulerGroup).toBe(
+        foreignGroup,
+      );
+      const filtered = json<CronJobRow[]>(
+        await http().get(`/api/cron?group=${foreignGroup}`).expect(200),
+      );
+      expect(filtered.length).toBe(1);
+      expect(filtered[0].id).toBe(foreign.id);
+      const defaultOnly = json<CronJobRow[]>(
+        await http().get('/api/cron?group=default').expect(200),
+      );
+      expect(defaultOnly.find((j) => j.id === foreign.id)).toBeUndefined();
+    } finally {
+      await prisma.cronJob.delete({ where: { id: foreign.id } });
+    }
   });
 
   it('gets one cron job and 404s on an unknown id', async () => {

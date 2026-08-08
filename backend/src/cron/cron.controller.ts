@@ -18,7 +18,8 @@ import { CronService } from './cron.service';
  *   POST   /api/cron           create a job (unique name, 5-field schedule,
  *                              agent-turn task: prompt + optional model /
  *                              connection / maxSteps)
- *   GET    /api/cron           list jobs (with last/next run info)
+ *   GET    /api/cron           list jobs (with last/next run info;
+ *                              optional ?group= filters by schedulerGroup)
  *   GET    /api/cron/scheduler this replica's scheduler lease/beat status
  *                              (enabled:false when CRON_SCHEDULER_ENABLED=false)
  *   GET    /api/cron/overview  cluster-wide lease groups + run throughput
@@ -40,8 +41,8 @@ export class CronController {
   }
 
   @Get()
-  list() {
-    return this.cron.list();
+  list(@Query('group') group?: string) {
+    return this.cron.list(group?.trim() || undefined);
   }
 
   @Get('scheduler')

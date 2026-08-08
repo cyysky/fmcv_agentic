@@ -341,8 +341,16 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     return row;
   }
 
-  async list(): Promise<CronJob[]> {
-    return this.prisma.cronJob.findMany({ orderBy: { createdAt: 'desc' } });
+  /**
+   * List cron jobs, newest first (Round 14). An optional lease group keeps
+   * the payload to one deployment's jobs (Round 83) — the same schedulerGroup
+   * semantics the overview and transition events use.
+   */
+  async list(group?: string): Promise<CronJob[]> {
+    return this.prisma.cronJob.findMany({
+      where: group ? { schedulerGroup: group } : {},
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   async get(id: string): Promise<CronJob> {

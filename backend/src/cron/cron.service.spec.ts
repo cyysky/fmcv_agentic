@@ -196,6 +196,17 @@ describe('CronService', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('filters the job list by lease group (Round 83)', async () => {
+    const { service, prisma } = makeSvc();
+    prisma.cronJob.findMany.mockResolvedValue([row()]);
+    await service.list('e2e-group');
+    expect(prisma.cronJob.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { schedulerGroup: 'e2e-group' },
+      }),
+    );
+  });
+
   it('updates schedule/enabled and slides nextRunAt accordingly', async () => {
     const { service, prisma } = makeSvc();
     prisma.cronJob.findUnique.mockResolvedValue(row());
