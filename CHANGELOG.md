@@ -1,4 +1,30 @@
-## Round 2026-08-08 — autonomous iteration round 28 (tag `round-28`)
+## Round 2026-08-08 — autonomous iteration round 29 (tag `round-29`)
+
+### Changed
+- **Backend lint backlog cleared** — `backend/eslint.config.mjs` now ignores
+  `dist/` and `coverage/` (generated build output used to be linted) and adds
+  a scoped test-only block relaxing `no-unsafe-*` / `require-await` for
+  `src/**/*.spec.ts` and `test/**/*.e2e-spec.ts`; production `src/**/*.ts`
+  keeps the strict `recommendedTypeChecked` set. Full-repo `npx eslint .`
+  exits 0 (previously 300+ errors, all in legacy test/spec files).
+- **Production type tightening** — `base-agent.service.ts` (`BaseTool.run`
+  narrowed to `unknown`, `JSON.parse` results typed), `cron.service.ts`
+  (sync `tick()`), `main.ts` (`void bootstrap()`), unused imports dropped in
+  `connection.dto.ts` / `agent.controller.ts`.
+- **Legacy test/spec cleanup** — ~296 Prettier auto-fixes across old files;
+  `test/files.e2e-spec.ts` fully converted to ESM imports with typed response
+  interfaces (the model for the rest); `test/app.e2e-spec.ts` and
+  `test/auth.e2e-spec.ts` response bodies typed; unused imports/params and
+  sync-lifecycle call sites fixed. No behavior changes.
+
+### Test status
+- Unit **145 passed / 14 suites**; API E2E **104 passed / 10 suites** (both
+  re-run green after the type-only edits).
+- Backend `nest build` + `npx tsc --noEmit` clean; `npx eslint .` **0 errors**.
+- Browser E2E **exit 0** — all journeys + route probes with zero
+  console/network errors; screenshots + `e2e/report.json` refreshed.
+
+ (tag `round-28`)
 
 ### Added
 - **View HTML by link / new tab-window** (DIRECTION.md item 4) — new

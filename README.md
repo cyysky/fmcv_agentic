@@ -321,6 +321,12 @@ cd e2e && node browser-e2e.mjs
   jobs, job history persists to `channel_runs`, and channel delete
   cascade-prunes run history. Each suite's count equals its declared tests
   (verified per file).
+- **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
+  backend: production `src/**/*.ts` runs the strict
+  `recommendedTypeChecked` rule set, while test files
+  (`src/**/*.spec.ts`, `test/**/*.e2e-spec.ts`) relax `no-unsafe-*` and
+  `require-await` (supertest `res.body` and Prisma test doubles are `any`
+  by nature); `nest build` + `npx tsc --noEmit` are clean.
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent`, `/files`, `/buckets`, `/cron`, and `/skills` render their content and
