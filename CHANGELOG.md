@@ -1,3 +1,39 @@
+## Round 2026-08-08 — autonomous iteration round 17 (tag `round-17`)
+
+### Added
+- Connection testing: `POST /api/connections/:id/test` probes a stored
+  endpoint live — one-token `chat/completions` with the stored model + key,
+  bounded by `CONNECTION_TEST_TIMEOUT_MS` (default 8 s) — and returns
+  pass/fail with HTTP status, latency, and a human-readable message. Network
+  failures and timeouts are graceful results, never dangling requests.
+- Settings Test buttons: one per connection row, with an inline
+  `aria-live` result (green "Connected — …" or red fail reason) and a
+  busy/disabled state while the probe runs.
+- Unit coverage for the probe (reachable 200, upstream 401, network failure,
+  abort/timeout, unknown id 404) and API E2E probes against a hermetic fake
+  upstream on an ephemeral port (verifies the bearer key is sent, 401
+  reporting, unreachable graceful failure, 404).
+
+### Fixed
+- Credential clobber on edit: the masked API-key preview (`sk-***xyz`) was
+  pre-filled into the edit form, so saving without touching it wrote the
+  masked string back over the real key. The field now opens blank with a
+  "kept when left blank" hint, and the browser E2E captures the wire PATCH to
+  prove `apiKey` is never replayed.
+- Dead success notice: `handleSubmit` set the "Connection added/updated."
+  banner then called `resetForm()`, which cleared it again in the same
+  render — the notices never appeared. Ordering fixed, verified by the new
+  settings journey.
+
+### Changed
+- Counts: unit 62 → 67 (11 suites), API E2E 47 → 51 (7 suites); backend
+  `nest build` clean; frontend `tsc --noEmit` + `eslint` clean; browser E2E
+  all green (exit 0, zero console/network errors on every probe) including the
+  new settings journey (`settings-test-result.png` + refreshed
+  `e2e/report.json`). README/e2e docs updated with the new API, env var, and
+  journey.
+
+## Round 2026-08-06 — Round 17 · autonomous iteration round 15
 ## Round 2026-08-06 — Round 17 · autonomous iteration round 15
 
 ### Added

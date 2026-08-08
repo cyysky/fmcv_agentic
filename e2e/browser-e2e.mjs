@@ -29,6 +29,10 @@
 //   10. Mobile: all four routes re-probed at 360x640 with device metrics,
 //      asserting no horizontal overflow, nav links fit, and the agent
 //      composer / files row grid are usable
+//   11. Settings: editing a connection never sends `apiKey` back (the field
+//      starts blank on edit so the masked preview cannot clobber the stored
+//      secret), and the new Test button probes a connection and renders a
+//      graceful inline result
 // Exits non-zero when a main flow fails (quality gate for the round).
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -1183,6 +1187,157 @@ async function filesCleanup(flow) {
 
 /* --------------------------------- main --------------------------------- */
 
+async function settingsFlow() {
+  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/settings`;
+  log(`flow settings -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], result: null, fixtureId: null };
+  try {
+    wireErrorCapture(c, sink);
+
+    // Capture the connection PATCH bodies: the edit form must NOT echo
+    // `apiKey` back, otherwise the masked preview would overwrite the stored
+    // secret on every save.
+    const patchBodies = [];
+    c.on("Network.requestWillBeSent", (p) => {
+      const req = p.request;
+      if (req.method === "PATCH" && req.url.includes("/api/connections/")) {
+        patchBodies.push(req.postData ?? "");
+      }
+    });
+
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "settings ready");
+    if (!ready) throw new Error("settings flow: page never loaded");
+    const list = await waitFor(c, `document.body.innerText.includes("Connections (")`, 30000, 600, "connections list");
+    if (!list) throw new Error("settings flow: connections list never rendered");
+
+    // Hermetic fixture: a throwaway connection pointing at a dead host/port so
+    // the Test probe deterministically exercises the graceful-failure path.
+    const connName = `e2e-settings-${Date.now().toString(36)}`;
+    const secretKey = "sk-e2e-keepexisting-789";
+    const created = await fetch(`${API}/connections`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        displayName: connName,
+        baseUrl: "http://127.0.0.1:9/v1",
+        modelName: "ds4-flash",
+        contextLength: 128000,
+        apiKey: secretKey,
+      }),
+    });
+    if (!created.ok) {
+      throw new Error(`settings flow: could not create fixture connection (HTTP ${created.status})`);
+    }
+    flow.fixtureId = (await created.json()).id;
+    flow.steps.push("fixture-created");
+
+    await c.send("Page.navigate", { url });
+    const visible = await waitFor(
+      c,
+      `document.body.innerText.includes(${JSON.stringify(connName)})`,
+      30000,
+      600,
+      "fixture row",
+    );
+    if (!visible) throw new Error("settings flow: fixture row never rendered");
+
+    // 1. Edit must open with a blank API-key field (masked preview removed).
+    const editClicked = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(connName)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Edit");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!editClicked) throw new Error("settings flow: Edit button missing");
+    const editMode = await waitFor(c, `document.body.innerText.includes("Edit Connection")`, 15000, 400, "edit mode");
+    const keyInputValue = await evalJs(c, `document.querySelector('input[name="apiKey"]')?.value ?? null`);
+    flow.keyBlankOnEdit = !!editMode && keyInputValue === "";
+    if (!flow.keyBlankOnEdit) {
+      throw new Error(`settings flow: API key not blank on edit (value=${JSON.stringify(keyInputValue)})`);
+    }
+    flow.steps.push("edit-mode-key-blank");
+
+    // 2. Rename + save: the wire PATCH must not carry apiKey at all.
+    const renamed = `Renamed ${Date.now().toString(36)}`;
+    await evalJs(c, jsSetInput('input[name="displayName"]', renamed));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("settings flow: save button not found/enabled");
+    const saved = await waitFor(c, `document.body.innerText.includes("Connection updated.")`, 15000, 400, "update notice");
+    if (!saved) throw new Error("settings flow: update notice never appeared");
+    flow.patchBodies = [...patchBodies];
+    flow.keyNotSentOnPatch =
+      flow.patchBodies.length > 0 && flow.patchBodies.every((body) => !body.includes('"apiKey"'));
+    if (!flow.keyNotSentOnPatch) {
+      throw new Error(`settings flow: PATCH replayed apiKey (${JSON.stringify(flow.patchBodies)})`);
+    }
+    flow.steps.push("edited-without-key");
+
+    // 3. Test button: dead upstream must surface as a graceful inline result.
+    const testClicked = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(renamed)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Test");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!testClicked) throw new Error("settings flow: Test button missing");
+    const result = await waitFor(
+      c,
+      `[...document.querySelectorAll('[class*="testResult"]')].some((el) => el.innerText.trim().length > 0)`,
+      20000,
+      500,
+      "test result",
+    );
+    const resultText = await evalJs(
+      c,
+      `[...document.querySelectorAll('[class*="testResult"]')].map((el) => el.innerText.trim()).join(" | ")`,
+    );
+    flow.testResultText = resultText;
+    flow.testGracefulFailure = !!result && /Connection failed|timed out|HTTP \d+/.test(resultText);
+    if (!flow.testGracefulFailure) {
+      throw new Error(`settings flow: no graceful test result (${JSON.stringify(resultText)})`);
+    }
+    flow.steps.push("test-result-rendered");
+    await screenshot(c, "settings-test-result.png");
+
+    // 4. Server-side cleanup: drop the fixture and confirm the row disappears.
+    await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" });
+    flow.fixtureId = null;
+    await c.send("Page.navigate", { url });
+    const gone = await waitFor(
+      c,
+      `!document.body.innerText.includes(${JSON.stringify(renamed)})`,
+      15000,
+      400,
+      "fixture removal",
+    );
+    flow.cleanup = gone ? "clean" : "leftover";
+    flow.result = {
+      keyBlankOnEdit: flow.keyBlankOnEdit,
+      keyNotSentOnPatch: flow.keyNotSentOnPatch,
+      testGracefulFailure: flow.testGracefulFailure,
+      cleanup: flow.cleanup,
+    };
+    return { flow, errors: sink };
+  } finally {
+    if (flow.fixtureId) {
+      await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" }).catch(() => undefined);
+    }
+    c.close();
+  }
+}
+
 async function main() {
   const routes = [
     {
@@ -1355,6 +1510,7 @@ async function main() {
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow);
     report.filesFlow = await filesFlow();
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
+    report.settingsFlow = await settingsFlow();
     log("browser E2E flows done");
   } finally {
     // Never leave check tabs behind, even when a route failed midway.
@@ -1412,6 +1568,21 @@ async function main() {
   }
   const filesErrs = errorCount(ffl ? ffl.errors : {});
   if (filesErrs > 0) failures.push(`files flow: ${filesErrs} console/network error(s)`);
+
+  const sfl = report.settingsFlow;
+  if (
+    !sfl ||
+    !sfl.flow.result?.keyBlankOnEdit ||
+    !sfl.flow.result?.keyNotSentOnPatch ||
+    !sfl.flow.result?.testGracefulFailure
+  ) {
+    failures.push(`settings flow: key-safety/test not verified (${JSON.stringify(sfl && sfl.flow)})`);
+  }
+  if (sfl && sfl.flow.result?.cleanup !== "clean") {
+    failures.push(`settings flow: fixture cleanup not verified (${sfl.flow.result.cleanup})`);
+  }
+  const settingsErrs = errorCount(sfl ? sfl.errors : {});
+  if (settingsErrs > 0) failures.push(`settings flow: ${settingsErrs} console/network error(s)`);
 
   writeFileSync(REPORT, JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));

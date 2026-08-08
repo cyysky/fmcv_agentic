@@ -5,6 +5,14 @@ import styles from "./settings.module.css";
 import { apiFetch } from "../../lib/api";
 
 
+interface ConnectionTest {
+  ok: boolean;
+  status?: number;
+  latencyMs: number;
+  model: string;
+  message: string;
+}
+
 interface Connection {
   id: string;
   displayName: string;
@@ -36,6 +44,9 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [testStates, setTestStates] = useState<
+    Record<string, { busy: boolean; result: ConnectionTest | null }>
+  >({});
 
   const load = useCallback(async () => {
     try {
@@ -143,8 +154,10 @@ export default function SettingsPage() {
         throw new Error(msg);
       }
 
-      setMessage(editingId ? "Connection updated." : "Connection added.");
       resetForm();
+      // resetForm clears the banner state; set it AFTER so the success
+      // notice actually renders (state updates are batched into one paint).
+      setMessage(editingId ? "Connection updated." : "Connection added.");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -161,7 +174,7 @@ export default function SettingsPage() {
       modelName: conn.modelName,
       contextLength: String(conn.contextLength),
       concurrentConnections: String(conn.concurrentConnections),
-      apiKey: conn.apiKey ?? "",
+      apiKey: "",
       defaultParameters: conn.defaultParameters
         ? JSON.stringify(conn.defaultParameters, null, 2)
         : "",
@@ -182,6 +195,36 @@ export default function SettingsPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  };
+
+  const handleTest = async (id: string) => {
+    setTestStates((prev) => ({ ...prev, [id]: { busy: true, result: null } }));
+    setError(null);
+    try {
+      const res = await apiFetch(`/connections/${id}/test`, {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => null)) as ConnectionTest | null;
+      if (!res.ok) {
+        throw new Error(
+          data?.message ?? `Test failed (HTTP ${res.status})`,
+        );
+      }
+      setTestStates((prev) => ({ ...prev, [id]: { busy: false, result: data } }));
+    } catch (err) {
+      setTestStates((prev) => ({
+        ...prev,
+        [id]: {
+          busy: false,
+          result: {
+            ok: false,
+            model: "",
+            latencyMs: 0,
+            message: err instanceof Error ? err.message : "Test failed",
+          },
+        },
+      }));
     }
   };
 
@@ -250,6 +293,11 @@ export default function SettingsPage() {
             type="password"
             autoComplete="off"
           />
+          {editingId && (
+            <span className={styles.hint}>
+              Existing key is preserved when this field is left blank.
+            </span>
+          )}
         </label>
 
         <label className={styles.field}>
@@ -330,8 +378,27 @@ export default function SettingsPage() {
                     ctx {c.contextLength.toLocaleString()} ·{" "}
                     {c.concurrentConnections} concurrent
                   </div>
+                  {testStates[c.id]?.result && (
+                    <div
+                      className={`${styles.testResult} ${
+                        testStates[c.id]!.result!.ok
+                          ? styles.testOk
+                          : styles.testErr
+                      }`}
+                      aria-live="polite"
+                    >
+                      {testStates[c.id]!.result!.message}
+                    </div>
+                  )}
                 </div>
                 <div className={styles.listActions}>
+                  <button
+                    className={styles.btnGhost}
+                    disabled={testStates[c.id]?.busy}
+                    onClick={() => handleTest(c.id)}
+                  >
+                    {testStates[c.id]?.busy ? "Testing…" : "Test"}
+                  </button>
                   <button
                     className={styles.btnGhost}
                     onClick={() => startEdit(c)}

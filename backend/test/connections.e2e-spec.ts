@@ -1,10 +1,15 @@
 import { INestApplication } from '@nestjs/common';
+import { AddressInfo } from 'net';
+import { createServer, Server } from 'http';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { bootstrapApp } from './test-app';
 
 describe('Connections API (e2e, real Postgres)', () => {
   let app: INestApplication<App>;
+  let upstream: Server;
+  let upstreamUrl = '';
+  let lastAuth: string | null = null;
   const http = () => request(app.getHttpServer());
   const payload = {
     displayName: `e2e-${Date.now().toString(36)}`,
@@ -17,12 +22,40 @@ describe('Connections API (e2e, real Postgres)', () => {
 
   beforeAll(async () => {
     app = await bootstrapApp();
+
+    // Hermetic fake OpenAI-compatible upstream: verifies the probe sends the
+    // stored bearer key and answers one-token completions.
+    upstream = createServer((req, res) => {
+      lastAuth = req.headers.authorization ?? null;
+      let body = '';
+      req.on('data', (c: Buffer) => (body += c.toString()));
+      req.on('end', () => {
+        if (lastAuth !== 'Bearer sk-e2e-supersecret123') {
+          res.writeHead(401, { 'content-type': 'application/json' });
+          res.end('{"error":"invalid api key"}');
+          return;
+        }
+        const parsed = JSON.parse(body || '{}');
+        const valid =
+          parsed.model === 'probe-model' && parsed.max_tokens === 1;
+        if (!valid) {
+          res.writeHead(400, { 'content-type': 'application/json' });
+          res.end('{"error":"bad probe payload"}');
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"choices":[{"message":{"content":"pong"}}]}');
+      });
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    upstreamUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/v1`;
   });
 
   afterAll(async () => {
     if (createdId) {
       await http().delete(`/api/connections/${createdId}`).ok((r) => r.status === 200);
     }
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
     await app.close();
   });
 
@@ -77,5 +110,100 @@ describe('Connections API (e2e, real Postgres)', () => {
       .expect(400);
     expect(JSON.stringify(invalid.body.message)).toContain('fields');
     await http().delete(`/api/connections/${created.body.id}`).expect(200);
+  });
+
+  describe('connection test endpoint', () => {
+    async function cleanup(id?: string) {
+      if (id) {
+        await http().delete(`/api/connections/${id}`).ok((r) => r.status === 200);
+      }
+    }
+
+    it('POST /:id/test probes a reachable endpoint with the stored key', async () => {
+      const created = await http()
+        .post('/api/connections')
+        .send({
+          displayName: `probe-ok-${Date.now().toString(36)}`,
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          contextLength: 128000,
+          apiKey: 'sk-e2e-supersecret123',
+        })
+        .expect(201);
+
+      try {
+        const res = await http()
+          .post(`/api/connections/${created.body.id}/test`)
+          .expect(200);
+        expect(res.body.ok).toBe(true);
+        expect(res.body.status).toBe(200);
+        expect(res.body.model).toBe('probe-model');
+        expect(res.body.latencyMs).toBeGreaterThanOrEqual(0);
+        expect(String(res.body.message)).toContain('responded');
+        expect(lastAuth).toBe('Bearer sk-e2e-supersecret123');
+      } finally {
+        await cleanup(created.body.id);
+      }
+    });
+
+    it('reports auth failures with the upstream HTTP status', async () => {
+      const created = await http()
+        .post('/api/connections')
+        .send({
+          displayName: `probe-401-${Date.now().toString(36)}`,
+          baseUrl: upstreamUrl,
+          modelName: 'probe-model',
+          contextLength: 128000,
+          apiKey: 'sk-wrong-key',
+        })
+        .expect(201);
+
+      try {
+        const res = await http()
+          .post(`/api/connections/${created.body.id}/test`)
+          .expect(200);
+        expect(res.body.ok).toBe(false);
+        expect(res.body.status).toBe(401);
+        expect(String(res.body.message)).toContain('401');
+      } finally {
+        await cleanup(created.body.id);
+      }
+    });
+
+    it('reports unreachable endpoints gracefully without an exception', async () => {
+      // Bind + close a throwaway server to get a port that is almost surely
+      // closed by the time the probe runs.
+      const probe = createServer();
+      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      const closedPort = (probe.address() as AddressInfo).port;
+      await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+      const created = await http()
+        .post('/api/connections')
+        .send({
+          displayName: `probe-down-${Date.now().toString(36)}`,
+          baseUrl: `http://127.0.0.1:${closedPort}/v1`,
+          modelName: 'probe-model',
+          contextLength: 128000,
+        })
+        .expect(201);
+
+      try {
+        const res = await http()
+          .post(`/api/connections/${created.body.id}/test`)
+          .expect(200);
+        expect(res.body.ok).toBe(false);
+        expect(res.body.status).toBeUndefined();
+        expect(String(res.body.message)).toContain('Connection failed');
+      } finally {
+        await cleanup(created.body.id);
+      }
+    });
+
+    it('404 for an unknown connection id', async () => {
+      await http()
+        .post('/api/connections/00000000-0000-0000-0000-000000000000/test')
+        .expect(404);
+    });
   });
 });

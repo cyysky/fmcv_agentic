@@ -35,7 +35,10 @@ and coordinate multi-agent teams in Slack-style channels.
   rows truncate names with ellipsis, and the agent composer stays on-screen.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
-  connections, optional key).
+  connections, optional key). Every row has a **Test** button that probes the
+  endpoint live (one-token `chat/completions` with the stored key) and shows a
+  graceful pass/fail result with latency; editing never replays the masked key
+  back over the stored secret.
 - **Agent chat (`/agent`)** — stateless turns plus a persistent Sessions tab
   (sidebar, continue, delete) backed by Postgres; model picker (`ds4-flash`
   default, `qwen3.6-35b`), conversation loop with a hard `maxSteps` cap,
@@ -55,7 +58,8 @@ and coordinate multi-agent teams in Slack-style channels.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
-- **Settings UI (`/settings`)** — full CRUD for connections.
+- **Settings UI (`/settings`)** — full CRUD for connections plus per-row
+  live connectivity testing.
 
 ## REST API
 
@@ -68,6 +72,7 @@ Connections:
 | GET    | `/api/connections/:id` | get one       |
 | PATCH  | `/api/connections/:id` | update        |
 | DELETE | `/api/connections/:id` | delete        |
+| POST   | `/api/connections/:id/test` | live connectivity probe (one-token chat/completions with the stored key) |
 
 Agent:
 
@@ -136,17 +141,21 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 62 tests / 10 suites** — model catalog, workspace service + tools,
+- **Unit: 67 tests / 11 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
-  rename + auto-title, request-throttle guard, and the file manager service
+  rename + auto-title, request-throttle guard, the file manager service
   (list/read/download/write/mkdir/delete, directory-first ordering,
   `..`/absolute/symlink escapes rejected, project scopes read-only, 100 KB
   read cap, download resolver rejects directories / empty paths / missing
-  files).
-- **API E2E: 47 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
+  files), and the connection-test probe (reachable 200, upstream 401,
+  network failure, abort/timeout, unknown id 404).
+- **API E2E: 51 tests / 7 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
-  `test/test-app.ts`: app health (5), connections CRUD (4), agent
+  `test/test-app.ts`: app health (5), connections CRUD + live probes (8: CRUD
+  round-trip, masked key, validation 400s, probe OK through a hermetic fake
+  upstream that asserts the stored bearer key, 401 reporting, unreachable
+  endpoint graceful failure, unknown id 404), agent
   sessions/turns/rename/auto-title (12), channel lifecycle + streaming jobs
   (12), files manager (9: CRUD round-trip, directory-first ordering, empty-dir
   delete + file delete, path-escape 400, project-scope 403, scope
@@ -170,12 +179,17 @@ cd e2e && node browser-e2e.mjs
   verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the
   sidebar → rename via the UI → page reload → reopen →
-  history-and-new-title-survive → delete, and a files journey that creates a
+  history-and-new-title-survive → delete, a files journey that creates a
   nested file + dotfile through the `/files` UI, reads the content back,
   downloads the created file (asserts the attachment headers on the wire and
   saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
   deletes both through the UI, confirms the removal server-side via the
-  files API, and asserts the success notice after each create/download/delete. The sessions step waits for the CDP navigation
+  files API, and asserts the success notice after each create/download/delete,
+  and a settings journey that creates a throwaway connection through the API,
+  proves the Edit form opens with a blank API-key field, captures the wire
+  PATCH (`Network.requestWillBeSent`) to prove `apiKey` is never replayed, and
+  clicks Test against a dead endpoint to assert the graceful inline failure
+  result, then cleans the fixture up server-side. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
@@ -234,6 +248,20 @@ cd e2e && node browser-e2e.mjs
   delete via UI → server-side verify) plus `/files` in the route probes;
   screenshots + report refreshed.
 
+### Round 17 — connection testing + credential-safe edits
+- `POST /api/connections/:id/test` probes a stored connection live with the
+  stored model/key (one-token `chat/completions`, bounded by
+  `CONNECTION_TEST_TIMEOUT_MS`) and reports pass/fail with HTTP status and
+  latency; unreachable and timed-out endpoints fail gracefully.
+- Settings rows get a Test button with an inline, dismissible-by-navigation
+  result; editing opens with a blank API-key field (placeholder-only hint) so
+  the masked preview can never clobber the stored secret on save, and the
+  create/edit success notice now actually renders (a batched-state ordering
+  bug had `resetForm()` clearing it before paint).
+- Unit 62 → 67, API E2E 47 → 51, frontend lint/tsc clean, browser E2E all
+  green including the new settings journey (key-blank on edit, no `apiKey` in
+  the wire PATCH, graceful Test result, fixture cleanup).
+
 ## Local development
 
 ```bash
@@ -272,6 +300,9 @@ Stop everything with `docker compose down`.
 - `RATE_LIMIT_TTL_MS` — throttling window length in milliseconds (default
   60000). Both variables are read per request, so they take effect without a
   backend restart.
+- `CONNECTION_TEST_TIMEOUT_MS` — socket/TTL timeout for the connection-test
+  probe in milliseconds (default 8000); over-limit probes return a graceful
+  "timed out" result instead of hanging the settings page.
 
 ### Database & migrations (Prisma)
 

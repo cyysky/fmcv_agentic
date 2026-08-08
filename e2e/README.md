@@ -53,6 +53,12 @@ Environment overrides:
    navigates into the folder, reads the file content back, deletes the file +
    folder + dotfile through the UI, and then confirms server-side removal via
    the files API (no leftovers).
+5. **Settings journey**: the script creates a throwaway connection via the
+   API, clicks Edit and asserts the API-key field opens blank (so the masked
+   preview cannot overwrite the stored secret), captures the wire PATCH body
+   to prove `apiKey` is never replayed, clicks the new Test button against a
+   dead endpoint and asserts a graceful inline failure result, then deletes
+   the fixture and confirms the row disappears.
 5. **Screenshots**: key screens (home, settings, agent, channel running,
    channel done, files before/after) are captured to `e2e/screenshots/`.
 

@@ -1,6 +1,6 @@
-import { ExecutionContext, ThrottlerException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerException } from '@nestjs/throttler';
 import { TestingModule } from '@nestjs/testing';
 import { AppThrottlerGuard, envPositiveInt } from './throttle.guard';
 

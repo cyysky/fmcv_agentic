@@ -143,7 +143,7 @@ describe('ChannelJobService', () => {
       finishedAt: null,
       createdAt: new Date('2026-08-06T00:00:00.000Z'),
       updatedAt: new Date('2026-08-06T00:00:00.000Z'),
-    } as never;
+    } as Record<string, unknown>;
     (prisma._findMany as jest.Mock).mockResolvedValue([staleRow]);
 
     const svc = makeSvc(channelsDouble(), agentDouble(), prisma);

@@ -7,9 +7,23 @@ import { Connection, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
 
+/** Result of a live connectivity probe against one stored connection. */
+export interface ConnectionTestResult {
+  ok: boolean;
+  status?: number;
+  latencyMs: number;
+  model: string;
+  message: string;
+}
+
 @Injectable()
 export class ConnectionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly testTimeoutMs: number;
+
+  constructor(private readonly prisma: PrismaService) {
+    this.testTimeoutMs =
+      Number(process.env.CONNECTION_TEST_TIMEOUT_MS) || 8000;
+  }
 
   async create(dto: CreateConnectionDto): Promise<Connection> {
     const data: Prisma.ConnectionCreateInput = {
@@ -67,6 +81,80 @@ export class ConnectionsService {
     await this.ensureExists(id);
     await this.prisma.connection.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  /**
+   * Probe a stored connection over the wire: POST a one-token
+   * `chat/completions` request to `baseUrl` with the stored model + key,
+   * then report reachability / HTTP status / latency. The real API key is
+   * used only for the probe and is never returned or logged.
+   */
+  async test(id: string): Promise<ConnectionTestResult> {
+    const conn = await this.prisma.connection.findUnique({ where: { id } });
+    if (!conn) {
+      throw new NotFoundException(`Connection ${id} not found`);
+    }
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.testTimeoutMs);
+    try {
+      const response = await fetch(`${conn.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(conn.apiKey
+            ? { authorization: `Bearer ${conn.apiKey}` }
+            : {}),
+        },
+        body: JSON.stringify({
+          model: conn.modelName,
+          messages: [{ role: 'user', content: 'ping' }],
+          max_tokens: 1,
+        }),
+        signal: controller.signal,
+      });
+      const latencyMs = Date.now() - started;
+
+      if (response.ok) {
+        return {
+          ok: true,
+          status: response.status,
+          latencyMs,
+          model: conn.modelName,
+          message: `Connected — ${conn.modelName} responded in ${latencyMs} ms.`,
+        };
+      }
+
+      let detail = '';
+      try {
+        detail = (await response.text()).slice(0, 300).trim();
+      } catch {
+        /* body unreadable; the status is still useful */
+      }
+      return {
+        ok: false,
+        status: response.status,
+        latencyMs,
+        model: conn.modelName,
+        message: `Upstream returned HTTP ${response.status}${
+          detail ? `: ${detail}` : ''
+        }`,
+      };
+    } catch (err) {
+      const latencyMs = Date.now() - started;
+      const raw = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        latencyMs,
+        model: conn.modelName,
+        message: /abort/i.test(raw)
+          ? `Connection timed out after ${this.testTimeoutMs} ms.`
+          : `Connection failed: ${raw}`,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async ensureExists(id: string): Promise<void> {
