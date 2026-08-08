@@ -8,9 +8,6 @@ import type { BaseAgentService } from './base-agent.service';
 import { WorkspaceService } from './workspace.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** Slug/name: alphanumeric + dash + underscore. */
-const SLUG_RE = /^[A-Za-z0-9_-]+$/;
-
 export interface ChannelSummary {
   id: string;
   slug: string;
@@ -63,11 +60,6 @@ export class ChannelService {
       .replace(/[^a-z0-9_-]+/g, '-')
       .replace(/^-+|-+$/g, '');
     if (!s) throw new BadRequestException('Channel name cannot be empty');
-    if (!SLUG_RE.test(s)) {
-      throw new BadRequestException(
-        'Channel slug must be alphanumeric, dash or underscore only',
-      );
-    }
     return s;
   }
 

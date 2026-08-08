@@ -1264,39 +1264,6 @@ describe('BaseAgentService streaming failure handling', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
-
-  it('stops immediately when the signal reads aborted at loop entry', async () => {
-    const { agent, root } = await makeAgent();
-    try {
-      // A real AbortSignal cannot flip between two synchronous reads, so this
-      // uses a stateful mock to prove the pre-loop guard honors a stop that
-      // landed before the first model call.
-      let firstRead = true;
-      const signal = {
-        get aborted() {
-          const value = firstRead ? false : true;
-          firstRead = false;
-          return value;
-        },
-      } as unknown as AbortSignal;
-      const messages: ChatMessage[] = [];
-      const res = await agent.runChannelTurnStreaming({
-        agentName: 'coder',
-        channelSlug: 'team',
-        channelProjectName: 'team',
-        thread: '',
-        message: 'x',
-        channelPost: async () => ({}),
-        messages,
-        onEvent: () => {},
-        interject: () => [],
-        signal,
-      });
-      expect(res).toEqual({ answer: '[stopped]', steps: 0, trace: [] });
-    } finally {
-      await fs.rm(root, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('BaseAgentService LLM transport', () => {

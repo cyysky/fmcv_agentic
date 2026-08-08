@@ -796,13 +796,6 @@ export class BaseAgentService implements OnModuleInit {
         iter < maxIterations && !opts.signal?.aborted;
         iter++
       ) {
-        // 0. Bail immediately if a stop was requested (e.g. the user pressed
-        //    Stop or Divert while the previous step was running).
-        if (opts.signal?.aborted) {
-          answer = answer || '[stopped]';
-          break;
-        }
-
         // 1. Drain the mailbox: any queued interjections land in context now.
         const interjections = opts.interject();
         for (const text of interjections) {
