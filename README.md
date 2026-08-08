@@ -249,6 +249,10 @@ cd backend && npm run test:e2e
 # Browser E2E via Chrome DevTools Protocol (Chrome must run with
 # --remote-debugging-port=9222; see e2e/README.md)
 cd e2e && node browser-e2e.mjs
+
+# REST docs drift guard: every controller route must appear in the README
+# tables and vice versa (zero dependencies; run from the repo root)
+node scripts/verify-rest-docs.mjs
 ```
 
 - **Unit: 146 tests / 14 suites** — model catalog, workspace service + tools,
@@ -335,6 +339,13 @@ cd e2e && node browser-e2e.mjs
   (`src/**/*.spec.ts`, `test/**/*.e2e-spec.ts`) relax `no-unsafe-*` and
   `require-await` (supertest `res.body` and Prisma test doubles are `any`
   by nature); `nest build` + `npx tsc --noEmit` are clean.
+- **REST docs drift guard** (`scripts/verify-rest-docs.mjs`) — zero
+  dependencies; parses every `backend/src/**/*.controller.ts` route
+  decorator and compares the normalized `METHOD /api/...` set against the
+  "## REST API" tables in `README.md` (query strings and trailing slashes
+  normalized; the bare `GET /api` hello probe is the only intentionally
+  undocumented route). Exits non-zero with the exact missing/extra rows, so
+  a new endpoint can never silently ship without its docs row again.
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
   `/agent`, `/files`, `/buckets`, `/cron`, and `/skills` render their content and
