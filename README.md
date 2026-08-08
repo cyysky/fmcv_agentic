@@ -468,10 +468,12 @@ node scripts/api-e2e.mjs
   dependencies; reads Next's `route-bundle-stats.json` after `next build`
   and fails the gate when any route's uncompressed first-load JS exceeds
   the budget (default 600 KB, override `FMCV_BUNDLE_BUDGET_BYTES`).
-  Measured baseline Round 91: largest first load is `/agent` at ~513 KB
+  Measured baseline Round 93: largest first load is `/agent` at ~496 KB
   — the Next/React framework baseline (~460 KB shared, ~156 KB gzipped)
   dominates while per-route app chunks stay 13-50 KB and are not
-  duplicated across routes.
+  duplicated across routes. Round 93 lazy-split the agent sessions/channels
+  tab panels (`agent/agent-views.tsx`) out of that eager chunk (~512 KB →
+  ~496 KB); the ~23 KB panel chunk is fetched only when a tab opens.
 - **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
   backend: production `src/**/*.ts` runs the strict
   `recommendedTypeChecked` rule set, while test files
