@@ -1,47 +1,53 @@
-# ROUND 77 — 2026-08-09 (autonomous iteration round 77)
+# Round 78 — overview transition "load all" history (2026-08-09)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty. This
-round executed Round 76's top focus item: surrogate-safe run-message
-truncation (`MAX_RUN_MESSAGE` hygiene).
+round executed Round 77's top focus item: memory-coasting the overview
+window depth with a paginated **load-all transition history** pass that
+mirrors the run-history load-all.
 
 ## What changed this round
 
-- **Surrogate-safe run-message truncation** — `truncate()` in
-  `cron.service.ts` is now exported and flattens/trims text, keeps the
-  ellipsis inside the 500-code-unit cap, and backs the cut off when it
-  would split a UTF-16 surrogate pair (emoji straddling the boundary), so
-  persisted run messages and history rows are always valid Unicode. Added an
-  8-case unit block (empty/whitespace -> null, at-cap unchanged, long text
-  capped with the ellipsis inside the cap, whitespace collapse, emoji at the
-  cut, straddling surrogate backed off, leading emoji kept, degenerate caps).
-  README now documents the "500 valid-Unicode code units, never split
-  mid-emoji" contract.
-- **Root-caused + fixed the intermittent API E2E flake** — the
-  cron-multireplica suite failed ~5/8 runs at `lastRunMessage` = null while
-  `lastRunStatus` was `done`. Instrumented runs proved the suite's own
-  replicas never write that row: the live Docker backend's cron scheduler
-  scans *all* due jobs in the shared Postgres regardless of lease group,
-  claims the e2e-created failover job, runs it against the real gateway (the
-  container has no `AGENT_LLM_STUB`), and persists a `done` row with a
-  null/empty answer. Stopping the backend container during API E2E (the old
-  documented-but-unfollowed workflow) makes the suite deterministic: 5
-  consecutive full runs at 119/119.
-- **Docs** — root README Testing + backend README now give the exact
-  `docker compose stop backend` / `npm run test:e2e` / start workflow and
-  explain both interference sources (cross-stack due-job race + boot-time
-  recovery sweep). Browser E2E report refreshed (same checks, all passed).
+- **Paginated overview transition events API** — `GET /api/cron/overview/events`
+  pages every lease-transition event with the same 1–100 `limit` clamp as
+  the overview window plus `offset`, optional `group=` scoping, and a
+  `total` (scoped count) so the UI can report "all N" or "first N of M".
+  Routes stay stable (declared after `/overview`, no Nest conflicts).
+- **Load-all transitions UI** — when the depth-limited window trails the
+  selected group's (or All's) event total, the Transitions line gains
+  **Load all for this group** / **Load all transitions**; the button swaps
+  the line to a full-history snapshot paginated in 100-event pages
+  (bounded by a 500-event safety cap), labeled "all N transitions" or
+  "first N of M transitions", with a **back to newest {depth}** button to
+  return to the depth-limited window. A stale snapshot (filter/depth
+  changed after load) is ignored during render instead of resetting state
+  in an effect — satisfying the `react-hooks/set-state-in-effect` rule.
+- **Tests** — 2 unit tests for `overviewEvents` (newest-first pagination +
+  `total` mapping; clamp/default coercion for limit/offset and no-group
+  `where:{}`), 1 API E2E test seeding 14 events (page boundaries, no
+  overlap, tail drain, offset past end, defaults, 500→100 clamp, unknown
+  group, and a cross-group full pass), and a browser proof that clicks
+  Load-all (all 13 synthetic transitions, data-complete), screenshots it,
+  and asserts back-to-newest restores "newest 10 of 13". Fixed one e2e
+  assertion that pointed at the wrong chain link (id 13's previousOwner is
+  replica-12, not id 12's).
+- **Docs** — REST table row for the new endpoint (routes 70 / docs rows 69),
+  README cron-prose for the load-all pass + back button, and the browser
+  journey paragraph extended.
 
 ## Test status
 
-- Backend unit: **175 passed / 14 suites** (+8 for `truncate`); `npx tsc
-  --noEmit` + `npx eslint .` clean.
-- Backend API E2E: **119 passed / 11 suites × 5 consecutive runs** (all
-  green, live backend stopped; previously flaky 4/6 with it running).
+- Backend unit: **177 passed / 14 suites** (+2); `npx tsc --noEmit` +
+  `npx eslint .` clean.
+- Backend API E2E: **120 passed / 11 suites** (+1; live Docker backend
+  stopped per the canonical workflow; known Jest keep-alive warning
+  remains, exit code 0).
 - Frontend `npx tsc --noEmit` + `npx eslint app/cron` clean; `next build`
   clean.
-- Docs drift guard OK — routes 69 / docs rows 68.
-- Browser E2E: **all checks passed** (zero console errors / failed requests
-  / HTTP errors; run against the rebuilt backend); report refreshed.
+- Docs drift guard OK — routes 70 / docs rows 69.
+- Browser E2E: **all checks passed** (zero console/network/HTTP errors;
+  new `overview-events-load-all` step + flag in `e2e/report.json`,
+  screenshot `cron-overview-events-all.png`); frontend + backend Docker
+  images rebuilt together so the live stack carried the new contract.
 
 ## Known issues / open tickets
 
@@ -55,15 +61,12 @@ truncation (`MAX_RUN_MESSAGE` hygiene).
   after the multi-replica suite closes; suites pass with exit code 0.
 - Startup acquisition in `onModuleInit` is deliberately not recorded as an
   event — only transitions observed inside `tick()` write audit rows.
-- Load-all is deliberately capped at 200 runs; a history deeper than that
-  shows "First 200 runs" (bounded UI memory).
+- Load-all is deliberately capped (200 runs, 500 transition events,
+  5 pages); a history deeper than that shows "First N runs/transitions"
+  (bounded UI memory).
 
 ## Next round focus
 
-- **Memory-coast the overview window depth** — the Round 76 `?limit=` /
-  selector is applied per fetch but a selected group's deeper window could
-  also drive a "load all for this group" pass like run histories (or a
-  group-search/timeline view) when clusters have long failover histories.
 - **Scheduler isolation for shared-DB stacks** — decide whether jobs should
   carry a lease-group owner (schema + claim filter) or deployments get a
   scheduler-disable switch, so API E2E no longer depends on the
@@ -71,11 +74,12 @@ truncation (`MAX_RUN_MESSAGE` hygiene).
 - **Docker/ops docs for rebuild-together** — document that frontend +
   backend containers must be rebuilt together after any API/UI contract
   change before the browser E2E (Round 76 leftover).
+- **Group-search / timeline view** — with load-all now proven, consider a
+  per-group event timeline with time-range filters for really long failover
+  histories (only if clearly justified).
 
 ## Loop state
 
-Loop state: running — Round 77 delivered surrogate-safe run-message
-truncation (unit-proven), root-caused the API E2E flake to live-stack
-scheduler interference, verified 5 consecutive green full API E2E runs, and
-hardened the docs/workflow so the trap is documented for every future round.
-No exit condition fires; proceed to Round 78.
+Loop state: running — Round 78 delivered the overview's load-all transition
+history (API + UI + unit/API/browser proofs, docs refreshed, live images
+rebuilt together). No exit condition fires; proceed to Round 79.
