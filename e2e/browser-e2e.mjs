@@ -693,6 +693,15 @@ async function agentChannelFlow() {
     flow.docTitle = await evalJs(c, "document.title");
     await delay(800);
 
+    // Round 95 lazy-chunk guard: the sessions/channels panel UI must stay out
+    // of the eager /agent first-load script set, and only arrive as a lazy
+    // chunk once a tab actually opens (so the Round 93 split cannot silently
+    // regress back into the page bundle). Resource-timing entries are used so
+    // the guard holds even when the browser serves chunks from its cache.
+    const chunkUrlExpr = `performance.getEntriesByType("resource").map((e) => e.name).filter((u) => /\\/_next\\/static\\/chunks\\/.*\\.js/.test(u))`;
+    const eagerChunkUrls = await evalJs(c, `(() => ${chunkUrlExpr})()`);
+    flow.lazyGuard = { eagerChunkCount: eagerChunkUrls.length, ok: false };
+
     // 1. Open the Channels tab and the New-channel modal.
     await evalJs(c, jsClick("Channels", true));
     await delay(400);
@@ -701,6 +710,51 @@ async function agentChannelFlow() {
       await evalJs(c, jsClick("New channel", false));
       await delay(400);
     }
+
+    // The Channels tab must have fetched the deferred panel chunk; verify the
+    // marker UI only ever lives in the lazy chunk (never the eager first load).
+    const marker = "saved sessions yet";
+    const lazyChunkSeen = await waitFor(
+      c,
+      `(() => { const urls = ${chunkUrlExpr}; return urls.filter((u) => !${JSON.stringify(eagerChunkUrls)}.includes(u)).length > 0; })()`,
+      15000,
+      400,
+      "lazy panel chunk",
+    );
+    if (!lazyChunkSeen) {
+      throw new Error("agent flow: opening Channels did not fetch the lazy panel chunk");
+    }
+    const chunkUrlsAfterChannels = await evalJs(c, `(() => ${chunkUrlExpr})()`);
+    const lazyChunkUrls = chunkUrlsAfterChannels.filter((u) => !eagerChunkUrls.includes(u));
+    const chunkHasMarker = async (u) => {
+      const r = await fetch(u);
+      if (!r.ok) throw new Error(`agent flow: lazy-guard chunk fetch -> HTTP ${r.status} (${u})`);
+      return (await r.text()).includes(marker);
+    };
+    const eagerMarkerHits = [];
+    for (const u of eagerChunkUrls) {
+      if (await chunkHasMarker(u)) eagerMarkerHits.push(u);
+    }
+    if (eagerMarkerHits.length > 0) {
+      throw new Error(`agent flow: eager /agent load includes lazy panel chunk(s) [${eagerMarkerHits.join(", ")}]`);
+    }
+    const lazyMarkerChunks = [];
+    for (const u of lazyChunkUrls) {
+      if (await chunkHasMarker(u)) lazyMarkerChunks.push(u);
+    }
+    if (lazyMarkerChunks.length === 0) {
+      throw new Error("agent flow: lazy chunk fetched after opening Channels lacks the panel UI");
+    }
+    flow.lazyGuard = {
+      eagerChunkCount: eagerChunkUrls.length,
+      lazyChunkCount: lazyChunkUrls.length,
+      eagerMarkerHits: eagerMarkerHits.map((u) => u.split("/").pop().split("?")[0]),
+      lazyMarkerChunks: lazyMarkerChunks.map((u) => u.split("/").pop().split("?")[0]),
+      ok: true,
+    };
+    flow.steps.push("lazy-chunk-guard");
+    log(`  lazy chunk guard: ${lazyMarkerChunks.length} marker chunk(s) deferred (${flow.lazyGuard.lazyChunkCount} lazy, ${flow.lazyGuard.eagerChunkCount} eager)`);
+
     const channelName = `browser-e2e-${Date.now().toString(36)}`;
     await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
     await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
