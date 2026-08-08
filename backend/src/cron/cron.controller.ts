@@ -20,6 +20,7 @@ import { CronService } from './cron.service';
  *                              connection / maxSteps)
  *   GET    /api/cron           list jobs (with last/next run info)
  *   GET    /api/cron/scheduler this replica's scheduler lease/beat status
+ *                              (enabled:false when CRON_SCHEDULER_ENABLED=false)
  *   GET    /api/cron/overview  cluster-wide lease groups + run throughput
  *                              (optional ?group= filters transition events;
  *                              optional ?limit= sets the transition window,

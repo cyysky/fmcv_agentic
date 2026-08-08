@@ -946,3 +946,46 @@ describe('truncate', () => {
     expect(truncate('abc', -1)).toBeNull();
   });
 });
+
+describe('CRON_SCHEDULER_ENABLED switch (Round 79)', () => {
+  const original = process.env.CRON_SCHEDULER_ENABLED;
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env.CRON_SCHEDULER_ENABLED;
+    } else {
+      process.env.CRON_SCHEDULER_ENABLED = original;
+    }
+  });
+
+  it('disables lease/tick/recovery and reports enabled:false', async () => {
+    process.env.CRON_SCHEDULER_ENABLED = 'false';
+    const { service, prisma } = makeSvc();
+    await service.onModuleInit();
+    const status = service.schedulerStatus();
+    expect(status.enabled).toBe(false);
+    expect(status.leaseHeld).toBe(false);
+    expect(status.leaseExpireAt).toBeNull();
+    expect(status.lastTickAt).toBeNull();
+    expect(status.jobCount).toBe(0);
+    // No legacy-lease cleanup, no interrupted-run sweep, no cache load.
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(prisma.cronJob.updateMany).not.toHaveBeenCalled();
+    expect(prisma.cronJob.findMany).not.toHaveBeenCalled();
+    // A stray tick must not scan or fire due jobs.
+    await (service as unknown as { tick(): Promise<void> }).tick();
+    expect(prisma.cronJob.findMany).not.toHaveBeenCalled();
+    service.onModuleDestroy();
+  });
+
+  it('is enabled by default and for explicit true/case-insensitive values', async () => {
+    delete process.env.CRON_SCHEDULER_ENABLED;
+    expect(makeSvc().service.schedulerStatus().enabled).toBe(true);
+    process.env.CRON_SCHEDULER_ENABLED = 'true';
+    expect(makeSvc().service.schedulerStatus().enabled).toBe(true);
+    process.env.CRON_SCHEDULER_ENABLED = 'TRUE';
+    expect(makeSvc().service.schedulerStatus().enabled).toBe(true);
+    process.env.CRON_SCHEDULER_ENABLED = 'FALSE';
+    expect(makeSvc().service.schedulerStatus().enabled).toBe(false);
+  });
+});

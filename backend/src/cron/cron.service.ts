@@ -188,6 +188,16 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   private ticker: NodeJS.Timeout | null = null;
   /** Unique owner id for the distributed scheduler lease. */
   private readonly leaseOwner = randomUUID();
+  /**
+   * API-only switch (Round 79): `CRON_SCHEDULER_ENABLED=false` keeps CRUD +
+   * run-now reachable but disables the background scheduler entirely — no
+   * lease acquisition, no tick, no boot-time recovery sweep. A shared-DB
+   * deployment (or the live stack during local API E2E) can opt out of
+   * background firing without stopping the server.
+   */
+  private readonly schedulerEnabled =
+    (process.env.CRON_SCHEDULER_ENABLED?.trim() ?? 'true').toLowerCase() !==
+    'false';
   /** True while this instance holds a fresh scheduler lease. */
   private leaseHeld = false;
   /** Expiry this instance last negotiated when claiming/renewing the lease. */
@@ -205,6 +215,12 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (!this.schedulerEnabled) {
+      this.logger.log(
+        'Cron scheduler disabled (CRON_SCHEDULER_ENABLED=false): API-only mode — no lease, no tick, no boot recovery sweep; manual run-now still works',
+      );
+      return;
+    }
     // Row identity is the lease group itself (id is the PK). In Round 65 the
     // row id was a fixed 'singleton', which prevented more than one group
     // from ever inserting AND made the PK collide across groups. Sweep any
@@ -477,6 +493,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async tick(): Promise<void> {
+    // Belt-and-braces: the ticker never starts in API-only mode, but a
+    // stray direct call must not fire jobs either (Round 79).
+    if (!this.schedulerEnabled) return;
     this.lastTickAt = new Date();
     // Only the replica holding a fresh lease fires due jobs. Standby
     // replicas keep serving CRUD/run-now and reclaim the lease on failover.
@@ -662,8 +681,11 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Local scheduler/lease view for ops and the UI (Round 66). */
+  /** Local scheduler/lease view for ops and the UI (Round 66). Round 79
+   *  adds `enabled` so API-only nodes (CRON_SCHEDULER_ENABLED=false) are
+   *  visibly distinguished from standby replicas. */
   schedulerStatus(): {
+    enabled: boolean;
     leaseHeld: boolean;
     leaseGroup: string;
     leaseExpireAt: string | null;
@@ -675,7 +697,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   } {
     const rows = [...this.jobs.values()];
     return {
+      enabled: this.schedulerEnabled,
       leaseHeld: !!(
+        this.schedulerEnabled &&
         this.leaseHeld &&
         this.leaseExpiresAt &&
         this.leaseExpiresAt.getTime() > Date.now()
