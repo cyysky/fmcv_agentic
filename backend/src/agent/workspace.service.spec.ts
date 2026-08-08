@@ -133,4 +133,108 @@ describe('WorkspaceService', () => {
       await fs.unlink(path.join(root2, 'inner-link'));
     });
   });
+
+  it('removes only empty public projects', async () => {
+    expect(await ws.removeProjectIfEmpty('does-not-exist')).toEqual({
+      removed: false,
+    });
+    await expect(ws.removeProjectIfEmpty('bad name')).rejects.toThrow(
+      BadRequestException,
+    );
+
+    const empty = await ws.createPublicProject('empty-proj');
+    await fs.writeFile(path.join(empty.path, 'artifact.txt'), 'x');
+    expect(await ws.removeProjectIfEmpty('empty-proj')).toEqual({
+      removed: false,
+    });
+    await fs.unlink(path.join(empty.path, 'artifact.txt'));
+    expect(await ws.removeProjectIfEmpty('empty-proj')).toEqual({
+      removed: true,
+    });
+  });
+
+  it('rethrows non-emptiness project-removal failures', async () => {
+    await ws.createPublicProject('blocked-proj');
+    const projectsRoot = ws.getProjectRoot();
+    try {
+      await fs.chmod(projectsRoot, 0o555);
+      await expect(
+        ws.removeProjectIfEmpty('blocked-proj'),
+      ).rejects.toMatchObject({ code: 'EACCES' });
+    } finally {
+      await fs.chmod(projectsRoot, 0o755);
+    }
+  });
+
+  it('snapshots root, projects and named agents', async () => {
+    await ws.createPublicProject('alpha');
+    const info = await ws.getWorkspaceInfo();
+    expect(info.root).toBe(path.resolve(root));
+    expect(info.projectsDir).toBe(path.join(path.resolve(root), 'projects'));
+    expect(info.projects.map((p) => p.name)).toContain('alpha');
+    for (const proj of info.projects) {
+      expect(proj.path).toBe(
+        path.join(path.resolve(root), 'projects', proj.name),
+      );
+    }
+    expect(info.agents.map((a) => a.name).sort()).toEqual(
+      NAMED_AGENTS.map((a) => a.name).sort(),
+    );
+    for (const agent of info.agents) {
+      expect(agent.root).toBe(ws.getAgentRoot(agent.name));
+      expect(agent.workDir).toBe(ws.getAgentWorkDir(agent.name));
+      expect(agent.label).toBeTruthy();
+      expect(agent.description).toBeTruthy();
+    }
+  });
+
+  it('degrades an unreadable tree to an empty object', async () => {
+    const dir = path.join(ws.getAgentRoot('coder'), 'hidden');
+    await fs.mkdir(dir, { recursive: true });
+    try {
+      await fs.chmod(dir, 0o000);
+      expect(await ws.readTree(dir)).toEqual({});
+    } finally {
+      await fs.chmod(dir, 0o755);
+    }
+  });
+
+  it('lists project and agent content as trees', async () => {
+    const proj = await ws.createPublicProject('trees');
+    await fs.writeFile(path.join(proj.path, 'doc.md'), '# hi');
+    expect(await ws.listProjectContent('trees')).toEqual({ 'doc.md': null });
+
+    await ws.ensureAgentFolder('coder');
+    await fs.writeFile(path.join(ws.getAgentRoot('coder'), 'note.txt'), 'x');
+    const agentTree = await ws.listAgentContent('coder');
+    expect(agentTree['note.txt']).toBeNull();
+    await expect(ws.listAgentContent('ghost')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('falls back to the default root when config is missing', () => {
+    const wsDefault = new WorkspaceService({
+      get: () => undefined,
+    } as never);
+    expect(wsDefault.getRoot()).toBe(path.resolve('/data/workspaces'));
+  });
+
+  it('stops recursion at maxDepth zero', async () => {
+    const dir = path.join(ws.getAgentRoot('coder'), 'depth-demo');
+    await fs.mkdir(path.join(dir, 'sub'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'sub', 'x.txt'), 'x');
+    expect(await ws.readTree(dir, 0)).toEqual({ sub: {} });
+  });
+
+  it('treats an unreadable projects dir as empty', async () => {
+    const projectsRoot = ws.getProjectRoot();
+    await fs.mkdir(projectsRoot, { recursive: true });
+    try {
+      await fs.chmod(projectsRoot, 0o000);
+      expect(await ws.listPublicProjects()).toEqual([]);
+    } finally {
+      await fs.chmod(projectsRoot, 0o755);
+    }
+  });
 });
