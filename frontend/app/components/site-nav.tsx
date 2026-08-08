@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/", label: "Home" },
   { href: "/agent", label: "Agent" },
   { href: "/files", label: "Files" },
+  { href: "/buckets", label: "Buckets" },
   { href: "/settings", label: "Settings" },
 ];
 

@@ -41,12 +41,14 @@ Environment overrides:
 
 ## What it checks
 
-1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files` render their
-   expected content with **no console errors, no uncaught exceptions, no failed
-   network requests, and no HTTP >= 400 responses** (measured over CDP events,
-   including polling fetches the SPA makes after first paint).
+1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files`, and
+   `/buckets` render their expected content with **no console errors, no
+   uncaught exceptions, no failed network requests, and no HTTP >= 400
+   responses** (measured over CDP events, including polling fetches the SPA
+   makes after first paint).
 2. **Document titles**: each route must expose its expected browser tab
-   title (`FMCV Agentic`, `Settings - FMCV Agentic`, `Agent - FMCV Agentic`).
+   title (`FMCV Agentic`, `Settings - FMCV Agentic`, `Agent - FMCV Agentic`,
+   `Buckets - FMCV Agentic`).
 3. **Channel journey**: on `/agent`, the script opens the Channels tab,
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state
@@ -99,9 +101,19 @@ Environment overrides:
    probe result (message + HTTP status + latency) into the form until a probed
    value changes. Both fixtures are then deleted via the API and the script
    asserts both rows disappear server-side (cleanup).
+6. **Buckets journey**: on `/buckets`, the script creates a document bucket
+   through the UI (unique name, agent folder), proves a duplicate bucket name
+   renders the in-page 409, opens the bucket, uploads a text document from a
+   temp file, proves a duplicate upload 409s (documents are immutable),
+   downloads the document and verifies the saved-to-disk bytes via CDP
+   `Browser.setDownloadBehavior`, then reloads the page and proves the
+   bucket and document survived. Fixtures are cleaned up
+   server-side afterwards: physical files through the files API and the DB
+   rows through psql inside the compose `fmcv-db` container (buckets expose no
+   delete endpoint by design — read-only).
 7. **Screenshots**: key screens (home, settings, agent, channel running,
-   channel done, sessions picker/connection, files before/after) are captured
-   to `e2e/screenshots/`.
+   channel done, sessions picker/connection, files before/after, buckets
+   created/uploaded/downloaded/reloaded) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate
 
@@ -128,3 +140,7 @@ Failures print the failing routes/checks and the collected errors in
   backend; the run usually finishes in a few seconds.
 - Navigation aborts (`net::ERR_ABORTED`) are ignored as noise — they are the
   old document being discarded when the script navigates.
+- The bucket journey needs the docker CLI and the `fmcv-db` container for its
+  final DB cleanup (buckets are read-only by design and expose no delete API);
+  if docker is unavailable the sweep and cleanup report an error rather than
+  silently leaving fixture rows behind.

@@ -1,3 +1,45 @@
+## Round 2026-08-08 — autonomous iteration round 25 (tag `round-25`)
+
+### Added
+- **Buckets UI (`/buckets`)** (finishes DIRECTION.md item 1) — a
+  human-facing page wired to the Round 24 buckets API: pick an agent or
+  project folder, create a uniquely named bucket, upload PDF/text/video/audio
+  documents, and list/download them. Duplicate bucket names and duplicate
+  uploads (immutable documents) fail with the API's 409 rendered as a
+  dismissible in-page error banner; the page marks buckets as read-only,
+  shows per-document kind badges (pdf/text/video/audio/other), sizes, and
+  upload timestamps, and reloads from the server so created buckets +
+  documents persist. Responsive + dark-mode friendly; `/buckets` is linked
+  from the global nav and the home page (`Open Buckets` CTA).
+- **Buckets browser E2E** — the CDP journey now creates a bucket through the
+  UI (agent folder), proves a duplicate bucket name 409s in-page, uploads a
+  text document, proves a duplicate upload 409s, downloads it via
+  `Browser.setDownloadBehavior` and byte-compares the saved file, reloads and
+  verifies the bucket + document survived, then removes the fixtures
+  server-side (files API + psql rows in the compose DB; buckets deliberately
+  expose no delete endpoint). Route probes were extended to `/buckets` in
+  light/dark/mobile variants with nav, no-overflow, and responsive assertions,
+  and the global nav journey now clicks through `/buckets`.
+- **Expected-4xx handling in the E2E harness** — journeys may declare allowed
+  HTTP statuses (buckets: 409); those responses and their browser log lines
+  are recorded under `expectedHttp` instead of failing the page-quality gate,
+  so flows that must trigger API errors stay honest without false failures.
+
+### Fixed
+- Browser E2E buckets gate looked for `flow.downloadVerified` (files-shaped
+  field) instead of the buckets `flow.result.downloadVerified`, which always
+  failed even when the journey passed — corrected.
+
+### Test status
+- Unit **112 passed / 12 suites**; API E2E **79 passed / 8 suites**;
+  backend `nest build` + `tsc --noEmit` + scoped eslint clean.
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E exit 0: 16 route probes (`/`, `/settings`, `/agent`,
+  `/files`, `/buckets` × light/dark/mobile) plus the nav, agent-channel,
+  sessions/saved-connection, files, buckets, and settings journeys — zero
+  console/network errors (the buckets journey's intentional 409s recorded as
+  expected); screenshots + `e2e/report.json` refreshed.
+
 ## Round 2026-08-08 — autonomous iteration round 24 (tag `round-24`)
 
 ### Added

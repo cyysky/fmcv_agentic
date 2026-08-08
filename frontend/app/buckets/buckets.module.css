@@ -1,0 +1,550 @@
+.container {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  flex: 1;
+  min-height: calc(100dvh - var(--site-nav-height));
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.title {
+  font-size: 1.75rem;
+  margin: 0 0 0.25rem;
+}
+
+.subtitle {
+  color: #666;
+  margin: 0;
+}
+
+.headerActions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+}
+
+.btnPrimary,
+.btnGhost,
+.btnDanger {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-family: inherit;
+}
+
+.btnPrimary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.btnPrimary:hover {
+  background: #1d4ed8;
+}
+
+.btnPrimary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnGhost {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.btnGhost:hover {
+  background: #f3f4f6;
+}
+
+.errorBanner {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fde8e8;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.successBanner {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #e8f7ee;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+
+.badge {
+  display: inline-block;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panelTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.fieldLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.input,
+.fileInput {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: #fff;
+  color: #111827;
+}
+
+.input:focus,
+.fileInput:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.fileInput {
+  max-width: 100%;
+  min-width: 0;
+  flex: 1;
+  cursor: pointer;
+}
+
+.help {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.uploadRow {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.panelActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 0.88rem;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.row:hover {
+  background: #fafafa;
+}
+
+.rowIcon {
+  font-size: 0.95rem;
+}
+
+.rowName {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: #2563eb;
+  word-break: break-all;
+  padding: 0.1rem 0;
+}
+
+.rowName:hover {
+  text-decoration: underline;
+}
+
+span.rowName {
+  cursor: default;
+  color: #111827;
+}
+
+.rowMeta {
+  color: #6b7280;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.muted {
+  color: #9ca3af;
+  padding: 1.5rem 0.25rem;
+  text-align: center;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.detailHeader {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+  padding: 1rem;
+}
+
+.detailTitle {
+  font-size: 1.15rem;
+  margin: 0 0 0.2rem;
+  color: #111827;
+  word-break: break-all;
+}
+
+.detailMeta {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.82rem;
+}
+
+.kindBadge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.kindPdf {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.kindText {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.kindVideo {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+
+.kindAudio {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.kindOther {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #e5e7eb;
+}
+
+/* ------------------------------ dark mode ------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  .subtitle {
+    color: #9ca3af;
+  }
+
+  .select {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .btnGhost {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .btnGhost:hover {
+    background: #1f2937;
+  }
+
+  .errorBanner {
+    background: #2b0f0f;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+
+  .successBanner {
+    background: #0f2a1e;
+    color: #86efac;
+    border-color: #14532d;
+  }
+
+  .badge {
+    background: #422006;
+    color: #fde68a;
+    border-color: #78350f;
+  }
+
+  .panel {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .panelTitle {
+    color: #f9fafb;
+  }
+
+  .fieldLabel {
+    color: #9ca3af;
+  }
+
+  .input,
+  .fileInput {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+  }
+
+  .help {
+    color: #9ca3af;
+  }
+
+  .detailHeader {
+    background: #111827;
+    border-color: #374151;
+  }
+
+  .detailTitle {
+    color: #f9fafb;
+  }
+
+  .detailMeta {
+    color: #9ca3af;
+  }
+
+  .list {
+    border-color: #374151;
+  }
+
+  .row {
+    border-bottom-color: #1f2937;
+  }
+
+  .row:hover {
+    background: #111827;
+  }
+
+  .rowName {
+    color: #93c5fd;
+  }
+
+  span.rowName {
+    color: #f9fafb;
+  }
+
+  .rowMeta {
+    color: #9ca3af;
+  }
+
+  .kindPdf {
+    background: #450a0a;
+    color: #fca5a5;
+    border-color: #7f1d1d;
+  }
+
+  .kindText {
+    background: #172554;
+    color: #bfdbfe;
+    border-color: #1e40af;
+  }
+
+  .kindVideo {
+    background: #2e1065;
+    color: #ddd6fe;
+    border-color: #5b21b6;
+  }
+
+  .kindAudio {
+    background: #052e16;
+    color: #bbf7d0;
+    border-color: #166534;
+  }
+
+  .kindOther {
+    background: #1f2937;
+    color: #d1d5db;
+    border-color: #374151;
+  }
+}
+
+/* --------------------------- responsive layout --------------------------- */
+
+.container {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 1.25rem 0.75rem;
+  }
+
+  .header {
+    gap: 0.75rem;
+  }
+
+  .title {
+    font-size: 1.4rem;
+  }
+
+  .headerActions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+  }
+
+  .row {
+    gap: 0.5rem;
+    display: grid;
+    grid-template-columns: 1.3rem minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .row .rowName {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .row .rowMeta {
+    display: none;
+  }
+
+  .row .rowActions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .row .rowActions .btnGhost {
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+  }
+
+  .panelTitle {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .panelActions {
+    flex-wrap: wrap;
+  }
+
+  .uploadRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .uploadRow .btnPrimary {
+    align-self: flex-end;
+  }
+}

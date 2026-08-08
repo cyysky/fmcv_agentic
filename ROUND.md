@@ -1,84 +1,86 @@
-# ROUND 24 — 2026-08-08 (autonomous iteration round 24)
+# ROUND 25 — 2026-08-08 (autonomous iteration round 25)
 
 User instruction: **read on loop.md and do works**. `DIRECTION.md` carries
-human direction (managed document buckets, cron jobs, agent skills). This
-round fulfils DIRECTION item 1 as a small, committable backend slice: managed
-**document buckets** — unique, read-only bucket names mapped to project or
-agent folders, with immutable uploaded documents (list/read/download only).
+active human direction (managed document buckets, cron jobs, agent skills,
+HTML view). Round 24 landed the buckets backend; this round finishes
+DIRECTION item 1 with the **buckets UI + browser E2E**, then hands off to
+cron jobs.
 
 ## What changed this round
 
-- **Bucket + ManagedDocument schema** — migration `20260808064954_add_buckets`
-  adds `Bucket` (unique `name`, `folderType` project/agent, `folderName`,
-  timestamps, `documents` relation) and `ManagedDocument` (unique
-  `[bucketId, name]`, `kind` pdf/text/video/audio/other, `mimeType`,
-  `sizeBytes`); applied to the running DB and `prisma generate` re-run.
-- **Buckets API** (`backend/src/buckets/`) — `POST /api/buckets` (validates the
-  mapped project/agent folder exists, creates `<folder>/<bucket>/`, 409 on
-  duplicate name with folder rollback), `GET /api/buckets` (with document
-  counts), `GET /api/buckets/:id`, `GET /api/buckets/:id/documents`, `POST
-  /api/buckets/:id/documents` (multipart memory-buffered upload, 100 MB cap,
-  sanitized filename, kind derived from MIME then extension, `wx` create so a
-  duplicate name always 409s and nothing is ever overwritten), and `GET
-  /api/buckets/:id/documents/:documentId/download` (attachment headers +
-  byte-exact stream). No update/delete/overwrite endpoints exist — buckets and
-  documents are read-only by design.
-- **Tests** — 18 new unit tests (`buckets.service.spec.ts`) and 14 new API E2E
-  tests (`test/buckets.e2e-spec.ts`, real Postgres + temp workspace): create →
-  duplicate 409 → invalid type/missing project/unknown agent 400s → list with
-  counts → get-one → 404 unknown bucket → PDF upload (kind/mime/size) →
-  duplicate name 409 → missing multipart field 400 → list after upload →
-  download bytes + attachment headers → 404 missing document. The e2e spec is
-  fully type-safe (typed `json<T>` helper; no `no-unsafe-*` noise).
-- **Runtime verified** — backend container rebuilt with the buckets code
-  (`AGENT_API_KEY` injected from the local provider config, never committed)
-  and the journey walked by hand over HTTP: bucket create/list, upload/list,
-  duplicate 409s, download with `Content-Type` +
-  `Content-Disposition: attachment` + correct byte length; manual artifacts
-  cleaned up afterwards.
-- **Docs** — README gained a bucket feature bullet, a `/api/buckets*` REST
-  table, and refreshed test counts; CHANGELOG gained the Round 24 entry.
+- **Buckets UI (`/buckets`)** — new Next.js page + client component wired to
+  the Round 24 API: loads agent/project workspaces, lists buckets (with
+  document counts), creates a bucket (unique name, folder type
+  project/agent, folder name from the live workspace list), opens a bucket
+  detail, uploads documents via FormData, downloads via blob + anchor,
+  reload-persists, and shows a read-only notice. Duplicate bucket names and
+  duplicate uploads render the API's 409 as a dismissible in-page error
+  banner; per-document kind badges (pdf/text/video/audio/other), sizes, and
+  upload timestamps are displayed. Dark-mode friendly + responsive
+  (`buckets.module.css`); `/buckets` is in the global nav and home page now
+  has an `Open Buckets` CTA.
+- **Browser E2E buckets journey** (`e2e/browser-e2e.mjs`) — creates a bucket
+  through the UI (agent folder), proves a duplicate bucket name 409s in-page,
+  uploads a text document, proves a duplicate upload 409s (immutable
+  documents), downloads via CDP `Browser.setDownloadBehavior` and
+  byte-compares the saved file, reloads and verifies bucket + document
+  persistence, then removes fixtures server-side (files API for physical
+  files + psql rows in the compose `fmcv-db` container via
+  `bucketRowsByNameLike` / `deleteBucketRowsFor`; buckets expose no delete
+  endpoint by design). Route probes now cover `/buckets` light/dark/mobile;
+  the global-nav journey clicks through `/buckets`.
+- **E2E harness: expected-4xx handling** — `wireErrorCapture` accepts an
+  `allowedStatuses` option: intentionally triggered responses (buckets: 409)
+  and their browser log lines are recorded under `expectedHttp` rather than
+  counted as page-quality failures. Fixed a buckets-gate bug that read
+  `flow.downloadVerified` (files-shaped) instead of
+  `flow.result.downloadVerified`, so a fully passing journey falsely failed.
+- **Docs** — README buckets bullet now describes the `/buckets` UI (was
+  "API only; UI planned") and the browser-E2E paragraph covers all five
+  routes + the buckets journey; e2e README download wording matches the
+  actual saved-to-disk verification; CHANGELOG gained this entry.
 
 ## Test status
 
-- Unit: **112 passed / 12 suites** (`npm test`).
+- Backend unit: **112 passed / 12 suites** (`npm test`).
 - API E2E: **79 passed / 8 suites** (`npm run test:e2e`, real Postgres).
-- Backend: `nest build` + `tsc --noEmit` clean; eslint clean on new
-  `src/buckets` files + `test/buckets.e2e-spec.ts`; migration applied.
-- Browser E2E: exit 0, zero console/network errors on all 12 route probes and
-  the nav/channel/files/settings/sessions journeys against the rebuilt
-  backend (report + screenshots refreshed). Buckets are API-only this round,
-  so the browser E2E does not cover them yet.
-- Manual HTTP journey: bucket create/list, upload/list/download, duplicate
-  bucket 409 + document 409, attachment headers verified.
+- Backend `nest build` clean; `tsc --noEmit` clean; scoped eslint clean
+  (`src/buckets/**/*.ts` + `test/buckets.e2e-spec.ts`). Note: full-repo
+  backend `npm run lint` still reports a pre-existing backlog of 377 errors
+  across legacy files untouched this round (unchanged at HEAD).
+- Frontend: `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E: exit 0 — 16 route probes (`/`, `/settings`, `/agent`,
+  `/files`, `/buckets` × light/dark/mobile) + nav, agent-channel,
+  sessions/saved-connection, files, **buckets**, and settings journeys, all
+  with zero console/network errors (the buckets journey's intentional 409s
+  are recorded as expected). Screenshots + `e2e/report.json` refreshed;
+  fixtures swept clean (channels/sessions/connections/buckets/project
+  folders).
 
 ## Known issues / open tickets
 
-- No buckets UI yet — the feature is API-only; `/files` remains the only
-  human-facing workspace browser (open next round).
-- Uploads are memory-buffered via `FileInterceptor` with a 100 MB cap; a later
-  slice can stream/buffer to disk for larger files.
 - Buckets have no delete/rename endpoints by design (read-only); there is no
-  admin/cleanup path yet for removing a bucket or its folder.
-- Browser E2E does not exercise buckets (no UI to drive).
-- `AGENT_API_KEY` must be supplied at backend container start (e.g. from the
-  local Codex provider config); it is deliberately not committed.
+  admin/cleanup path yet — browser-E2E fixtures are cleaned via psql in the
+  compose DB.
+- Uploads are memory-buffered via `FileInterceptor` with a 100 MB cap; a
+  later slice can stream/buffer to disk for larger files.
+- DIRECTION item 2 (**cron jobs**) hasn't started; item 3 (**agent skills**)
+  and item 4 (**view HTML by link / new tab-window**) remain open.
+- Full-repo backend eslint backlog predates this round (legacy files).
 
 ## Next round focus
 
-1. **Buckets UI + browser E2E** (finish DIRECTION.md item 1) — a `/buckets`
-   (or `/settings`-adjacent) page: create bucket (project/agent folder),
-   upload/list/download documents, reload persistence, plus a browser E2E
-   journey.
-2. **Cron jobs** (DIRECTION.md item 2) — create/manage cron jobs (schedule +
+1. **Cron jobs** (DIRECTION.md item 2) — create/manage cron jobs (schedule +
    recurring task runner).
-3. **Agent skills** (DIRECTION.md item 3) — agents can create, install, and
+2. **Agent skills** (DIRECTION.md item 3) — agents can create, install, and
    use skills.
+3. **View HTML** (DIRECTION.md item 4) — view HTML by link, or open it in a
+   new tab or window.
 
-Round summary: **Round 24: managed document buckets backend landed — unique
-read-only buckets mapped to project/agent folders with immutable managed
-documents (upload/list/download), fully unit + API-E2E covered and verified by
-hand over HTTP.** Tests: 112 unit + 79 API E2E passed / 0 failed; browser E2E
-exit 0, zero console/network errors. Committed as git tag `round-24`. Next:
-buckets UI + browser E2E · cron jobs · agent skills. Exit checked:
-none — continuing (human direction active).
+Round summary: **Round 25: buckets UI + browser E2E landed — `/buckets`
+create/upload/list/download with in-page 409s and reload persistence, driven
+end-to-end by CDP (expected 4xx handling added to the harness), completing
+DIRECTION item 1.** Tests: 112 unit + 79 API E2E passed / 0 failed; frontend
+lint+tsc+build clean; browser E2E exit 0 with zero console/network errors.
+Committed as git tag `round-25`. Next: cron jobs · agent skills · view HTML.
+Exit checked: none — continuing (human direction active).

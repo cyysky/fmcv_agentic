@@ -80,13 +80,14 @@ and coordinate multi-agent teams in Slack-style channels.
   path escapes are rejected by the API, the create/edit panel submits from the
   name field (Enter), and every create/save/download/delete action shows a
   dismissible success notice.
-- **Managed document buckets (API)** — uniquely named, read-only buckets
-  mapped to a project folder or an agent folder (one folder can carry many
-  buckets). Uploaded documents (PDF/text/video/audio/other, 100 MB cap) are
-  stored exactly once under `<folder>/<bucket>/<name>` and are immutable:
-  there are no overwrite/rename/edit/delete endpoints, only
-  list/read/download. Bucket listing includes document counts. API only for
-  now; a UI is planned (see REST table below).
+- **Managed document buckets (`/buckets`)** — human-facing page over the
+  read-only buckets API: pick an agent or project folder, create a uniquely
+  named bucket, upload documents (PDF/text/video/audio/other, 100 MB cap),
+  list and download them, and keep everything after a reload. Bucket names
+  are unique, buckets are read-only (no edit/delete/overwrite endpoints),
+  and each document is stored exactly once under
+  `<folder>/<bucket>/<name>` — duplicate names are rejected in-page with the
+  API's 409. Backed by the REST table below.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -253,12 +254,14 @@ cd e2e && node browser-e2e.mjs
   (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
-  `/agent`, `/files` render their content and document titles with no
-  console/network errors, asserts the global nav on each route (links present,
-  correct active link), re-runs `/settings`, `/agent`, and `/files` with CDP
+  `/agent`, `/files`, `/buckets` render their content and document titles
+  with no console/network errors, asserts the global nav on each route (links
+  present, correct active link), re-runs `/settings`, `/agent`, `/files`, and
+  `/buckets` with CDP
   `prefers-color-scheme: dark` emulation and asserts the dark computed styles
-  (card/input/select backgrounds, primary button still blue, body background),
-  re-probes all four routes at 360×640 device metrics asserting no horizontal
+  (card/input/select backgrounds, primary button still blue, body background,
+  kind badges on buckets),
+  re-probes all five routes at 360×640 device metrics asserting no horizontal
   overflow, fit nav links, a visible agent composer, and the files responsive
   row grid,
   and drives a nav journey that clicks through every route
@@ -283,7 +286,12 @@ cd e2e && node browser-e2e.mjs
   saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
   deletes both through the UI, confirms the removal server-side via the
   files API, and asserts the success notice after each create/download/delete,
-  and a settings journey that creates a throwaway connection through the API,
+  a buckets journey that creates a bucket through the UI (agent folder),
+  proves a duplicate bucket name 409s in-page, uploads a text document,
+  proves a duplicate upload 409s (immutable documents), downloads the file and
+  compares the saved-to-disk bytes, reloads and proves the bucket + document
+  survived (fixtures are removed afterwards via the files API + psql in the
+  compose DB), and a settings journey that creates a throwaway connection through the API,
   proves the Edit form opens with a blank API-key field, clicks the form's
   "Test Connection" button against a dead endpoint to prove unsaved values are
   probed gracefully and then Cancel preserves the stored URL, captures the wire

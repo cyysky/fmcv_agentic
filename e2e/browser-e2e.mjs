@@ -26,13 +26,19 @@
 //      back, download it (wire headers/bytes + saved-to-disk when CDP allows),
 //      then delete both through the UI and verify server-side removal
 //   8. Global nav: active-route state per page + nav links drive real
-//      client-side navigation between all four routes
-//   9. Dark mode: all four routes re-probed with prefers-color-scheme: dark
+//      client-side navigation between all five routes
+//   9. Dark mode: all five routes re-probed with prefers-color-scheme: dark
 //      (Emulation.setEmulatedMedia), asserting dark surfaces actually apply
 //      and the pages still render without console/network errors
-//   10. Mobile: all four routes re-probed at 360x640 with device metrics,
+//   10. Mobile: all five routes re-probed at 360x640 with device metrics,
 //      asserting no horizontal overflow, nav links fit, and the agent
 //      composer / files row grid are usable
+//   10b. Buckets: create a read-only document bucket through the /buckets UI
+//      (agent folder), prove a duplicate name 409s in-page, upload a
+//      document, prove a duplicate upload 409s, download it (CDP saved bytes
+//      when available), reload and verify both bucket and document persist,
+//      then clean up (files via the files API, DB rows via psql in the
+//      compose db container — buckets expose no delete API by design)
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -322,7 +328,7 @@ const navChecks = {
   present: `!!${selExpr('nav[aria-label="Main"]')}`,
   links: `(() => {
     const hrefs = [...document.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute("href"));
-    return ["/", "/agent", "/files", "/settings"].every((h) => hrefs.includes(h));
+    return ["/", "/agent", "/files", "/buckets", "/settings"].every((h) => hrefs.includes(h));
   })()`,
 };
 const navActive = (href) =>
@@ -354,7 +360,14 @@ async function screenshot(c, name) {
 
 /* --------------------------- error collection --------------------------- */
 
-function wireErrorCapture(c, sink) {
+function wireErrorCapture(c, sink, opts = {}) {
+  // Intentionally-expected HTTP statuses (e.g. a journey that must trigger a
+  // duplicate 409) are recorded in sink.expectedHttp and excluded from the
+  // page-quality error gate; they still exercise the app's error handling.
+  const allowedStatuses = new Set(opts.allowedStatuses || []);
+  const allowedLogPattern = [...allowedStatuses].length
+    ? new RegExp(`status of (${[...allowedStatuses].join("|")})\\b`)
+    : null;
   c.on("Network.loadingFailed", (p) => {
     // Aborts caused by navigation away are noise, not app failures.
     if (p.errorText && p.errorText.includes("net::ERR_ABORTED") && p.canceled) return;
@@ -362,6 +375,12 @@ function wireErrorCapture(c, sink) {
   });
   c.on("Network.responseReceived", (p) => {
     if (p.response && p.response.status >= 400 && !/favicon/.test(p.response.url)) {
+      if (allowedStatuses.has(p.response.status)) {
+        if (!sink.expectedHttp.some((e) => e.url === p.response.url)) {
+          sink.expectedHttp.push({ url: p.response.url, status: p.response.status });
+        }
+        return;
+      }
       if (sink.httpErrors.every((e) => e.url !== p.response.url)) {
         sink.httpErrors.push({ url: p.response.url, status: p.response.status });
       }
@@ -376,7 +395,10 @@ function wireErrorCapture(c, sink) {
     sink.exceptions.push(p.exceptionDetails?.text ?? "unknown exception");
   });
   c.on("Log.entryAdded", (p) => {
-    if (p.entry?.level === "error") sink.logErrors.push(p.entry.text);
+    if (p.entry?.level === "error") {
+      if (allowedLogPattern && allowedLogPattern.test(p.entry.text || "")) return;
+      sink.logErrors.push(p.entry.text);
+    }
   });
 }
 
@@ -399,7 +421,7 @@ async function setupPage(url) {
 }
 
 async function probeRoute(route) {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   log(`probe ${route.route} -> ${route.url}`);
   const { tab, c } = await setupPage(route.url);
   try {
@@ -475,7 +497,7 @@ async function probeRoute(route) {
  *  to move between every route and confirm the URL, title and active state
  *  follow along (proves the navigation actually works, not just renders). */
 async function navFlow() {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/`;
   log(`flow global nav -> ${url}`);
   const { tab, c } = await setupPage(url);
@@ -523,6 +545,7 @@ async function navFlow() {
     };
 
     await clickAndVerify("/files", "/files", "Files - ", "files");
+    await clickAndVerify("/buckets", "/buckets", "Buckets - ", "buckets");
     await clickAndVerify("/settings", "/settings", "Settings - ", "settings");
     await clickAndVerify("/agent", "/agent", "Agent - ", "agent");
     await clickAndVerify("/", "/", "FMCV Agentic", "home");
@@ -573,7 +596,7 @@ function terminalOk(result) {
 }
 
 async function agentChannelFlow() {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/agent`;
   log(`flow agent channel -> ${url}`);
   const { tab, c } = await setupPage(url);
@@ -706,7 +729,7 @@ async function agentChannelCleanup(f) {
 /** Sessions flow: create a persisted chat, converse, reload the page, and
  *  re-open the same session from the sidebar to prove history survived. */
 async function agentSessionsFlow() {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/agent`;
   log(`flow agent sessions -> ${url}`);
   const { tab, c } = await setupPage(url);
@@ -1489,7 +1512,7 @@ async function cleanupSessions(flow) {
  *  allows), then delete both through the UI and prove the removal really
  *  happened (server-side) via the backend API. */
 async function filesFlow() {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/files`;
   log(`flow files -> ${url}`);
   const { tab, c } = await setupPage(url);
@@ -1821,7 +1844,315 @@ async function filesCleanup(flow) {
   }
 }
 
+/** PostgreSQL helpers for bucket fixtures. Buckets expose no delete API by
+ *  design (read-only), so browser-E2E fixtures are removed from the compose DB
+ *  directly. These require the docker CLI + the `fmcv-db` container (the app
+ *  already runs under docker compose per e2e/README.md). */
+function bucketRowsByNameLike(pattern) {
+  const out = execFileSync(
+    "docker",
+    ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-F", "|", "-c",
+      `SELECT name, "folderType", "folderName" FROM buckets WHERE name LIKE '${pattern}'`],
+    { encoding: "utf8", timeout: 15000 },
+  );
+  return out
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [name, folderType, folderName] = line.split("|");
+      return { name, folderType, folderName };
+    });
+}
+
+function bucketIdByName(name) {
+  const safe = String(name ?? "").replace(/'/g, "''");
+  const out = execFileSync(
+    "docker",
+    ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+      `SELECT id FROM buckets WHERE name = '${safe}'`],
+    { encoding: "utf8", timeout: 15000 },
+  );
+  return out.trim() || null;
+}
+
+/** Delete the DB rows for one bucket (documents first, then the bucket). */
+function deleteBucketRowsFor(bucket) {
+  const id = bucketIdByName(bucket);
+  if (!id) return "already-gone";
+  const safeId = String(id).replace(/'/g, "''");
+  execFileSync(
+    "docker",
+    ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-v", "ON_ERROR_STOP=1", "-c",
+      `DELETE FROM "managed_documents" WHERE "bucketId" = '${safeId}'; DELETE FROM "buckets" WHERE id = '${safeId}';`],
+    { encoding: "utf8", timeout: 15000 },
+  );
+  return "deleted";
+}
+
+/** End-to-end buckets journey: create (agent folder), duplicate-name 409,
+ *  upload (text doc), duplicate-upload 409, download (saved bytes), reload
+ *  persistence, then server-side cleanup (files API + DB rows via psql). */
+async function bucketsFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/buckets`;
+  log(`flow buckets -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const tmpDir = mkdtempSync(join(tmpdir(), "fmcv-bucket-"));
+  const flow = { steps: [], timings: {}, result: null };
+  let downloadDir = null;
+  let browserSock = null;
+  try {
+    wireErrorCapture(c, sink, { allowedStatuses: [409] });
+    await c.send("DOM.enable");
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "buckets ready");
+    if (!ready) throw new Error("buckets flow: page never loaded");
+    const started = Date.now();
+
+    const stamp = Date.now().toString(36);
+    const bucket = `browser-e2e-bucket-${stamp}`;
+    const docName = `notes-${stamp}.txt`;
+    const docBody = `hello from buckets e2e ${stamp}`;
+    flow.bucket = bucket;
+    flow.docName = docName;
+    flow.docBody = docBody;
+    const docPath = join(tmpDir, docName);
+    writeFileSync(docPath, docBody, "utf8");
+
+    // 1. Create the bucket through the UI, mapped to an agent folder.
+    const startCreate = await evalJs(c, jsClick("New bucket", true));
+    if (!startCreate) throw new Error("buckets flow: New bucket button missing");
+    const formReady = await waitFor(c, `!!document.querySelector('input[aria-label="Bucket name"]')`, 10000, 400, "create form");
+    if (!formReady) throw new Error("buckets flow: create form never appeared");
+    const folderReady = await waitFor(
+      c,
+      `(() => { const s = document.querySelector('select[aria-label="Folder name"]'); return !!s && !s.disabled && s.options.length > 0; })()`,
+      30000, 600, "folder select",
+    );
+    if (!folderReady) throw new Error("buckets flow: workspace folders never loaded");
+    const typeSel = await evalJs(c, `(() => {
+      const s = document.querySelector('select[aria-label="Folder type"]');
+      if (!s) return null;
+      s.value = "agent";
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+      return s.value;
+    })()`);
+    if (typeSel !== "agent") throw new Error("buckets flow: folder type select missing");
+    const folderValue = await evalJs(c, `document.querySelector('select[aria-label="Folder name"]')?.value`);
+    if (!folderValue) throw new Error("buckets flow: no agent folder available");
+    flow.scope = `agent:${folderValue}`;
+    await evalJs(c, jsSetInput('input[aria-label="Bucket name"]', bucket));
+    await delay(150);
+    const created = await evalJs(c, jsClick("Create bucket", true));
+    if (!created) throw new Error("buckets flow: Create bucket button missing");
+    const rowSeen = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${bucket}"]`)})`, 15000, 500, "bucket row");
+    if (!rowSeen) throw new Error("buckets flow: created bucket never listed");
+    const createNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Created bucket ${bucket}`)}) ?? false`,
+      5000, 300, "create notice",
+    );
+    if (!createNotice) throw new Error("buckets flow: create success notice missing");
+    flow.steps.push("created-bucket");
+    await screenshot(c, "buckets-created.png");
+
+    // 2. Repeat the same bucket name: must 409 in-page with a dismissible error.
+    await evalJs(c, jsClick("New bucket", true));
+    await waitFor(c, `!!document.querySelector('input[aria-label="Bucket name"]')`, 10000, 400, "create form again");
+    await evalJs(c, jsSetInput('input[aria-label="Bucket name"]', bucket));
+    await delay(150);
+    await evalJs(c, jsClick("Create bucket", true));
+    const dupError = await waitFor(
+      c,
+      `document.querySelector('button[class*="errorBanner"]')?.innerText.includes("already exists") ?? false`,
+      10000, 400, "duplicate bucket",
+    );
+    if (!dupError) throw new Error("buckets flow: duplicate bucket name not rejected");
+    flow.duplicateRejected = true;
+    flow.steps.push("duplicate-rejected");
+    await evalJs(c, jsClick("Hide form", true));
+    await delay(200);
+
+    // 3. Open the bucket and upload a text document.
+    const open = await evalJs(c, `(() => {
+      const li = document.querySelector(${JSON.stringify(`[data-name="${bucket}"]`)});
+      const b = li && li.querySelector("button");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!open) throw new Error("buckets flow: bucket row not clickable");
+    const emptyDocs = await waitFor(c, `document.body.innerText.includes("No documents yet")`, 15000, 500, "empty docs");
+    if (!emptyDocs) throw new Error("buckets flow: detail never showed empty docs");
+    const inputReady = await waitFor(c, `!!document.querySelector('input[aria-label="Document file"]')`, 10000, 400, "file input");
+    if (!inputReady) throw new Error("buckets flow: file input missing");
+    const setFile = async () => {
+      const { root } = await c.send("DOM.getDocument");
+      const qr = await c.send("DOM.querySelector", { nodeId: root.nodeId, selector: 'input[aria-label="Document file"]' });
+      if (!qr.nodeId) throw new Error("buckets flow: upload input node missing");
+      await c.send("DOM.setFileInputFiles", { nodeId: qr.nodeId, files: [docPath] });
+    };
+    await setFile();
+    await delay(200);
+    const uploadClicked = await evalJs(c, jsClick("Upload", true));
+    if (!uploadClicked) throw new Error("buckets flow: Upload button missing");
+    const docRow = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${docName}"]`)})`, 15000, 500, "document row");
+    if (!docRow) throw new Error("buckets flow: uploaded document not listed");
+    const uploadNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Uploaded ${docName}`)}) ?? false`,
+      5000, 300, "upload notice",
+    );
+    if (!uploadNotice) throw new Error("buckets flow: upload success notice missing");
+    const kindBadge = await evalJs(c, `document.querySelector(${JSON.stringify(`[data-name="${docName}"] [class*="kindBadge"]`)})?.textContent.trim()`);
+    if (kindBadge !== "text") throw new Error(`buckets flow: kind badge wrong (${kindBadge})`);
+    flow.uploadedViaUi = true;
+    flow.steps.push("uploaded-document");
+    await screenshot(c, "buckets-uploaded.png");
+
+    // 4. Duplicate upload must 409 in-page too (documents are immutable).
+    await setFile();
+    await delay(200);
+    await evalJs(c, jsClick("Upload", true));
+    const dupUploadError = await waitFor(
+      c,
+      `document.querySelector('button[class*="errorBanner"]')?.innerText.includes("already exists") ?? false`,
+      10000, 400, "duplicate upload",
+    );
+    if (!dupUploadError) throw new Error("buckets flow: duplicate upload not rejected");
+    flow.duplicateUploadRejected = true;
+    flow.steps.push("duplicate-upload-rejected");
+
+    // 5. Download the document; verify saved-to-disk bytes when CDP allows.
+    let realDownload = "skipped";
+    try {
+      const { webSocketDebuggerUrl } = await httpJson("/json/version");
+      const b = new CDP(webSocketDebuggerUrl);
+      await b.open();
+      browserSock = b;
+      downloadDir = mkdtempSync(join(tmpdir(), "fmcv-bucket-dl-"));
+      await b.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloadDir, eventsEnabled: true });
+    } catch (err) {
+      log(`  buckets flow: real CDP download unavailable (${err.message}) — wire bytes still verified`);
+    }
+    const dlClicked = await evalJs(c, rowBtnExpr(docName, "Download"));
+    if (!dlClicked) throw new Error("buckets flow: Download button missing");
+    const dlNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes("Downloaded") ?? false`,
+      10000, 400, "download notice",
+    );
+    if (!dlNotice) throw new Error("buckets flow: download success notice missing");
+    if (downloadDir) {
+      for (const deadline = Date.now() + 8000; Date.now() < deadline;) {
+        try {
+          if (readFileSync(join(downloadDir, docName), "utf8") === docBody) {
+            realDownload = "ok";
+            break;
+          }
+        } catch { /* not saved yet */ }
+        if (realDownload !== "ok") await delay(300);
+      }
+      if (realDownload !== "ok") realDownload = "failed";
+    }
+    log(`  buckets flow: download verified (saved-to-disk=${realDownload})`);
+    if (realDownload === "failed") throw new Error("buckets flow: real download did not save expected bytes");
+
+    // 6. Reload: the bucket AND its document must persist server-side.
+    await c.send("Page.navigate", { url });
+    const persistRow = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${bucket}"]`)})`, 15000, 500, "bucket after reload");
+    if (!persistRow) throw new Error("buckets flow: bucket missing after reload");
+    await evalJs(c, `(() => {
+      const li = document.querySelector(${JSON.stringify(`[data-name="${bucket}"]`)});
+      const b = li && li.querySelector("button");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    const persistDoc = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${docName}"]`)})`, 15000, 500, "document after reload");
+    if (!persistDoc) throw new Error("buckets flow: document missing after reload");
+    flow.persistedAfterReload = true;
+    flow.steps.push("persisted-after-reload");
+    await screenshot(c, "buckets-reload.png");
+    await evalJs(c, jsClick("All buckets", false));
+    await delay(200);
+
+    flow.result = {
+      createdViaUi: true,
+      duplicateRejected: true,
+      uploadedViaUi: true,
+      duplicateUploadRejected: true,
+      downloadVerified: true,
+      persistedAfterReload: true,
+    };
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  buckets journey done in ${flow.timings.elapsedMs}ms`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+    if (browserSock) { try { browserSock.close(); } catch { /* best-effort */ } }
+    if (downloadDir) rmSync(downloadDir, { recursive: true, force: true });
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+/** Server-side cleanup + verification for the buckets journey: physical files
+ *  via the files API (agent scope) and DB rows via psql in the compose DB
+ *  container (buckets deliberately expose no delete endpoint). */
+async function bucketsCleanup(flow) {
+  if (!flow?.bucket) return "none";
+  const detail = { files: null, db: null, verified: null };
+  try {
+    const scope = flow.scope && flow.scope.startsWith("agent:") ? flow.scope : null;
+    if (!scope) {
+      detail.files = `error: no agent scope (${flow.scope})`;
+    } else {
+      const rels = [];
+      if (flow.docName) rels.push(`${flow.bucket}/${flow.docName}`);
+      rels.push(flow.bucket);
+      for (const rel of rels) {
+        const r = await fetch(
+          `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(rel)}`,
+          { method: "DELETE" },
+        );
+        if (r.status >= 400 && r.status !== 404) {
+          throw new Error(`delete ${rel} -> HTTP ${r.status}`);
+        }
+      }
+      detail.files = "clean";
+    }
+  } catch (err) {
+    detail.files = `error: ${err.message}`;
+    log(`  cleanup: bucket files FAILED: ${err.message}`);
+  }
+  try {
+    detail.db = deleteBucketRowsFor(flow.bucket);
+  } catch (err) {
+    detail.db = `error: ${err.message}`;
+    log(`  cleanup: bucket DB FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/buckets`);
+    if (!res.ok) throw new Error(`list -> HTTP ${res.status}`);
+    const body = await res.json();
+    const leftover = (Array.isArray(body) ? body : []).find((b) => b.name === flow.bucket);
+    detail.verified = leftover ? "leftover" : "clean";
+  } catch (err) {
+    detail.verified = `error: ${err.message}`;
+    log(`  cleanup: bucket verify FAILED: ${err.message}`);
+  }
+  const ok =
+    detail.files === "clean" &&
+    (detail.db === "deleted" || detail.db === "already-gone") &&
+    detail.verified === "clean";
+  if (!ok) log(`  cleanup: buckets not clean (${JSON.stringify(detail)})`);
+  return ok ? "clean" : `error: ${JSON.stringify(detail)}`;
+}
+
 /* --------------------------------- main --------------------------------- */
+
+
 
 /** Pre-run garbage collection: delete rows/folders this script itself creates
  *  that were left behind by an earlier interrupted run (killed tabs, failed
@@ -1830,7 +2161,7 @@ async function filesCleanup(flow) {
  *  channel deletion; any still-present fixture folder is reported, not
  *  silently removed (the read-only project API cannot force a delete). */
 async function staleSweep() {
-  const result = { channels: [], sessions: [], connections: [], projectFolders: [], errors: [] };
+  const result = { channels: [], sessions: [], connections: [], buckets: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
     ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
       String(name ?? "").startsWith(p),
@@ -1883,6 +2214,28 @@ async function staleSweep() {
     log(`  stale sweep: connections FAILED: ${err.message}`);
   }
   try {
+    const rows = bucketRowsByNameLike("browser-e2e-bucket-%");
+    for (const row of rows) {
+      if (row.folderType === "agent" && row.folderName) {
+        const del = await fetch(
+          `${API}/files/delete?scope=${encodeURIComponent(`agent:${row.folderName}`)}&path=${encodeURIComponent(row.name)}`,
+          { method: "DELETE" },
+        );
+        if (del.status >= 400 && del.status !== 404) {
+          throw new Error(`delete bucket folder ${row.name} -> HTTP ${del.status}`);
+        }
+      }
+      deleteBucketRowsFor(row.name);
+      result.buckets.push(row.name);
+    }
+    if (result.buckets.length) {
+      log(`  stale sweep: deleted ${result.buckets.length} bucket(s) [${result.buckets.join(", ")}]`);
+    }
+  } catch (err) {
+    result.errors.push(`buckets: ${err.message}`);
+    log(`  stale sweep: buckets FAILED: ${err.message}`);
+  }
+  try {
     const res = await fetch(`${API}/agent/workspaces`);
     if (!res.ok) throw new Error(`workspaces -> HTTP ${res.status}`);
     const body = await res.json();
@@ -1903,7 +2256,7 @@ async function staleSweep() {
 }
 
 async function settingsFlow() {
-  const sink = { netFailures: [], httpErrors: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/settings`;
   log(`flow settings -> ${url}`);
   const { tab, c } = await setupPage(url);
@@ -2628,7 +2981,7 @@ async function main() {
       url: `${APP}/`,
       title: "FMCV Agentic",
       waitText: "Open Agent",
-      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkSettings: "Open Settings" },
+      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkBuckets: "Open Buckets", linkSettings: "Open Settings" },
       jsChecks: { navPresent: navChecks.present, navLinks: navChecks.links, activeHome: navActive("/") },
     },
     {
@@ -2663,6 +3016,45 @@ async function main() {
         navLinks: navChecks.links,
         activeFiles: navActive("/files"),
         scopeSelect: "!!document.querySelector('select[aria-label=\"Scope\"]')",
+      },
+    },
+    {
+      route: "buckets",
+      url: `${APP}/buckets`,
+      title: "Buckets - FMCV Agentic",
+      waitText: "New bucket",
+      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Read-only" },
+      jsChecks: {
+        navPresent: navChecks.present,
+        navLinks: navChecks.links,
+        activeBuckets: navActive("/buckets"),
+        newBucketBtn: `[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "New bucket")`,
+      },
+    },
+    {
+      route: "buckets-dark",
+      url: `${APP}/buckets`,
+      emulate: "dark",
+      title: "Buckets - FMCV Agentic",
+      waitText: "New bucket",
+      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Read-only" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        badgeDark: `getComputedStyle(document.querySelector('[class*="badge"]')).backgroundColor === "rgb(66, 32, 6)"`,
+        primaryStaysBlue: `getComputedStyle(document.querySelector('button[class*="btnPrimary"]')).backgroundColor === "rgb(37, 99, 235)"`,
+      },
+    },
+    {
+      route: "buckets-mobile",
+      shotName: "buckets-mobile.png",
+      url: `${APP}/buckets`,
+      viewport: { width: 360, height: 640 },
+      title: "Buckets - FMCV Agentic",
+      waitText: "New bucket",
+      bodyText: { title: "Buckets", newBucket: "New bucket" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
       },
     },
     {
@@ -2794,6 +3186,8 @@ async function main() {
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow.flow);
     report.filesFlow = await filesFlow();
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
+    report.bucketsFlow = await bucketsFlow();
+    report.bucketsFlow.cleanup = await bucketsCleanup(report.bucketsFlow.flow);
     report.settingsFlow = await settingsFlow();
     log("browser E2E flows done");
   } finally {
@@ -2816,7 +3210,7 @@ async function main() {
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
   const nf = report.navFlow;
-  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 4 || !nf.flow.homeActive) {
+  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 5 || !nf.flow.homeActive || !nf.flow.bucketsActive) {
     failures.push(`nav flow: journey not verified (${JSON.stringify(nf && nf.flow)})`);
   }
   const navErrs = errorCount(nf ? nf.errors : {});
@@ -2896,6 +3290,24 @@ async function main() {
   }
   const filesErrs = errorCount(ffl ? ffl.errors : {});
   if (filesErrs > 0) failures.push(`files flow: ${filesErrs} console/network error(s)`);
+
+  const bfl = report.bucketsFlow;
+  if (
+    !bfl ||
+    !bfl.flow.result?.createdViaUi ||
+    !bfl.flow.result?.duplicateRejected ||
+    !bfl.flow.result?.uploadedViaUi ||
+    !bfl.flow.result?.duplicateUploadRejected ||
+    !bfl.flow.result?.downloadVerified ||
+    !bfl.flow.result?.persistedAfterReload
+  ) {
+    failures.push(`buckets flow: create/upload/download/reload not verified (${JSON.stringify(bfl && bfl.flow)})`);
+  }
+  if (bfl && bfl.cleanup !== "clean") {
+    failures.push(`buckets flow: cleanup not verified (${bfl.cleanup})`);
+  }
+  const bucketsErrs = errorCount(bfl ? bfl.errors : {});
+  if (bucketsErrs > 0) failures.push(`buckets flow: ${bucketsErrs} console/network error(s)`);
 
   const sfl = report.settingsFlow;
   if (
