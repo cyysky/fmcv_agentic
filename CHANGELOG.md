@@ -1,3 +1,60 @@
+## Round 2026-08-08 — autonomous iteration round 27 (tag `round-27`)
+
+### Added
+- **Agent skills** (DIRECTION.md item 3 — backend slice, commit
+  `72453b3`) — new Prisma `Skill` model (unique slug-form names, description,
+  markdown content, installed flag, timestamps) + migration
+  `20260808072441_add_skills`; REST API under `/api/skills`
+  (create/list/get/patch/delete + `POST :id/install` / `:id/uninstall`).
+  Installs require non-empty content, uninstall keeps the authored record,
+  patches with empty bodies and duplicate names are rejected (409), and
+  content is capped at 200k chars.
+- **Agent integration** — `BaseAgentService` gains an optional
+  `SkillsService` (injected via `@Optional()`); when the registry is wired,
+  every `runTurn`/`converse`/channel turn builds an "Installed skills"
+  system-prompt registry block and registers a `read_skill` tool that returns
+  the full markdown body of a named skill.
+- **Skills UI (`/skills`)** — human-facing page wired to the API: create
+  (name/description/markdown-instructions + optional install-now), edit
+  (name immutable), install/uninstall per row with status pills, two-click
+  delete, dismissible error/success banners, dark-mode friendly and
+  responsive. `/skills` sits in the global nav (7 links) and the home page
+  gained an `Open Skills` CTA; the 360px nav fit was re-verified.
+- **Skills browser E2E** — the CDP journey creates a skill through the UI
+  with the install box checked, verifies the Installed pill + notice,
+  reloads and proves skill + installed state persist, edits
+  description/instructions (name stays disabled), uninstalls (pill flips,
+  record stays listed), reinstalls, and deletes with the two-click confirm;
+  cleanup uses the skills DELETE API and the stale sweep removes
+  `browser-e2e-skill-*` rows. Route probes now cover `/skills` in
+  light/dark/mobile (21 probes across 7 routes) and the nav journey clicks
+  through all seven links.
+
+### Test status
+- Unit **142 passed / 14 suites** (126 → +12 skills service, +4 base-agent
+  skills integration).
+- API E2E **101 passed / 10 suites** (91 → +11 skills against real
+  Postgres).
+- Backend `nest build` + `tsc --noEmit` clean; scoped eslint clean for the
+  new skills files.
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E exit 0: 21 route probes (`/`, `/settings`, `/agent`, `/files`,
+  `/buckets`, `/cron`, `/skills` × light/dark/mobile) plus nav,
+  agent-channel, sessions/saved-connection, files, buckets, cron, **skills**,
+  and settings journeys — zero console/network errors; screenshots +
+  `e2e/report.json` refreshed.
+
+### Known issues / open tickets
+- Scheduler runs in-process: only one backend instance should be scaled, and
+  a backend restart re-derives next-run timing from the persisted row.
+- Buckets still have no delete/rename endpoints (read-only by design).
+- Skills are authored in-app and surfaced through the `read_skill` tool +
+  system-prompt registry; install state is in-memory per backend instance
+  (single-instance deployment assumed, same as the scheduler).
+- Full-repo backend eslint backlog predates this round (legacy files).
+- DIRECTION items 1 (buckets), 2 (cron jobs), and 3 (**agent skills**) are
+  done; item 4 (**view HTML by link / new tab-window**) remains open.
+
 ## Round 2026-08-08 — autonomous iteration round 26 (tag `round-26`)
 
 ### Added

@@ -12,8 +12,8 @@
 //                            # (defaults to the APP hostname or `hostname -I`)
 //
 // Checks:
-//   1. Every SPA route (/, /agent, /files, /buckets, /cron, /settings) loads
-//      without console errors / failed network requests
+//   1. Every SPA route (/, /agent, /files, /buckets, /cron, /skills, /settings)
+//      loads without console errors / failed network requests
 //   2. Each route renders its expected document.title (browser tab title)
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
@@ -44,6 +44,10 @@
 //      for a Done/Failed terminal status pill), rename it through the UI,
 //      pause/resume it, then delete it with the two-click confirm and verify
 //      server-side cleanup
+//   10d. Skills: create a skill through the /skills UI with instructions and
+//      install it (Installed pill + registry notice), reload and verify it
+//      persists, edit description/content, uninstall and reinstall it, then
+//      delete it with the two-click confirm and verify server-side cleanup
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -333,7 +337,7 @@ const navChecks = {
   present: `!!${selExpr('nav[aria-label="Main"]')}`,
   links: `(() => {
     const hrefs = [...document.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute("href"));
-    return ["/", "/agent", "/files", "/buckets", "/cron", "/settings"].every((h) => hrefs.includes(h));
+    return ["/", "/agent", "/files", "/buckets", "/cron", "/skills", "/settings"].every((h) => hrefs.includes(h));
   })()`,
 };
 const navActive = (href) =>
@@ -465,9 +469,12 @@ async function probeRoute(route) {
     if (route.clickBeforeChecks) {
       const clicked = await evalJs(c, jsClick(route.clickBeforeChecks, true));
       if (!clicked) throw new Error(`${route.route}: before-checks click ${route.clickBeforeChecks} missing`);
+      // Routes may declare their own form selector (e.g. the skills page's
+      // create form); the default matches the shared panel class used by cron.
+      const panelSelector = route.panelSelector || 'form[class*="panel"]';
       const panelSeen = await waitFor(
         c,
-        `!!document.querySelector('form[class*="panel"]')`,
+        `!!document.querySelector(${JSON.stringify(panelSelector)})`,
         10000,
         400,
         `${route.route} panel`,
@@ -565,6 +572,7 @@ async function navFlow() {
     await clickAndVerify("/files", "/files", "Files - ", "files");
     await clickAndVerify("/buckets", "/buckets", "Buckets - ", "buckets");
     await clickAndVerify("/cron", "/cron", "Cron - ", "cron");
+    await clickAndVerify("/skills", "/skills", "Skills - ", "skills");
     await clickAndVerify("/settings", "/settings", "Settings - ", "settings");
     await clickAndVerify("/agent", "/agent", "Agent - ", "agent");
     await clickAndVerify("/", "/", "FMCV Agentic", "home");
@@ -2433,6 +2441,255 @@ async function cronCleanup(flow) {
   return detail;
 }
 
+
+/** Find a skill by name through the API (used to capture the server id for
+ *  cleanup and to verify server-side state). */
+async function skillsFindByName(name) {
+  const res = await fetch(`${API}/skills`);
+  if (!res.ok) throw new Error(`list skills -> HTTP ${res.status}`);
+  const rows = await res.json();
+  return (Array.isArray(rows) ? rows : []).find((sk) => sk.name === name) ?? null;
+}
+
+/** End-to-end skills journey: create a skill through the /skills UI with
+ *  instructions and install it at the same time, reload and verify it
+ *  persists, edit description/content, uninstall (pill flips, record stays),
+ *  reinstall, then delete via the two-click confirm. Fixtures only; skills
+ *  expose a full CRUD API so cleanup is a plain idempotent DELETE. */
+async function skillsFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/skills`;
+  log(`flow skills -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, skillId: null, skillName: null };
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "skills ready");
+    if (!ready) throw new Error("skills flow: page never loaded");
+    const page = await waitFor(c, `document.body.innerText.includes("Agent Skills")`, 30000, 600, "skills page");
+    if (!page) throw new Error("skills flow: page never rendered");
+    const started = Date.now();
+
+    const stamp = Date.now().toString(36);
+    const skillName = `browser-e2e-skill-${stamp}`;
+    const description = `Created by browser E2E ${stamp}`;
+    flow.skillName = skillName;
+
+    // 1. Create a skill through the UI, installing it in the same step.
+    const openCreate = await evalJs(c, jsClick("+ New Skill", true));
+    if (!openCreate) throw new Error("skills flow: + New Skill button missing");
+    const formReady = await waitFor(
+      c,
+      `!!document.querySelector('input[aria-label="Skill name"]')`,
+      10000,
+      400,
+      "create form",
+    );
+    if (!formReady) throw new Error("skills flow: create form never appeared");
+    await evalJs(c, jsSetInput('input[aria-label="Skill name"]', skillName));
+    await evalJs(c, jsSetInput('input[aria-label="Skill description"]', description));
+    await evalJs(c, jsSetInput('textarea[aria-label="Skill instructions"]', `# E2E skill\n\nReply with the single word: skill-ok\n`));
+    const checkClicked = await evalJs(c, `(() => {
+      const cb = document.querySelector('input[aria-label="Install skill"]');
+      if (!cb || cb.checked) return false;
+      cb.click();
+      return true;
+    })()`);
+    if (!checkClicked) throw new Error("skills flow: Install skill checkbox missing");
+    await delay(150);
+    const created = await evalJs(c, jsClick("Create skill", true));
+    if (!created) throw new Error("skills flow: Create skill button missing");
+    const rowSeen = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)})`, 15000, 500, "skill row");
+    if (!rowSeen) throw new Error("skills flow: created skill never listed");
+    const installedPill = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${skillName}"] [class*="pill"]`)})?.textContent.trim() === "Installed"`,
+      10000,
+      400,
+      "installed pill",
+    );
+    if (!installedPill) throw new Error("skills flow: created skill not installed");
+    const createNotice = await waitFor(
+      c,
+      `document.querySelector('[class*="bannerNotice"]')?.innerText.includes(${JSON.stringify(`Skill "${skillName}" created and installed`)}) ?? false`,
+      5000,
+      300,
+      "create notice",
+    );
+    if (!createNotice) throw new Error("skills flow: create notice missing");
+    flow.createdViaUi = true;
+    flow.steps.push("created-installed");
+    for (const deadline = Date.now() + 10000; Date.now() < deadline;) {
+      flow.skillId = (await skillsFindByName(skillName))?.id ?? null;
+      if (flow.skillId) break;
+      await delay(300);
+    }
+    if (!flow.skillId) throw new Error("skills flow: created skill not found server-side");
+    await screenshot(c, "skills-created.png");
+
+    // 2. Reload: the skill AND its installed state must persist server-side.
+    await c.send("Page.navigate", { url });
+    const persistRow = await waitFor(c, `!!document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)})`, 15000, 500, "skill after reload");
+    if (!persistRow) throw new Error("skills flow: skill missing after reload");
+    const persistPill = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${skillName}"] [class*="pill"]`)})?.textContent.trim() === "Installed"`,
+      10000,
+      400,
+      "installed after reload",
+    );
+    if (!persistPill) throw new Error("skills flow: installed state lost after reload");
+    flow.persistedAfterReload = true;
+    flow.steps.push("persisted-after-reload");
+    await screenshot(c, "skills-reload.png");
+
+    // 3. Edit description + instructions through the UI (name is immutable
+    //    in the form); the updated description must render in the row.
+    const editClicked = await evalJs(c, rowBtnExpr(skillName, "Edit"));
+    if (!editClicked) throw new Error("skills flow: Edit button missing");
+    const editMode = await waitFor(c, `document.body.innerText.includes(${JSON.stringify(`Edit skill "${skillName}"`)})`, 10000, 400, "edit mode");
+    if (!editMode) throw new Error("skills flow: edit mode never opened");
+    const nameDisabled = await evalJs(c, `document.querySelector('input[aria-label="Skill name"]')?.disabled ?? false`);
+    if (!nameDisabled) throw new Error("skills flow: skill name editable in form");
+    const newDesc = `${description} (edited)`;
+    const newContent = `# E2E skill (edited)\n\nReply with the single word: skill-ok-edited\n`;
+    await evalJs(c, jsSetInput('input[aria-label="Skill description"]', newDesc));
+    await evalJs(c, jsSetInput('textarea[aria-label="Skill instructions"]', newContent));
+    await delay(150);
+    const saveClicked = await evalJs(c, jsClick("Save changes", true));
+    if (!saveClicked) throw new Error("skills flow: Save changes button missing");
+    const editedDesc = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)})?.innerText.includes(${JSON.stringify(newDesc)}) ?? false`,
+      15000,
+      500,
+      "edited description",
+    );
+    if (!editedDesc) throw new Error("skills flow: edited description never rendered");
+    const saveNotice = await waitFor(
+      c,
+      `document.querySelector('[class*="bannerNotice"]')?.innerText.includes(${JSON.stringify(`Skill "${skillName}" updated`)}) ?? false`,
+      5000,
+      400,
+      "save notice",
+    );
+    if (!saveNotice) throw new Error("skills flow: save notice missing");
+    flow.editedViaUi = true;
+    flow.steps.push("edited-skill");
+    await screenshot(c, "skills-edited.png");
+
+    // 4. Uninstall: pill flips to Not installed and the record stays listed.
+    const uninstallClicked = await evalJs(c, rowBtnExpr(skillName, "Uninstall"));
+    if (!uninstallClicked) throw new Error("skills flow: Uninstall button missing");
+    const offPill = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${skillName}"] [class*="pill"]`)})?.textContent.trim() === "Not installed"`,
+      10000,
+      400,
+      "not-installed pill",
+    );
+    if (!offPill) throw new Error("skills flow: uninstall did not flip the pill");
+    const uninstallNotice = await waitFor(
+      c,
+      `document.querySelector('[class*="bannerNotice"]')?.innerText.includes(${JSON.stringify(`Skill "${skillName}" uninstalled`)}) ?? false`,
+      5000,
+      400,
+      "uninstall notice",
+    );
+    if (!uninstallNotice) throw new Error("skills flow: uninstall notice missing");
+    const rowStillThere = await evalJs(c, `!!document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)})`);
+    if (!rowStillThere) throw new Error("skills flow: uninstall removed the record (should stay)");
+    flow.uninstalledViaUi = true;
+    flow.steps.push("uninstalled");
+
+    // 5. Reinstall from the row button: pill flips back to Installed.
+    const installClicked = await evalJs(c, rowBtnExpr(skillName, "Install"));
+    if (!installClicked) throw new Error("skills flow: Install button missing");
+    const onPill = await waitFor(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${skillName}"] [class*="pill"]`)})?.textContent.trim() === "Installed"`,
+      10000,
+      400,
+      "reinstalled pill",
+    );
+    if (!onPill) throw new Error("skills flow: reinstall did not flip the pill");
+    const installNotice = await waitFor(
+      c,
+      `document.querySelector('[class*="bannerNotice"]')?.innerText.includes(${JSON.stringify(`Skill "${skillName}" installed`)}) ?? false`,
+      5000,
+      400,
+      "install notice",
+    );
+    if (!installNotice) throw new Error("skills flow: install notice missing");
+    flow.reinstalledViaUi = true;
+    flow.steps.push("reinstalled");
+
+    // 6. Delete via the two-click confirm; the row must disappear from the UI.
+    const delClicked = await evalJs(c, rowBtnExpr(skillName, "Delete"));
+    if (!delClicked) throw new Error("skills flow: Delete button missing");
+    const confirmReady = await waitFor(
+      c,
+      `(() => {
+        const row = document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)});
+        return !!row && [...row.querySelectorAll("button")].some((b) => b.textContent.trim() === "Confirm delete");
+      })()`,
+      5000,
+      300,
+      "delete confirm",
+    );
+    if (!confirmReady) throw new Error("skills flow: two-click confirm never armed");
+    const confirmClicked = await evalJs(c, rowBtnExpr(skillName, "Confirm delete"));
+    if (!confirmClicked) throw new Error("skills flow: Confirm delete button missing");
+    const rowGone = await waitFor(c, `!document.querySelector(${JSON.stringify(`[data-name="${skillName}"]`)})`, 15000, 500, "row deleted");
+    if (!rowGone) throw new Error("skills flow: deleted skill still listed");
+    const deleteNotice = await waitFor(
+      c,
+      `document.querySelector('[class*="bannerNotice"]')?.innerText.includes(${JSON.stringify(`Skill "${skillName}" deleted`)}) ?? false`,
+      5000,
+      400,
+      "delete notice",
+    );
+    if (!deleteNotice) throw new Error("skills flow: delete notice missing");
+    flow.deletedViaUi = true;
+    flow.steps.push("deleted-skill");
+    await screenshot(c, "skills-deleted.png");
+
+    flow.result = {
+      createdViaUi: true,
+      installedViaUi: true,
+      persistedAfterReload: true,
+      editedViaUi: true,
+      uninstalledViaUi: true,
+      reinstalledViaUi: true,
+      deletedViaUi: true,
+    };
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  skills journey done in ${flow.timings.elapsedMs}ms`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Server-side cleanup + verification for the skills journey: delete the
+ *  fixture by id and confirm the id is gone. */
+async function skillsCleanup(flow) {
+  if (!flow?.skillId) return "none";
+  let detail = null;
+  try {
+    const del = await fetch(`${API}/skills/${flow.skillId}`, { method: "DELETE" });
+    if (!del.ok && del.status !== 404) throw new Error(`delete -> HTTP ${del.status}`);
+    const check = await fetch(`${API}/skills/${flow.skillId}`);
+    detail = check.status === 404 ? "clean" : `leftover (HTTP ${check.status})`;
+  } catch (err) {
+    detail = `error: ${err.message}`;
+    log(`  cleanup: skills FAILED: ${err.message}`);
+  }
+  if (detail !== "clean") log(`  cleanup: skills not clean (${detail})`);
+  return detail;
+}
+
 /* --------------------------------- main --------------------------------- */
 
 
@@ -2444,7 +2701,7 @@ async function cronCleanup(flow) {
  *  channel deletion; any still-present fixture folder is reported, not
  *  silently removed (the read-only project API cannot force a delete). */
 async function staleSweep() {
-  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], projectFolders: [], errors: [] };
+  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], skills: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
     ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
       String(name ?? "").startsWith(p),
@@ -2545,6 +2802,21 @@ async function staleSweep() {
   } catch (err) {
     result.errors.push(`buckets: ${err.message}`);
     log(`  stale sweep: buckets FAILED: ${err.message}`);
+  }
+  try {
+    const res = await fetch(`${API}/skills`);
+    if (!res.ok) throw new Error(`list skills -> HTTP ${res.status}`);
+    const skills = await res.json();
+    for (const sk of Array.isArray(skills) ? skills : []) {
+      if (!isFixture(sk.name ?? "")) continue;
+      const del = await fetch(`${API}/skills/${sk.id}`, { method: "DELETE" });
+      if (!del.ok) throw new Error(`delete skill ${sk.name} -> HTTP ${del.status}`);
+      result.skills.push(sk.name);
+    }
+    if (result.skills.length) log(`  stale sweep: deleted ${result.skills.length} skill(s) [${result.skills.join(", ")}]`);
+  } catch (err) {
+    result.errors.push(`skills: ${err.message}`);
+    log(`  stale sweep: skills FAILED: ${err.message}`);
   }
   try {
     const res = await fetch(`${API}/agent/workspaces`);
@@ -3292,7 +3564,7 @@ async function main() {
       url: `${APP}/`,
       title: "FMCV Agentic",
       waitText: "Open Agent",
-      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkBuckets: "Open Buckets", linkSettings: "Open Settings" },
+      bodyText: { title: "FMCV Agentic", linkAgent: "Open Agent", linkFiles: "Open Files", linkBuckets: "Open Buckets", linkCron: "Open Cron", linkSkills: "Open Skills", linkSettings: "Open Settings" },
       jsChecks: { navPresent: navChecks.present, navLinks: navChecks.links, activeHome: navActive("/") },
     },
     {
@@ -3404,6 +3676,47 @@ async function main() {
       title: "Cron - FMCV Agentic",
       waitText: "New cron job",
       bodyText: { title: "Cron Jobs", newJob: "New cron job" },
+      mobileChecks: {
+        noHorizontalOverflow,
+        navLinksFit,
+      },
+    },
+    {
+      route: "skills",
+      url: `${APP}/skills`,
+      title: "Skills - FMCV Agentic",
+      waitText: "Agent Skills",
+      bodyText: { title: "Agent Skills", newSkill: "New Skill", subtitle: "read_skill" },
+      jsChecks: {
+        navPresent: navChecks.present,
+        navLinks: navChecks.links,
+        activeSkills: navActive("/skills"),
+        newSkillBtn: `[...document.querySelectorAll("button")].some((b) => b.textContent.trim() === "+ New Skill")`,
+      },
+    },
+    {
+      route: "skills-dark",
+      url: `${APP}/skills`,
+      emulate: "dark",
+      clickBeforeChecks: "+ New Skill",
+      panelSelector: "form",
+      title: "Skills - FMCV Agentic",
+      waitText: "Agent Skills",
+      bodyText: { title: "Agent Skills", formTitle: "Create a skill" },
+      darkChecks: {
+        bodyDark: bodyBgDark,
+        formDark: `getComputedStyle(document.querySelector('form')).backgroundColor === "rgb(17, 24, 39)"`,
+        inputDark: `getComputedStyle(document.querySelector('form input')).backgroundColor === "rgb(15, 23, 42)"`,
+      },
+    },
+    {
+      route: "skills-mobile",
+      shotName: "skills-mobile.png",
+      url: `${APP}/skills`,
+      viewport: { width: 360, height: 640 },
+      title: "Skills - FMCV Agentic",
+      waitText: "Agent Skills",
+      bodyText: { title: "Agent Skills", newSkill: "New Skill" },
       mobileChecks: {
         noHorizontalOverflow,
         navLinksFit,
@@ -3542,6 +3855,8 @@ async function main() {
     report.bucketsFlow.cleanup = await bucketsCleanup(report.bucketsFlow.flow);
     report.cronFlow = await cronFlow();
     report.cronFlow.cleanup = await cronCleanup(report.cronFlow.flow);
+    report.skillsFlow = await skillsFlow();
+    report.skillsFlow.cleanup = await skillsCleanup(report.skillsFlow.flow);
     report.settingsFlow = await settingsFlow();
     log("browser E2E flows done");
   } finally {
@@ -3564,7 +3879,7 @@ async function main() {
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
   const nf = report.navFlow;
-  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 6 || !nf.flow.homeActive || !nf.flow.bucketsActive || !nf.flow.cronActive) {
+  if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 7 || !nf.flow.homeActive || !nf.flow.bucketsActive || !nf.flow.cronActive || !nf.flow.skillsActive) {
     failures.push(`nav flow: journey not verified (${JSON.stringify(nf && nf.flow)})`);
   }
   const navErrs = errorCount(nf ? nf.errors : {});
@@ -3680,6 +3995,25 @@ async function main() {
   }
   const cronErrs = errorCount(cfl ? cfl.errors : {});
   if (cronErrs > 0) failures.push(`cron flow: ${cronErrs} console/network error(s)`);
+
+  const skfl = report.skillsFlow;
+  if (
+    !skfl ||
+    !skfl.flow.result?.createdViaUi ||
+    !skfl.flow.result?.installedViaUi ||
+    !skfl.flow.result?.persistedAfterReload ||
+    !skfl.flow.result?.editedViaUi ||
+    !skfl.flow.result?.uninstalledViaUi ||
+    !skfl.flow.result?.reinstalledViaUi ||
+    !skfl.flow.result?.deletedViaUi
+  ) {
+    failures.push(`skills flow: create/install/reload/edit/uninstall/reinstall/delete not verified (${JSON.stringify(skfl && skfl.flow)})`);
+  }
+  if (skfl && skfl.cleanup !== "clean") {
+    failures.push(`skills flow: cleanup not verified (${skfl.cleanup})`);
+  }
+  const skillsErrs = errorCount(skfl ? skfl.errors : {});
+  if (skillsErrs > 0) failures.push(`skills flow: ${skillsErrs} console/network error(s)`);
 
   const sfl = report.settingsFlow;
   if (

@@ -95,6 +95,14 @@ and coordinate multi-agent teams in Slack-style channels.
   every second, validates expressions up front, refuses deletes while a job
   is running, restores next-run timing on boot, and persists every run's
   terminal result (done/error, message, model, duration) on the row.
+- **Agent skills (`/skills`)** — human-facing page over the skills API:
+  authors create uniquely named, slug-form skills (name, description, and a
+  markdown instructions body) and install/uninstall them; installed skills
+  are listed in every agent turn's registry (system prompt) and agents load
+  the full instructions with the `read_skill` tool. Editing keeps the name
+  immutable, uninstall keeps the authored record (agents simply stop seeing
+  it), delete removes it, and create/install requires non-empty content —
+  all from one responsive, dark-mode-friendly page.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error).
@@ -184,6 +192,18 @@ and awaits the agent turn):
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
 | POST   | `/api/cron/:id/run`  | run the job now, outside its schedule                     |
 
+Skills:
+
+| Method | Path                          | Purpose                                                     |
+|--------|-------------------------------|-------------------------------------------------------------|
+| POST   | `/api/skills`                 | create a skill (unique slug-form `name`, `description`, `content`, `installed`) |
+| GET    | `/api/skills`                 | list skills (with installed state)                          |
+| GET    | `/api/skills/:id`             | get one skill                                               |
+| PATCH  | `/api/skills/:id`             | update description/content/installed (name is immutable)    |
+| DELETE | `/api/skills/:id`             | delete a skill                                              |
+| POST   | `/api/skills/:id/install`     | install a skill (requires non-empty content)                |
+| POST   | `/api/skills/:id/uninstall`   | uninstall (the authored record stays, agents stop seeing it)|
+
 Channels:
 
 | Method | Path                                          | Purpose                                     |
@@ -220,7 +240,7 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 126 tests / 13 suites** — model catalog, workspace service + tools,
+- **Unit: 142 tests / 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -249,8 +269,15 @@ cd e2e && node browser-e2e.mjs
   slides nextRunAt on schedule change and on enable/disable, empty PATCH 400,
   run-now through the agent records done/error + message/model/duration,
   restart recovery marks interrupted runs error, delete rejected while
-  running).
-- **API E2E: 91 tests / 9 suites** (`backend/test/*.e2e-spec.ts`) — real
+  running), and the skills service
+  (create/list/get/update/delete, unique slug-form names with 409
+  duplicate, invalid-name 400, install requires non-empty content,
+  uninstall keeps the record, empty PATCH 400, content capped at 200k
+  chars) plus the base-agent skills integration (read_skill tool body /
+  missing-name error, installed registry block present only when the
+  registry is wired, runTurn/converse inject the registry and strip it
+  from persisted transcripts).
+- **API E2E: 101 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -277,7 +304,11 @@ cd e2e && node browser-e2e.mjs
   schedule 400, list/get/404, PATCH name/schedule/enabled + nextRunAt
   semantics, empty PATCH 400, run-now drives a stubbed agent turn and
   persists done/error/message/model/duration, delete, delete-while-running
-  409 — the agent service is stubbed so the suite stays hermetic), the API
+  409 — the agent service is stubbed so the suite stays hermetic), skills
+  (11: create, duplicate-name 409, invalid-name 400, install-content gate,
+  create-installed, list/get/404, patch, clear-content 400, uninstall keeps
+  the record + reinstall, agent-turn with installed skills exposes
+  read_skill, delete), the API
   token gate (3), and throttling
   (2: over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
@@ -285,14 +316,15 @@ cd e2e && node browser-e2e.mjs
   (verified per file).
 - **Browser E2E** (`e2e/browser-e2e.mjs`) — zero npm dependencies; opens a
   fresh tab per check (no reuse of busy/stale tabs), verifies `/`, `/settings`,
-  `/agent`, `/files`, `/buckets`, and `/cron` render their content and
+  `/agent`, `/files`, `/buckets`, `/cron`, and `/skills` render their content and
   document titles with no console/network errors, asserts the global nav on
   each route (links present, correct active link), re-runs `/settings`,
-  `/agent`, `/files`, `/buckets`, and `/cron` with CDP
+  `/agent`, `/files`, `/buckets`, `/cron`, and `/skills` with CDP
   `prefers-color-scheme: dark` emulation and asserts the dark computed styles
-  (card/input/select backgrounds, primary button still blue, body background,
-  kind badges on buckets, and the cron create panel/inputs),
-  re-probes all six routes at 360×640 device metrics asserting no horizontal
+  (card/input/form/select backgrounds, primary button still blue, body
+  background, kind badges on buckets, and the cron/skills create panels and
+  inputs),
+  re-probes all seven routes at 360×640 device metrics asserting no horizontal
   overflow, fit nav links, a visible agent composer, and the files responsive
   row grid,
   and drives a nav journey that clicks through every route
@@ -329,7 +361,15 @@ cd e2e && node browser-e2e.mjs
   LLM produces; the compose gateway is configured from the local provider
   key), then renames the job, pauses it (`Paused` + `Next run: paused`),
   resumes it, and deletes it with the two-click confirm (fixture removed
-  server-side afterwards via the cron DELETE API), and a settings journey that creates a throwaway connection through the API,
+  server-side afterwards via the cron DELETE API), a skills journey that
+  creates a skill through the `/skills` UI (slug-form fixture name,
+  description, markdown instructions) with the **Install now** box checked,
+  verifies the Installed pill + create notice, reloads and proves both the
+  skill and its installed state persist, edits description/instructions
+  (name stays immutable), uninstalls (pill flips to Not installed and the
+  record stays listed), reinstalls, then deletes it with the two-click
+  confirm and verifies server-side cleanup via the skills DELETE API,
+  and a settings journey that creates a throwaway connection through the API,
   proves the Edit form opens with a blank API-key field, clicks the form's
   "Test Connection" button against a dead endpoint to prove unsaved values are
   probed gracefully and then Cancel preserves the stored URL, captures the wire

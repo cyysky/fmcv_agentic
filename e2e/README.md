@@ -42,13 +42,14 @@ Environment overrides:
 ## What it checks
 
 1. **Routes load cleanly**: `/`, `/settings`, `/agent`, `/files`,
-   `/buckets`, and `/cron` render their expected content with **no console
+   `/buckets`, `/cron`, and `/skills` render their expected content with **no console
    errors, no uncaught exceptions, no failed network requests, and no HTTP >=
    400 responses** (measured over CDP events, including polling fetches the
    SPA makes after first paint).
 2. **Document titles**: each route must expose its expected browser tab
    title (`FMCV Agentic`, `Settings - FMCV Agentic`, `Agent - FMCV Agentic`,
-   `Buckets - FMCV Agentic`, `Cron - FMCV Agentic`).
+   `Buckets - FMCV Agentic`, `Cron - FMCV Agentic`, and
+   `Skills - FMCV Agentic`).
 3. **Channel journey**: on `/agent`, the script opens the Channels tab,
    creates a new channel via the modal (with `coder` as creator), posts a
    message, and waits for the auto-reply agent job to reach a terminal state
@@ -111,9 +112,19 @@ Environment overrides:
    server-side afterwards: physical files through the files API and the DB
    rows through psql inside the compose `fmcv-db` container (buckets expose no
    delete endpoint by design — read-only).
-7. **Screenshots**: key screens (home, settings, agent, channel running,
+7. **Skills journey**: on `/skills`, the script creates a skill through
+   the UI (slug-form fixture name, description, markdown instructions) with
+   the **Install now** box checked, verifies the row + Installed pill +
+   success notice, reloads and proves the skill and its installed state
+   persisted, edits description/instructions through the UI (the name field
+   stays immutable), uninstalls (pill flips to Not installed and the record
+   stays listed), reinstalls from the row button, then deletes it with the
+   two-click confirm. Fixtures are removed afterwards via the skills DELETE
+   API (idempotent, verified 404).
+8. **Screenshots**: key screens (home, settings, agent, channel running,
    channel done, sessions picker/connection, files before/after, buckets
-   created/uploaded/downloaded/reloaded) are captured to `e2e/screenshots/`.
+   created/uploaded/downloaded/reloaded, skills created/reload/edited/
+   deleted) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate
 
@@ -144,3 +155,7 @@ Failures print the failing routes/checks and the collected errors in
   final DB cleanup (buckets are read-only by design and expose no delete API);
   if docker is unavailable the sweep and cleanup report an error rather than
   silently leaving fixture rows behind.
+- The skills journey needs no docker: skills expose a full CRUD API, so the
+  fixture is deleted via `DELETE /api/skills/:id` and verified gone; the
+  pre-run stale sweep removes any `browser-e2e-skill-*` leftovers the same
+  way.

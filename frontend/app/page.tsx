@@ -22,6 +22,9 @@ export default function Home() {
           <Link className={styles.primary} href="/cron">
             Open Cron
           </Link>
+          <Link className={styles.primary} href="/skills">
+            Open Skills
+          </Link>
           <Link className={styles.primary} href="/settings">
             Open Settings
           </Link>

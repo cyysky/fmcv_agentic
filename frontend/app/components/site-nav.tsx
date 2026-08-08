@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/files", label: "Files" },
   { href: "/buckets", label: "Buckets" },
   { href: "/cron", label: "Cron" },
+  { href: "/skills", label: "Skills" },
   { href: "/settings", label: "Settings" },
 ];
 
