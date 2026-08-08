@@ -322,9 +322,13 @@ cd e2e && node browser-e2e.mjs
 # REST docs drift guard: every controller route must appear in the README
 # tables and vice versa (zero dependencies; run from the repo root)
 node scripts/verify-rest-docs.mjs
+
+# Test-count drift guard: README Testing suite counts must match the
+# spec files; exact per-test counts are banned from that section
+node scripts/verify-test-counts.mjs
 ```
 
-- **Unit: 181 tests / 14 suites** — model catalog, workspace service + tools,
+- **Unit: 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -372,25 +376,25 @@ node scripts/verify-rest-docs.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 122 tests / 12 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 12 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
-  `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
-  CRUD round-trip, masked key, validation 400s, explicit empty-string clears
+  `test/test-app.ts`: app health, connections CRUD + live
+  probes (CRUD round-trip, masked key, validation 400s, explicit empty-string clears
   the stored key to NULL server-side, model-list normalization/replace/clear,
   malformed model-list 400s, probe OK through a hermetic fake upstream that
   asserts the stored bearer key, 401 reporting, unreachable endpoint graceful
   failure, unknown id 404, draft endpoint success/401/unreachable/validation
   against entered values without persisting a row), agent
-  sessions/turns/rename/auto-title + saved-connection pinning (12: pin
+  sessions/turns/rename/auto-title + saved-connection pinning (pin
   persists on create/converse, attach via converse, stateless turn with the
   connection, explicit catalog-model override via turn/converse, a raw
   provider model id used verbatim and reported back, unknown connection 404
   on create/turn/converse, malformed id 400), channel lifecycle + streaming
-  jobs (12), files manager (13: CRUD round-trip, directory-first ordering,
+  jobs, files manager (CRUD round-trip, directory-first ordering,
   empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
   directory/escape download 400, HTML view served inline with sandboxed
-  text/html headers, non-HTML view 415, directory/empty-path view 400), managed document buckets (18: create a
+  text/html headers, non-HTML view 415, directory/empty-path view 400), managed document buckets (create a
   unique bucket mapped to a project folder, duplicate bucket and invalid
   folder-type / missing-project / unknown-agent 400s, list with document
   counts, get-one with empty documents, unknown bucket 404, PDF upload with
@@ -398,7 +402,7 @@ node scripts/verify-rest-docs.mjs
   list after upload, download bytes + attachment headers, missing document
   404, rename moves the folder on disk, invalid rename 400, rename-to-taken
   409 with the conflict bucket deleted, delete removes folder + rows + 404s),
-  cron jobs (14: create + nextRunAt, duplicate name 409, invalid schedule
+  cron jobs (create + nextRunAt, duplicate name 409, invalid schedule
   400, unknown pinned connection 400, list/get/404, PATCH
   name/schedule/enabled + nextRunAt semantics, empty PATCH 400, run-now
   drives a stubbed agent turn and persists done/error/message/model/
@@ -416,15 +420,20 @@ node scripts/verify-rest-docs.mjs
   owner is the dead holder, and an API-only suite proving
   `CRON_SCHEDULER_ENABLED=false` never acquires a lease or fires a due job
   while manual run-now still works), skills
-  (11: create, duplicate-name 409, invalid-name 400, install-content gate,
+  (create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes
   read_skill, delete, installed skill survives a backend restart), the API
-  token gate (3), and throttling
-  (2: over-limit 429 then window recovery). Deleting a channel stops its running
+  token gate, and throttling
+  (over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
-  cascade-prunes run history. Each suite's count equals its declared tests
-  (verified per file).
+  cascade-prunes run history. Suite counts are enforced by
+  `scripts/verify-test-counts.mjs` (see the drift guard below).
+- **Test-count drift guard** (`scripts/verify-test-counts.mjs`) — zero
+  dependencies; counts the unit spec files under `backend/src` and the
+  API E2E spec files under `backend/test`, then verifies the README
+  Testing section reports exactly those suite counts and carries no
+  exact per-test numbers to drift when a suite grows.
 - **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
   backend: production `src/**/*.ts` runs the strict
   `recommendedTypeChecked` rule set, while test files
