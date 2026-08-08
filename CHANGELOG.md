@@ -1,3 +1,14 @@
+
+## Round 2026-08-08 — autonomous iteration round 55 (tag `round-55`)
+
+### Fixed
+- README REST tables now match the implemented controllers: added the missing
+  `PATCH /api/agent/sessions/:id` (session rename) and
+  `POST /api/channels/:id/jobs/:jobId/stop` (stop a running job) rows,
+  and the cron `PATCH /:id` description now lists `taskType` and
+  `connectionId` alongside the other updatable fields. A fresh
+  route-vs-doc scan of every controller decorator found no remaining
+  drift.
 ## Round 2026-08-08 — autonomous iteration round 54 (tag `round-54`)
 
 ### Changed

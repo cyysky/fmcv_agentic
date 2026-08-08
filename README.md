@@ -142,6 +142,7 @@ Agent:
 | GET    | `/api/agent/sessions`                  | list sessions                               |
 | GET    | `/api/agent/sessions/:id`              | read one session                            |
 | POST   | `/api/agent/sessions/:id/converse`     | append message + run loop (`maxSteps` 1–20, optional `connectionId`) |
+| PATCH  | `/api/agent/sessions/:id`              | rename a session (`title`)                  |
 | DELETE | `/api/agent/sessions/:id`              | drop a session                              |
 | GET    | `/api/agent/models`                    | model catalog for the picker                |
 | GET    | `/api/agent/defaults`                  | provider / default-model info               |
@@ -197,7 +198,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/:id`      | get one job                                               |
-| PATCH  | `/api/cron/:id`      | update any subset (name/schedule/prompt/model/maxSteps/enabled) |
+| PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
 | POST   | `/api/cron/:id/run`  | run the job now, outside its schedule                     |
 
@@ -229,6 +230,7 @@ Channels:
 | POST   | `/api/channels/:id/turn`                      | an agent works in the channel               |
 | POST   | `/api/channels/:id/jobs`                      | start a streaming channel job               |
 | GET    | `/api/channels/:id/jobs/:jobId`               | poll a running job                          |
+| POST   | `/api/channels/:id/jobs/:jobId/stop`          | stop a running job                          |
 | POST   | `/api/channels/:id/jobs/:jobId/interject`     | interject user text into a job              |
 
 Input validation is enforced at the boundary via `class-validator`; unknown
