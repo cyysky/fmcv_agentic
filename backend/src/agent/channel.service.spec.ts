@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ChannelService } from './channel.service';
 
 /** Minimal Prisma double that mimics the calls ChannelService makes. */
@@ -204,5 +204,139 @@ describe('ChannelService', () => {
       'researcher',
     );
     expect(await svc.resolveReplyAgent(d.id, 'plain message')).toBe('coder');
+  });
+
+  it('resolves reply agents only for real members: empty, case, and word edges', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+
+    // A channel with no agent members gets no auto-reply.
+    const lonely = await svc.create({ name: 'lonely' });
+    expect(await svc.resolveReplyAgent(lonely.id, 'any message')).toBeNull();
+
+    // Unknown channel -> 404 before any member logic.
+    await expect(svc.resolveReplyAgent('nope', 'hi')).rejects.toThrow(
+      NotFoundException,
+    );
+
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+    await svc.addMember(d.id, 'researcher');
+
+    // @mention is case-insensitive with a word boundary.
+    expect(await svc.resolveReplyAgent(d.id, 'please look @CODER now')).toBe(
+      'coder',
+    );
+    // A name inside a longer word is NOT a mention -> falls back to first.
+    expect(await svc.resolveReplyAgent(d.id, 'ccoder is the best')).toBe(
+      'coder',
+    );
+  });
+
+  it('postMessage and listMessages round-trip role/author/text/toolCalls', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+
+    const posted = await svc.postMessage(d.id, 'agent', 'coder', 'done', [
+      { name: 'read_file', arguments: '{}' },
+    ]);
+    expect(posted.role).toBe('agent');
+    expect(posted.author).toBe('coder');
+    expect(posted.text).toBe('done');
+    expect(posted.toolCalls).toEqual([{ name: 'read_file', arguments: '{}' }]);
+
+    const listed = await svc.listMessages(d.id);
+    expect(listed.at(-1)).toMatchObject({
+      role: 'agent',
+      author: 'coder',
+      text: 'done',
+    });
+    expect(listed.at(-1)!.toolCalls).toEqual([
+      { name: 'read_file', arguments: '{}' },
+    ]);
+
+    await expect(
+      svc.postMessage('ghost', 'user', 'coder', 'x'),
+    ).rejects.toThrow(NotFoundException);
+    await expect(svc.listMessages('ghost')).rejects.toThrow(NotFoundException);
+  });
+
+  it('get() maps members, messages, and the channel project tree', async () => {
+    const { prisma } = prismaDouble();
+    const ws = workspacesDouble();
+    (ws as any).listProjectContent = jest.fn(async () => ({
+      files: ['note.txt'],
+    }));
+    const svc = new ChannelService(prisma, ws);
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+
+    const detail = await svc.get(d.id);
+    expect(detail.members).toEqual(['coder']);
+    expect(detail.projectTree).toEqual({ files: ['note.txt'] });
+    await expect(svc.get('ghost')).rejects.toThrow(NotFoundException);
+  });
+
+  it('prepareChannelTurn builds the thread with the you/author mapping', async () => {
+    const { prisma } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+    await svc.addMember(d.id, 'researcher');
+
+    // Seed context: a past human request, a system-trace line (kept for
+    // system author), and a prior agent answer with tool calls.
+    await svc.postMessage(d.id, 'user', 'researcher', 'summarize the logs');
+    await svc.postMessage(d.id, 'system', 'system', 'trace note');
+    await svc.postMessage(d.id, 'agent', 'coder', 'checking...', [
+      { name: 'read_file' },
+    ]);
+
+    const prepared = await svc.prepareChannelTurn({
+      channelId: d.id,
+      agentName: 'coder',
+      message: 'continue',
+    });
+    expect(prepared.channel).toEqual({
+      slug: 'team',
+      projectName: 'team',
+    });
+    // The asker's own voice is mapped to "you".
+    expect(prepared.thread).toContain('[researcher] summarize the logs');
+    expect(prepared.thread).toContain('[system] trace note');
+    expect(prepared.thread).toContain('[you] checking...');
+    // The new human request is persisted into the feed.
+    const feed = await svc.listMessages(d.id);
+    expect(feed.at(-1)).toMatchObject({
+      role: 'user',
+      author: 'coder',
+      text: 'continue',
+    });
+  });
+
+  it('prepareChannelTurn skips persisting when the caller already wrote the message', async () => {
+    const { prisma, messages } = prismaDouble();
+    const svc = new ChannelService(prisma, workspacesDouble());
+    const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
+
+    await svc.postMessage(d.id, 'user', 'coder', 'already in the feed');
+    const before = messages.length;
+
+    const prepared = await svc.prepareChannelTurn({
+      channelId: d.id,
+      agentName: 'coder',
+      message: 'already in the feed',
+      persistHuman: false,
+    });
+    expect(messages.length).toBe(before);
+    expect(prepared.thread).toContain('[you] already in the feed');
+
+    // Non-member agents are rejected before any thread is built.
+    await expect(
+      svc.prepareChannelTurn({
+        channelId: d.id,
+        agentName: 'researcher',
+        message: 'sneak in',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(messages.length).toBe(before);
   });
 });
