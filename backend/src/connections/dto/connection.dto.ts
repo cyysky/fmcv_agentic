@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsInt,
   IsNotEmpty,
   IsObject,
@@ -7,6 +9,7 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
   MinLength,
 } from 'class-validator';
@@ -46,6 +49,13 @@ export class CreateConnectionDto {
   @IsObject()
   @IsOptional()
   defaultParameters?: Record<string, unknown>;
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  @IsOptional()
+  models?: string[];
 }
 
 export class TestConnectionDto {
@@ -97,5 +107,12 @@ export class UpdateConnectionDto {
   @IsObject()
   @IsOptional()
   defaultParameters?: Record<string, unknown>;
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(200, { each: true })
+  @IsOptional()
+  models?: string[];
 }
 

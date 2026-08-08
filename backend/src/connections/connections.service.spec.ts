@@ -279,3 +279,57 @@ describe('ConnectionsService apiKey normalization', () => {
     expect(data.apiKey).toBeNull();
   });
 });
+
+describe('ConnectionsService models normalization', () => {
+  function modelsDouble() {
+    return {
+      connection: {
+        findUnique: jest.fn(),
+        create: jest.fn().mockResolvedValue({ ...ROW, models: [] }),
+        findMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+        delete: jest.fn(),
+        update: jest.fn().mockResolvedValue({ ...ROW, models: [] }),
+      },
+    } as never;
+  }
+
+  it('trims, drops blanks, and de-dupes the model list on create', async () => {
+    const prisma = modelsDouble() as unknown as {
+      connection: { create: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    await service.create({
+      displayName: 'list-provider',
+      baseUrl: 'http://127.0.0.1:1/v1',
+      modelName: 'default-model',
+      contextLength: 128000,
+      models: ['  llama-3.1-70b ', '', 'llama-3.1-70b', ' mixtral-8x7b '],
+    });
+
+    const data = prisma.connection.create.mock.calls[0][0].data;
+    expect(data.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
+  });
+
+  it('clears the stored list when update receives an empty array', async () => {
+    const prisma = modelsDouble() as unknown as {
+      connection: { update: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    await service.update('conn-1', { models: [] });
+
+    const data = prisma.connection.update.mock.calls[0][0].data;
+    expect(data.models).toEqual([]);
+  });
+
+  it('omits the models key entirely when the field is not provided', async () => {
+    const prisma = modelsDouble() as unknown as {
+      connection: { update: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+    await service.update('conn-1', { displayName: 'renamed' });
+
+    const data = prisma.connection.update.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty('models');
+  });
+});

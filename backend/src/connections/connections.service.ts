@@ -42,6 +42,7 @@ export class ConnectionsService {
       ...(dto.defaultParameters !== undefined && {
         defaultParameters: dto.defaultParameters as Prisma.InputJsonValue,
       }),
+      ...(dto.models !== undefined && { models: this.normalizeModels(dto.models) }),
     };
     return this.mask(await this.prisma.connection.create({ data }));
   }
@@ -74,6 +75,7 @@ export class ConnectionsService {
     if (dto.apiKey !== undefined) data.apiKey = this.normalizeApiKey(dto.apiKey);
     if (dto.defaultParameters !== undefined)
       data.defaultParameters = dto.defaultParameters as Prisma.InputJsonValue;
+    if (dto.models !== undefined) data.models = this.normalizeModels(dto.models);
 
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('No fields provided to update');
@@ -195,6 +197,14 @@ export class ConnectionsService {
   /** Empty-string apiKey means "no key": store NULL, never an empty string. */
   private normalizeApiKey(apiKey: string): string | null {
     return apiKey === '' ? null : apiKey;
+  }
+
+  /** Trim, drop blanks, and de-dupe the provider model list so the picker
+   *  never shows empty labels or repeated entries. Empty array clears. */
+  private normalizeModels(models: string[]): string[] {
+    return [...new Set(
+      models.map((m) => m.trim()).filter((m) => m.length > 0),
+    )];
   }
 
   /** Mask the API key so secrets are not returned to the client. */

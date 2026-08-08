@@ -683,6 +683,11 @@ async function agentSessionsFlow() {
     flow.fixtureLive = true;
     const connModel = process.env.E2E_CONN_MODEL || "ds4-flash";
     const connName = `e2e-session-${Date.now().toString(36)}`;
+    // A provider-specific model id that is NOT in the built-in catalog; it
+    // must only appear in the picker after the connection row (with its
+    // `models` list) is selected.
+    const connListModel = `e2e-conn-list-${Date.now().toString(36)}`;
+    flow.fixtureModels = [connListModel];
     const createdConn = await fetch(`${API}/connections`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -692,6 +697,7 @@ async function agentSessionsFlow() {
         modelName: connModel,
         contextLength: 128000,
         apiKey: connKey,
+        models: flow.fixtureModels,
       }),
     });
     if (!createdConn.ok) {
@@ -945,6 +951,19 @@ async function agentSessionsFlow() {
       "connection fixture option",
     );
     if (!fixtureOption) throw new Error("sessions flow: fixture connection not listed in picker");
+    // The connection-provided model must NOT be a catalog option — it has to
+    // come from the fixture row's `models` list once the connection is picked.
+    const connListHiddenBeforeSelect = await waitFor(
+      c,
+      `![...document.querySelectorAll('select[class*="modelSelect"]')[0]?.options ?? []].some((o) => o.value === ${JSON.stringify(connListModel)})`,
+      10000,
+      400,
+      "connection model list hidden pre-selection",
+    );
+    flow.connListNotCatalog = !!connListHiddenBeforeSelect;
+    if (!connListHiddenBeforeSelect) {
+      throw new Error("sessions flow: connection-provided model leaked into the default catalog picker");
+    }
     await screenshot(c, "agent-sessions-picker.png");
 
     // Capture the outgoing converse request so the wiring can be asserted:
@@ -1085,6 +1104,117 @@ async function agentSessionsFlow() {
       throw new Error(`sessions flow: catalog model sent alongside connectionId (${JSON.stringify(post.body)})`);
     }
     flow.steps.push("connection-request-verified");
+
+    // 5b. A connection-provided model is first-class in the picker: the
+    // fixture row's `models` list must render as options, and picking one
+    // uses the SAME override semantics as a catalog model — `model` +
+    // `connectionId` on the wire, the connection's bearer key at the fake
+    // upstream, and a reply rendered from the upstream.
+    const connListModelVisible = await waitFor(
+      c,
+      `[...document.querySelectorAll('select[class*="modelSelect"]')[0]?.options ?? []].some((o) => o.value === ${JSON.stringify(connListModel)})`,
+      10000,
+      400,
+      "connection model list options",
+    );
+    flow.connListOptionSeen = !!connListModelVisible;
+    if (!connListModelVisible) {
+      const opts = await evalJs(c, `[...document.querySelectorAll('select[class*="modelSelect"]')[0].options].map((o) => o.value).join(",")`);
+      throw new Error(`sessions flow: connection model list not in picker (options=${JSON.stringify(opts)})`);
+    }
+    const connListMsg = `Via connection model list (${Date.now().toString(36)})`;
+    flow.connListMessage = connListMsg;
+    const connListPicked = await evalJs(c, `(() => {
+      const modelSel = document.querySelectorAll('select[class*="modelSelect"]')[0];
+      const opt = [...modelSel.options].find((o) => o.value === ${JSON.stringify(connListModel)});
+      if (!opt) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(modelSel, opt.value);
+      modelSel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    if (!connListPicked) throw new Error("sessions flow: connection model list option missing/disabled");
+    const connListActive = await waitFor(
+      c,
+      `document.querySelectorAll('select[class*="modelSelect"]')[0]?.value === ${JSON.stringify(connListModel)}`,
+      10000,
+      300,
+      "connection model list selection",
+    );
+    if (!connListActive) throw new Error("sessions flow: connection model list selection did not stick");
+    flow.steps.push("conn-list-model-selected");
+    await evalJs(c, jsSetInput('textarea[placeholder*="Message this session"]', connListMsg));
+    const connListBubblesBefore = await evalJs(c, `document.querySelectorAll('[class*="bubbleAgent"]').length`);
+    const connListSubmitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!connListSubmitted) throw new Error("sessions flow: conn-list submit not enabled");
+    flow.timings.connListSentAt = new Date().toISOString();
+    const connListAnswered = await waitFor(
+      c,
+      `(() => {
+        const els = [...document.querySelectorAll('[class*="bubbleAgent"]')];
+        return els.length > ${JSON.stringify(connListBubblesBefore)} &&
+          els.slice(${JSON.stringify(connListBubblesBefore)}).some((el) => el.innerText.trim().length > 0 && !el.innerText.includes("Typing"));
+      })()`,
+      180000,
+      800,
+      "connection-list reply",
+    );
+    flow.timings.connListFinishedAt = new Date().toISOString();
+    if (!connListAnswered) throw new Error("sessions flow: no reply from connection-list turn");
+    const connListThread = await evalJs(c, `document.querySelector('[class*="thread"]')?.innerText ?? "NO THREAD"`);
+    const connListHit = upstream.received.slice().reverse().find(
+      (r) =>
+        r.method === "POST" &&
+        (r.url ?? "").endsWith("/chat/completions") &&
+        r.body?.messages?.some((m) => m.content === connListMsg),
+    );
+    flow.connListUpstreamHit = !!connListHit;
+    flow.connListUpstreamModel = connListHit?.body?.model ?? null;
+    flow.connListUpstreamAuthOk = connListHit?.authorization === `Bearer ${connKey}`;
+    flow.connListReplySeen = !!connListHit && connListThread.includes("Connection fixture reply OK");
+    if (!connListHit) {
+      throw new Error("sessions flow: connection-list turn never reached the connection's upstream");
+    }
+    if (flow.connListUpstreamModel !== connListModel) {
+      throw new Error(`sessions flow: wrong connection-list model at upstream (${JSON.stringify(flow.connListUpstreamModel)})`);
+    }
+    if (!flow.connListUpstreamAuthOk) {
+      throw new Error("sessions flow: connection-list turn lost the connection's API key");
+    }
+    if (!flow.connListReplySeen) {
+      throw new Error("sessions flow: connection-list reply not from the connection's upstream");
+    }
+    const connListPost = conversePosts.find(
+      (p) => p.body && p.body.connectionId === flow.fixtureId && p.body.model === connListModel,
+    );
+    flow.connListModelSentOnConverse = !!connListPost;
+    if (!connListPost) {
+      throw new Error(`sessions flow: converse missing connection-list model+connectionId (posts=${JSON.stringify(conversePosts)})`);
+    }
+    flow.steps.push("conn-list-request-verified");
+    // Reset to the connection default so the catalog-override step below
+    // starts from the same baseline it always has.
+    await evalJs(c, `(() => {
+      const modelSel = document.querySelectorAll('select[class*="modelSelect"]')[0];
+      if (!modelSel) return false;
+      Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set.call(modelSel, "");
+      modelSel.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    const connListReset = await waitFor(
+      c,
+      `document.querySelectorAll('select[class*="modelSelect"]')[0]?.value === ""`,
+      10000,
+      300,
+      "connection-list model reset to default",
+    );
+    if (!connListReset) throw new Error("sessions flow: model picker did not reset after connection-list turn");
+    flow.steps.push("conn-list-reset-to-default");
 
     // 5a. A catalog model override must stay on the SAME connection: pick a
     // catalog model while the fixture connection is active and prove the
@@ -1249,6 +1379,14 @@ async function agentSessionsFlow() {
       serverPinnedConnection: flow.serverPinnedConnection,
       fixtureLive: flow.fixtureLive,
       fixtureModel: flow.fixtureModel,
+      connListNotCatalog: flow.connListNotCatalog,
+      connListOptionSeen: flow.connListOptionSeen,
+      connListModel: connListModel,
+      connListModelSentOnConverse: flow.connListModelSentOnConverse,
+      connListUpstreamHit: flow.connListUpstreamHit,
+      connListUpstreamModel: flow.connListUpstreamModel,
+      connListUpstreamAuthOk: flow.connListUpstreamAuthOk,
+      connListReplySeen: flow.connListReplySeen,
       connectionReplySeen: flow.connectionReplySeen,
       connectionReplyError: flow.connectionReplyError,
       upstreamHit: flow.upstreamHit,
@@ -2271,6 +2409,13 @@ async function main() {
     sfr.connectionNoteShown &&
     sfr.connectionIdSent &&
     sfr.modelOmittedFromConverse &&
+    sfr.connListNotCatalog &&
+    sfr.connListOptionSeen &&
+    sfr.connListModelSentOnConverse &&
+    sfr.connListUpstreamHit &&
+    sfr.connListUpstreamAuthOk &&
+    sfr.connListReplySeen &&
+    sfr.connListUpstreamModel === sfr.connListModel &&
     sfr.badgeShown &&
     sfr.serverPinnedConnection &&
     sfr.overrideModelSentOnConverse &&

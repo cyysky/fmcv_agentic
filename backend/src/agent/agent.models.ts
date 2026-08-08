@@ -97,3 +97,12 @@ export function fallbackFor(spec: ModelSpec): ModelSpec | null {
   if (spec.is_fallback) return null;
   return MODEL_CATALOG.find((m) => m.is_fallback) ?? null;
 }
+
+/** Resolve the wire model for an explicit per-turn override. Catalog ids map
+ *  to their `provider_model`; any other id (e.g. from a saved connection's
+ *  `models` list) is a raw provider model and is used verbatim — it must not
+ *  fall back to the catalog default. */
+export function resolveWireModel(model: string): string {
+  const hit = MODEL_CATALOG.find((m) => m.id === model);
+  return hit ? hit.provider_model : model;
+}

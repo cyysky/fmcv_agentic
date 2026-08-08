@@ -283,6 +283,16 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       expect(overrideTurn.body.answer).toMatch(/^\[stub\] /);
       expect(overrideTurn.body.model).toBe('qwen3.6-35b');
 
+      // A provider-specific model id from the connection's `models` list is
+      // NOT a catalog id: it is used verbatim on the wire (no catalog
+      // fallback), and the turn reports it back.
+      const rawOverrideTurn = await http()
+        .post('/api/agent/turn')
+        .send({ message: 'ping raw', connectionId: connId, model: 'custom-provider-model-a' })
+        .expect(201);
+      expect(rawOverrideTurn.body.answer).toMatch(/^\[stub\] /);
+      expect(rawOverrideTurn.body.model).toBe('custom-provider-model-a');
+
       // Unknown connection ids are 404s everywhere.
       const missing = '00000000-0000-4000-8000-000000000000';
       await http()

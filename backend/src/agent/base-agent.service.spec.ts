@@ -435,6 +435,48 @@ describe('BaseAgentService connections', () => {
     }
   });
 
+  it('uses a connection-provided (non-catalog) model verbatim on the wire', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-list-model-'));
+    try {
+      const fake = withConn();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'list model answered',
+        tool_calls: undefined,
+      }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      // A raw provider id from the connection's `models` list is not in the
+      // catalog: it must reach the upstream verbatim (never the catalog
+      // fallback) while baseUrl/key/params still come from the connection.
+      const rawModel = 'custom-provider-model-a';
+      const turn = await agent.runTurn({
+        message: 'hi',
+        connectionId: CONN_ID,
+        model: rawModel,
+      });
+      expect(turn.model).toBe(rawModel);
+      expect(calls.mock.calls[0][3]).toEqual({
+        baseUrl: 'http://ollama.test/v1',
+        model: rawModel,
+        apiKey: 'secret-key',
+        defaultParameters: { temperature: 0.7, top_p: 0.5 },
+      });
+
+      // Same on a pinned session: the explicit raw id wins on the wire and is
+      // stored verbatim on the session (not the resolved catalog default).
+      const s = await agent.createSession('list chat', undefined, CONN_ID);
+      await agent.converse(s.id, 'hello', rawModel);
+      expect(calls.mock.calls[1][3]).toEqual(
+        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: rawModel }),
+      );
+      expect(agent.getSession(s.id).model).toBe(rawModel);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('self-heals a session whose pinned connection was deleted (falls back to default)', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-gone-'));
     try {

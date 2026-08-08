@@ -57,21 +57,24 @@ Environment overrides:
    the UI, and reopens it to prove history + title persisted. It then starts
    a hermetic fake OpenAI-compatible upstream on an ephemeral port, creates a
    fixture Connection via the API (base URL pointing at that upstream, with a
-   stored model + bearer key), selects it in the header picker, and proves
-   the saved connection drives the chat: the model picker defers to the
-   connection's model, the wire converse POST carries `connectionId` with no
-   `model` key, the upstream sees `POST /chat/completions` with the
-   connection's model and `Bearer <stored key>`, its reply renders in the
-   thread, the sidebar badges the pinned session, and GET sessions shows the
-   server-side `connectionId`. With the connection still active it then
-   picks a catalog model and proves the override path: the wire POST carries
-   both `connectionId` and `model`, the same upstream receives the override
-   model with the fixture's bearer key, and the override model is persisted
-   server-side (`E2E_CONN_OVERRIDE_MODEL` controls which catalog model is
-   picked and must differ from `E2E_CONN_MODEL`). Finally it restores the
-   default gateway, deletes the fixture Connection + upstream, and asserts
-   cleanup (`E2E_CONN_HOST` / `E2E_CONN_MODEL` override the fixture
-   endpoint/model).
+   stored model, a bearer key, and a `models` list containing one
+   non-catalog id), selects it in the header picker, and proves the saved
+   connection drives the chat: the model picker defers to the connection's
+   model, the wire converse POST carries `connectionId` with no `model` key,
+   the upstream sees `POST /chat/completions` with the connection's model and
+   `Bearer <stored key>`, its reply renders in the thread, the sidebar badges
+   the pinned session, and GET sessions shows the server-side `connectionId`.
+   With the connection still active it then proves the **connection-model
+   path**: the non-catalog id is absent from the default-gateway picker,
+   appears as an option after the connection is selected, and picking it
+   sends `connectionId` + `model` on the wire with the raw id arriving at the
+   upstream with the fixture's bearer key (no catalog fallback). Next it
+   picks a catalog model and proves the same override path
+   (`E2E_CONN_OVERRIDE_MODEL` controls which catalog model is picked and must
+   differ from `E2E_CONN_MODEL`); the override model is persisted
+   server-side. Finally it restores the default gateway, deletes the fixture
+   Connection + upstream, and asserts cleanup (`E2E_CONN_HOST` /
+   `E2E_CONN_MODEL` override the fixture endpoint/model).
 5. **Files journey**: on `/files`, the script creates a nested file and a
    dotfile through the UI (agent scope), verifies the root listing shows both,
    navigates into the folder, reads the file content back, deletes the file +

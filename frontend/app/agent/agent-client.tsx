@@ -18,6 +18,7 @@ interface ConnectionOption {
   baseUrl: string;
   modelName: string;
   contextLength: number;
+  models?: string[];
 }
 
 interface ToolTraceStep {
@@ -1104,11 +1105,24 @@ export default function AgentPage() {
             {selectedConn ? (
               <>
                 <option value="">{selectedConn.modelName} (connection default)</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label}
-                  </option>
-                ))}
+                {(selectedConn.models ?? [])
+                  .filter((m) => m !== selectedConn.modelName)
+                  .map((m) => (
+                    <option key={m} value={m}>
+                      {m} (connection)
+                    </option>
+                  ))}
+                {models
+                  .filter(
+                    (m) =>
+                      m.id !== selectedConn.modelName &&
+                      !(selectedConn.models ?? []).includes(m.id),
+                  )
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
               </>
             ) : models.length === 0 ? (
               <option value="">Loading models…</option>

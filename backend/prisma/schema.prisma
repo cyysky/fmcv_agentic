@@ -15,6 +15,7 @@ model Connection {
   concurrentConnections Int     @default(10)
   apiKey               String?
   defaultParameters    Json?
+  models               String[] @default([])
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

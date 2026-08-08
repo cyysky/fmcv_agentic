@@ -22,6 +22,7 @@ interface Connection {
   concurrentConnections: number;
   apiKey?: string;
   defaultParameters?: Record<string, unknown> | null;
+  models?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -50,6 +51,7 @@ const EMPTY_FORM = {
   concurrentConnections: "",
   apiKey: "",
   defaultParameters: "",
+  models: "",
 };
 
 export default function SettingsPage() {
@@ -135,6 +137,13 @@ export default function SettingsPage() {
       if (form.concurrentConnections !== "") {
         payload.concurrentConnections = Number(form.concurrentConnections);
       }
+      // Provider model list: one id per line; blank lines are ignored. The
+      // list is sent on both create and update so clearing all lines clears
+      // the stored list (there's no secret here, unlike apiKey).
+      payload.models = form.models
+        .split("\n")
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0);
       // Credential (API key): send only when provided so editing doesn't
       // wipe it — unless the user explicitly asks to clear the stored key.
       if (clearKey) {
@@ -228,6 +237,7 @@ export default function SettingsPage() {
       defaultParameters: conn.defaultParameters
         ? JSON.stringify(conn.defaultParameters, null, 2)
         : "",
+      models: (conn.models ?? []).join("\n"),
     });
     setError(null);
     setMessage(null);
@@ -373,6 +383,24 @@ export default function SettingsPage() {
             placeholder="e.g. gpt-4o"
             required
           />
+        </label>
+
+        <label className={styles.field}>
+          <span>Models (one per line, optional)</span>
+          <textarea
+            name="models"
+            value={form.models}
+            onChange={handleChange}
+            placeholder={"gpt-4o\nllama-3.1-70b\nmixtral-8x7b"}
+            rows={4}
+            className={styles.textarea}
+          />
+          <span className={styles.hint}>
+            Extra model ids this provider exposes. They appear in the agent
+            model picker whenever this connection is selected, so non-catalog
+            providers are first-class (the connection default stays the model
+            name above).
+          </span>
         </label>
 
         <div className={styles.field}>

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel } from './agent.models';
+import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel, resolveWireModel } from './agent.models';
 import { WorkspaceService } from './workspace.service';
 import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
@@ -369,7 +369,9 @@ export class BaseAgentService implements OnModuleInit {
     // that lost their connection can self-heal, but a fresh turn cannot.
     const endpoint = await this.resolveConnectionEndpoint(opts.connectionId, false);
     const wireEndpoint =
-      endpoint && modelOverride ? { ...endpoint, model: spec.provider_model } : endpoint;
+      endpoint && modelOverride
+        ? { ...endpoint, model: resolveWireModel(opts.model as string) }
+        : endpoint;
     const messages: ChatMessage[] = [
       { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
       ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
@@ -414,8 +416,13 @@ export class BaseAgentService implements OnModuleInit {
     // modelName on the wire for this turn (per-call choice; without one the
     // connection's modelName is used).
     const wireEndpoint =
-      endpoint && explicitModel ? { ...endpoint, model: spec.provider_model } : endpoint;
-    session.model = spec.id;
+      endpoint && explicitModel
+        ? { ...endpoint, model: resolveWireModel(model as string) }
+        : endpoint;
+    // Store the explicit id verbatim (a catalog id or a raw provider model
+    // from the connection's list) so reopening the session sees the same
+    // model the user picked; without an explicit model keep the resolved id.
+    session.model = model ?? spec.id;
     const userMsgCount = session.messages.filter((m) => m.role === 'user').length;
     session.messages.push({ role: 'user', content: message });
     // Auto-title: the first user message names a default-titled session, so

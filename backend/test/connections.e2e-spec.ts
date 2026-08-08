@@ -133,6 +133,60 @@ describe('Connections API (e2e, real Postgres)', () => {
     await http().delete(`/api/connections/${created.body.id}`).expect(200);
   });
 
+  it('stores a normalized per-connection model list and lets edits replace or clear it', async () => {
+    const created = await http()
+      .post('/api/connections')
+      .send({
+        ...payload,
+        displayName: `e2e-models-${Date.now().toString(36)}`,
+        models: [' llama-3.1-70b ', '', 'llama-3.1-70b', 'mixtral-8x7b'],
+      })
+      .expect(201);
+    try {
+      // Normalization: whitespace trimmed, blanks dropped, duplicates removed.
+      expect(created.body.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
+
+      const listed = await http().get('/api/connections').expect(200);
+      const row = listed.body.find((c: { id: string }) => c.id === created.body.id);
+      expect(row.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
+
+      // PATCH replaces the whole list.
+      const replaced = await http()
+        .patch(`/api/connections/${created.body.id}`)
+        .send({ models: ['gpt-4o'] })
+        .expect(200);
+      expect(replaced.body.models).toEqual(['gpt-4o']);
+
+      // An empty array clears it (the Settings textarea sends [] when blank).
+      const cleared = await http()
+        .patch(`/api/connections/${created.body.id}`)
+        .send({ models: [] })
+        .expect(200);
+      expect(cleared.body.models).toEqual([]);
+    } finally {
+      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+    }
+  });
+
+  it('rejects malformed model lists', async () => {
+    const created = await http().post('/api/connections').send(payload).expect(201);
+    try {
+      const notArray = await http()
+        .patch(`/api/connections/${created.body.id}`)
+        .send({ models: 'llama-3' })
+        .expect(400);
+      expect(JSON.stringify(notArray.body.message)).toContain('models');
+
+      const notStrings = await http()
+        .patch(`/api/connections/${created.body.id}`)
+        .send({ models: ['ok', 42] })
+        .expect(400);
+      expect(JSON.stringify(notStrings.body.message)).toContain('models');
+    } finally {
+      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+    }
+  });
+
   describe('connection test endpoint', () => {
     async function cleanup(id?: string) {
       if (id) {
