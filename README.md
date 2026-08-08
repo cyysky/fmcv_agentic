@@ -104,7 +104,9 @@ and coordinate multi-agent teams in Slack-style channels.
   (History button: status, time, model, duration, message; newest first;
   an open history list auto-refreshes every 5 s and right after a manual
   run returns; histories deeper than 20 runs page through the API's
-  limit/offset pagination with Newer/Older buttons keeping the current page).
+  limit/offset pagination with Newer/Older buttons keeping the current page,
+  plus a one-click **Jump to newest** that returns to page 0 from any
+  deeper page).
   The page also shows a cluster overview panel with every
   scheduler lease group, the recent lease transition history
   (acquired/lost, previous owner, timestamp — so multi-replica failover is
@@ -112,6 +114,10 @@ and coordinate multi-agent teams in Slack-style channels.
   one lease group has transition history, the Transitions line gains
   All/group filter buttons so events stay scoped to a single group
   (the API's `?group=` filter keeps the 5 s refresh scoped too).
+  Filter chips carry each group's total transition count and the Transitions
+  line labels the newest-N-of-M window it shows (for example "newest 1 of 1"
+  for a fresh group), so a group's full history size stays visible even when
+  the overview only surfaces the newest 10 transitions.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, message, model,
@@ -221,7 +227,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
-| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group and the payload lists `eventGroups` for the filter UI |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs); optional `group=` filters the events to one lease group and the payload lists `eventGroups` plus per-group totals in `eventStats` for the filter UI |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -329,7 +335,7 @@ node scripts/verify-rest-docs.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 115 tests / 11 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 118 tests / 11 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -453,10 +459,14 @@ node scripts/verify-rest-docs.mjs
   the open list (auto-refresh), seeds 21 synthetic terminal runs server-side
   to prove histories deeper than one page work: reopen History, assert 20
   rows on page 1 with an Older button, page to the final 3-row page and back
-  with Newer, asserts the cluster overview panel shows an
+  with Newer, return to the last page and jump to newest in one click
+  (page 0, 20 rows, Older still available), asserts the cluster overview
+  panel shows an
   active lease group plus the job's run in the throughput stats, seeds a
   synthetic second-group transition event and proves the Transitions
-  All/group filter narrows the list to that group and back to all, then
+  All/group filter narrows the list to that group and back to all, checks
+  the filter chips report each group's transition total and the window label
+  reads "newest 1 of 1" for the synthetic group, then
   collapses the history,
   renames the job, pauses it (`Paused` + `Next run: paused`), resumes it, and
   deletes it with the two-click confirm (fixture removed server-side

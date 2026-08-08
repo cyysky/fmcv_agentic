@@ -507,8 +507,8 @@ describe('CronService', () => {
       },
     ]);
     prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
-      { schedulerGroup: 'default' },
-      { schedulerGroup: 'e2e' },
+      { schedulerGroup: 'default', _count: { _all: 4 } },
+      { schedulerGroup: 'e2e', _count: { _all: 1 } },
     ]);
     const overview = await service.overview();
     expect(overview.leases).toEqual([
@@ -544,6 +544,10 @@ describe('CronService', () => {
       },
     ]);
     expect(overview.eventGroups).toEqual(['default', 'e2e']);
+    expect(overview.eventStats).toEqual([
+      { group: 'default', total: 4 },
+      { group: 'e2e', total: 1 },
+    ]);
     expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -553,6 +557,7 @@ describe('CronService', () => {
     expect(prisma.cronSchedulerEvent.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
         by: ['schedulerGroup'],
+        _count: { _all: true },
         orderBy: { schedulerGroup: 'asc' },
       }),
     );
@@ -575,12 +580,16 @@ describe('CronService', () => {
   it('filters overview transition events per lease group', async () => {
     const { service, prisma } = makeSvc();
     prisma.cronSchedulerEvent.groupBy.mockResolvedValue([
-      { schedulerGroup: 'default' },
-      { schedulerGroup: 'e2e' },
+      { schedulerGroup: 'default', _count: { _all: 4 } },
+      { schedulerGroup: 'e2e', _count: { _all: 2 } },
     ]);
     const overview = await service.overview('e2e');
     expect(overview.events).toEqual([]);
     expect(overview.eventGroups).toEqual(['default', 'e2e']);
+    expect(overview.eventStats).toEqual([
+      { group: 'default', total: 4 },
+      { group: 'e2e', total: 2 },
+    ]);
     expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { schedulerGroup: 'e2e' },

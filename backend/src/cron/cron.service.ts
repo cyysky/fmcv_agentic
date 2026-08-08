@@ -81,6 +81,14 @@ export interface CronOverviewEvent {
   createdAt: string;
 }
 
+/** Total recorded transitions for one lease group, so the per-group event
+ *  window (newest OVERVIEW_RECENT_EVENTS) is understandable next to the
+ *  group's full history (Round 74). */
+export interface CronOverviewEventStat {
+  group: string;
+  total: number;
+}
+
 /** Cluster-wide scheduler observability payload (Round 69). */
 export interface CronOverview {
   now: string;
@@ -89,6 +97,9 @@ export interface CronOverview {
   /** Lease groups that have transition history, for per-group filtering
    *  (Round 73). */
   eventGroups: string[];
+  /** Per-group transition totals, so the UI can say "showing newest N of
+   *  M transitions" and label filter chips with their history size (Round 74). */
+  eventStats: CronOverviewEventStat[];
   runs: {
     total: number;
     lastHour: number;
@@ -604,7 +615,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * last hour, status breakdown, busiest jobs) across all jobs, so
    * multi-replica ownership and run volume are visible in one call. Round 71
    * adds recent lease transition events so failover history (acquired/lost,
-   * previous owner, timestamp) is visible alongside current ownership.
+   * previous owner, timestamp) is visible alongside current ownership. Round 74
+   * adds per-group transition totals (eventStats) so the newest-10 window can
+   * be labeled against each group's full history.
    */
   async overview(group?: string): Promise<CronOverview> {
     const now = new Date();
@@ -621,6 +634,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         }),
         this.prisma.cronSchedulerEvent.groupBy({
           by: ['schedulerGroup'],
+          _count: { _all: true },
           orderBy: { schedulerGroup: 'asc' },
         }),
         this.prisma.cronRun.count(),
@@ -666,6 +680,10 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         createdAt: event.createdAt.toISOString(),
       })),
       eventGroups: eventGroups.map((row) => row.schedulerGroup),
+      eventStats: eventGroups.map((row) => ({
+        group: row.schedulerGroup,
+        total: row._count._all,
+      })),
       runs: {
         total,
         lastHour,

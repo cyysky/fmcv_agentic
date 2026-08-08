@@ -50,6 +50,7 @@ interface CronOverviewRow {
     createdAt: string;
   }>;
   eventGroups: string[];
+  eventStats: Array<{ group: string; total: number }>;
   runs: {
     total: number;
     lastHour: number;
@@ -325,6 +326,15 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     expect(Array.isArray(overview.events)).toBe(true);
     // Round 73: per-group event history is advertised for filtering.
     expect(overview.eventGroups).toEqual(expect.arrayContaining(['default']));
+    // Round 74: per-group transition totals match the advertised groups.
+    expect(overview.eventStats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          group: 'default',
+          total: expect.any(Number),
+        }),
+      ]),
+    );
     // The job behind this suite has three terminal runs at this point.
     expect(overview.runs.total).toBeGreaterThanOrEqual(3);
     expect(overview.runs.lastHour).toBeGreaterThanOrEqual(3);
@@ -347,6 +357,7 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     );
     expect(filtered.events.every((evt) => evt.group === group)).toBe(true);
     expect(filtered.eventGroups).toEqual(all.eventGroups);
+    expect(filtered.eventStats).toEqual(all.eventStats);
     const none = json<CronOverviewRow>(
       await http()
         .get('/api/cron/overview?group=no-such-group-e2e')

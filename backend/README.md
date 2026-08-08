@@ -21,7 +21,11 @@ npm run test:e2e           # API E2E: needs PostgreSQL (docker compose up -d db)
 
 E2E suites live in `test/`; `test/e2e-setup.ts` points `AGENT_WORKSPACE_ROOT`
 at a temp directory before the app module loads, and `test/jest-e2e.json`
-holds the config (30s timeout).
+holds the config (30s timeout, `maxWorkers: 1`). The suites share one real
+Postgres, and the cron scheduler's boot-time "interrupted by restart" sweep
+marks any `running` row error cluster-wide, so running the suites in
+parallel lets one suite's app boot clobber another suite's in-flight job;
+serial execution keeps the suite deterministic.
 
 ## Layout
 

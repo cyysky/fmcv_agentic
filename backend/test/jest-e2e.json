@@ -13,5 +13,6 @@
   "setupFiles": [
     "<rootDir>/e2e-setup.ts"
   ],
+  "maxWorkers": 1,
   "testTimeout": 30000
 }

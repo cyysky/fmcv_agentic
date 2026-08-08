@@ -3084,6 +3084,66 @@ async function cronFlow() {
     flow.steps.push("history-paging");
     await screenshot(c, "cron-history-paging.png");
 
+    // 2di. Jump to newest (Round 74): from the oldest 3-row page the pager
+    //      offers a one-click return to page 0 instead of clicking Newer
+    //      back through many pages; assert the jump lands on page 0 with
+    //      the second page still discoverable via Older.
+    const olderAgainClicked = await evalJs(c, rowBtnExpr(jobName, "Older"));
+    if (!olderAgainClicked) throw new Error("cron flow: Older pager button missing for jump");
+    const olderAgainPage = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return page === "1" && hasMore === "0" &&
+          box.querySelector('[data-jump-newest]') !== null
+          ? "last-page"
+          : null;
+      })()`,
+      15000,
+      500,
+      "deep-history last page for jump",
+    );
+    if (olderAgainPage !== "last-page") {
+      throw new Error("cron flow: last page did not offer Jump to newest");
+    }
+    const jumpClicked = await evalJs(
+      c,
+      `(() => {
+        const b = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"] [data-jump-newest]`)});
+        if (!b) return null;
+        b.click();
+        return true;
+      })()`,
+    );
+    if (!jumpClicked) throw new Error("cron flow: Jump to newest button missing");
+    const jumpedPage = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${flow.jobId}"]`)});
+        if (!box) return null;
+        const rows = box.querySelectorAll('[class*="runRow"]').length;
+        const page = box.getAttribute("data-runs-page");
+        const hasMore = box.getAttribute("data-runs-has-more");
+        return rows === 20 && page === "0" && hasMore === "1" &&
+          box.querySelector('[data-jump-newest]') === null &&
+          box.innerText.includes("Page 1")
+          ? "jumped"
+          : null;
+      })()`,
+      15000,
+      500,
+      "jump to newest",
+    );
+    if (jumpedPage !== "jumped") {
+      throw new Error("cron flow: Jump to newest did not land on page 0");
+    }
+    flow.historyJumpToNewest = true;
+    flow.steps.push("history-jump-to-newest");
+    await screenshot(c, "cron-history-jump-to-newest.png");
+
     const hideAgainClicked = await evalJs(c, rowBtnExpr(jobName, "Hide history"));
     if (!hideAgainClicked) throw new Error("cron flow: Hide history button missing after paging");
     const runsHiddenAgain = await waitFor(
@@ -3191,7 +3251,7 @@ async function cronFlow() {
       "event group filter",
     );
     if (!filterSeen) throw new Error("cron flow: event group filter never appeared");
-    const groupClicked = await evalJs(
+    const groupClicked = await waitFor(
       c,
       `(() => {
         const b = document.querySelector(${JSON.stringify(
@@ -3201,6 +3261,9 @@ async function cronFlow() {
         b.click();
         return true;
       })()`,
+      15000,
+      500,
+      "event group chip click",
     );
     if (!groupClicked) throw new Error("cron flow: event group button missing");
     const filteredTransitions = await waitFor(
@@ -3221,6 +3284,57 @@ async function cronFlow() {
     if (filteredTransitions !== "filtered") {
       throw new Error("cron flow: event group filter did not narrow transitions");
     }
+
+    // 2fii. Per-group event window clarity (Round 74): the filter chips carry
+    //       each group's total transition count and the Transitions line
+    //       labels the newest-N-of-M window, so a group with history but no
+    //       events on the All-view page is self-explanatory. With only the
+    //       synthetic event, the e2e group must show "newest 1 of 1".
+    const windowClarityExpr = `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const win = box.querySelector('[data-event-window]');
+        const chip = box.querySelector(
+          '[data-testid="overview-event-filter"] [data-event-group="${syncEventGroup}"]',
+        );
+        if (!win || !chip) return null;
+        const chipTotal = Number(chip.getAttribute("data-event-total"));
+        const [shown, total] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
+        const label = win.innerText;
+        return chipTotal === 1 && shown === 1 && total === 1 &&
+          label.includes("newest 1 of 1") &&
+          label.includes(" for " + ${JSON.stringify(syncEventGroup)})
+          ? "window-clarity"
+          : null;
+      })()`;
+    const windowClarity = await waitFor(
+      c,
+      windowClarityExpr,
+      15000,
+      500,
+      "per-group event window clarity",
+    );
+    if (windowClarity !== "window-clarity") {
+      const diag = await evalJs(
+        c,
+        `(() => {
+          const box = document.querySelector('[data-testid="cron-overview"]');
+          const win = box?.querySelector('[data-event-window]');
+          const chips = [...(box?.querySelectorAll(
+            '[data-testid="overview-event-filter"] [data-event-group]') || [])]
+            .map((b) => b.getAttribute("data-event-group") + ":" + b.getAttribute("data-event-total") + ":" + b.getAttribute("aria-pressed"));
+          return JSON.stringify({
+            transitionsText: box?.innerText || null,
+            winAttr: win?.getAttribute("data-event-window") || null,
+            winText: win?.innerText || null,
+            chips,
+          });
+        })()`,
+      );
+      log("  window-clarity DOM diagnostic:", diag);
+      throw new Error("cron flow: per-group event window count/label incorrect");
+    }
+    flow.eventWindowClarity = true;
     const allClicked = await evalJs(
       c,
       `(() => {
@@ -3250,6 +3364,31 @@ async function cronFlow() {
     );
     if (allTransitions !== "all") {
       throw new Error("cron flow: All filter did not restore both groups");
+    }
+
+    // Round 74: after All restores, the window label must stay coherent —
+    // "newest {shown} of {total}" with the All chip carrying the same total.
+    const allWindow = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const allChip = box.querySelector('[data-event-group="all"]');
+        const win = box.querySelector('[data-event-window]');
+        if (!allChip || !win) return null;
+        const total = Number(allChip.getAttribute("data-event-total"));
+        const [shown, totalAgain] = (win.getAttribute("data-event-window") || ":").split(":").map(Number);
+        return total >= 2 && shown >= 1 && shown <= 10 && totalAgain === total &&
+          win.innerText.includes("newest " + shown + " of " + total)
+          ? "all-window"
+          : null;
+      })()`,
+      15000,
+      500,
+      "all-view event window label",
+    );
+    if (allWindow !== "all-window") {
+      throw new Error("cron flow: All-view event window total/label incorrect");
     }
     flow.overviewFiltered = true;
     flow.steps.push("overview-event-filter");
@@ -3368,6 +3507,7 @@ async function cronFlow() {
       runNoticeSeen: true,
       historyShown: true,
       historyPaged: true,
+      historyJumpToNewest: true,
       overviewFiltered: true,
       editedViaUi: true,
       paused: true,
@@ -3692,7 +3832,7 @@ async function skillsCleanup(flow) {
  *  channel deletion; any still-present fixture folder is reported, not
  *  silently removed (the read-only project API cannot force a delete). */
 async function staleSweep() {
-  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], skills: [], files: [], projectFolders: [], errors: [] };
+  const result = { channels: [], sessions: [], connections: [], crons: [], schedulerEvents: [], buckets: [], skills: [], files: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
     ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-", "skill-aware e2e"].some((p) =>
       String(name ?? "").startsWith(p),
@@ -3771,6 +3911,27 @@ async function staleSweep() {
   } catch (err) {
     result.errors.push(`cron: ${err.message}`);
     log(`  stale sweep: cron FAILED: ${err.message}`);
+  }
+  // Round 74: an interrupted run can leave its synthetic cron_scheduler_events
+  // row behind (the journey's per-run cleanup never runs after a crash).
+  // Prune them with the same psql path the journey uses to seed fixtures.
+  try {
+    const out = execFileSync(
+      "docker",
+      ["exec", "fmcv-db", "psql", "-U", "fmcv", "-d", "fmcv", "-tA", "-c",
+        `DELETE FROM cron_scheduler_events WHERE id LIKE 'browser-e2e-event-%' RETURNING id`],
+      { encoding: "utf8", timeout: 15000 },
+    );
+    result.schedulerEvents = out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l && !/^(DELETE|INSERT|UPDATE|SELECT) \d+$/.test(l));
+    if (result.schedulerEvents.length) {
+      log(`  stale sweep: deleted ${result.schedulerEvents.length} synthetic event(s) [${result.schedulerEvents.join(", ")}]`);
+    }
+  } catch (err) {
+    result.errors.push(`scheduler events: ${err.message}`);
+    log(`  stale sweep: scheduler events FAILED: ${err.message}`);
   }
   try {
     const rows = bucketRowsByNameLike("browser-e2e-bucket-%");

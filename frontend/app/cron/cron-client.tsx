@@ -68,6 +68,7 @@ interface CronOverview {
   leases: CronOverviewLease[];
   events: CronOverviewEvent[];
   eventGroups: string[];
+  eventStats: Array<{ group: string; total: number }>;
   runs: {
     total: number;
     lastHour: number;
@@ -186,20 +187,23 @@ export default function CronPanel() {
   // the overview immediately and the poll keeps the filtered view fresh.
   useEffect(() => {
     let cancelled = false;
+    let overviewSeq = 0;
     const load = async () => {
+      const seq = ++overviewSeq;
       try {
         const res = await apiFetch("/cron/scheduler");
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as SchedulerStatus;
-        if (!cancelled) {
+        if (!cancelled && seq === overviewSeq) {
           setScheduler(body);
           setSchedulerError(false);
         }
       } catch {
-        if (!cancelled) setSchedulerError(true);
+        if (!cancelled && seq === overviewSeq) setSchedulerError(true);
       }
     };
     const loadOverview = async () => {
+      const seq = ++overviewSeq;
       try {
         const res = await apiFetch(
           eventGroupFilter
@@ -208,12 +212,15 @@ export default function CronPanel() {
         );
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as CronOverview;
-        if (!cancelled) {
+        // Only the newest requested response may render: an in-flight poll
+        // started before a filter click/seeded event must not clobber the
+        // fresher result (Round 74).
+        if (!cancelled && seq === overviewSeq) {
           setOverview(body);
           setOverviewError(false);
         }
       } catch {
-        if (!cancelled) setOverviewError(true);
+        if (!cancelled && seq === overviewSeq) setOverviewError(true);
       }
     };
     void load();
@@ -265,7 +272,14 @@ export default function CronPanel() {
       expanded.map(async ([id, page]) => {
         try {
           const next = await fetchRunPage(id, page);
-          setRunsByJob((m) => (m[id] === null ? m : { ...m, [id]: next }));
+          setRunsByJob((m) => {
+            if (m[id] === null) return m;
+            // A stale poll must not clobber a page the user just navigated
+            // to via Older/Newer/Jump to newest (Round 74); skip when the
+            // open list moved to a different page while the fetch flew.
+            if (m[id].page !== page) return m;
+            return { ...m, [id]: next };
+          });
         } catch {
           // Keep the last known list: a transient poll failure must not
           // clobber an open history list or spam the error banner.
@@ -462,6 +476,11 @@ export default function CronPanel() {
     return styles.statusIdle;
   };
 
+  const eventTotals = new Map(
+    (overview?.eventStats ?? []).map((stat) => [stat.group, stat.total] as const),
+  );
+  const eventTotalAll = [...eventTotals.values()].reduce((sum, n) => sum + n, 0);
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -548,9 +567,10 @@ export default function CronPanel() {
                   }`}
                   aria-pressed={eventGroupFilter === null}
                   data-event-group="all"
+                  data-event-total={eventTotalAll}
                   onClick={() => setEventGroupFilter(null)}
                 >
-                  All
+                  All ({eventTotalAll})
                 </button>
                 {overview.eventGroups.map((group) => (
                   <button
@@ -563,9 +583,10 @@ export default function CronPanel() {
                     }`}
                     aria-pressed={eventGroupFilter === group}
                     data-event-group={group}
+                    data-event-total={eventTotals.get(group) ?? 0}
                     onClick={() => setEventGroupFilter(group)}
                   >
-                    {group}
+                    {group} ({eventTotals.get(group) ?? 0})
                   </button>
                 ))}
               </span>
@@ -593,6 +614,23 @@ export default function CronPanel() {
                     · {formatTime(evt.createdAt)}
                   </span>
                 ))}
+              </span>
+            )}
+            {overview.events.length > 0 && (
+              <span
+                className={styles.schedulerMeta}
+                data-event-window={`${overview.events.length}:${
+                  eventGroupFilter
+                    ? eventTotals.get(eventGroupFilter) ?? 0
+                    : eventTotalAll
+                }`}
+              >
+                {" "}· newest {overview.events.length} of{" "}
+                {eventGroupFilter
+                  ? eventTotals.get(eventGroupFilter) ?? 0
+                  : eventTotalAll}{" "}
+                transitions
+                {eventGroupFilter ? ` for ${eventGroupFilter}` : ""}
               </span>
             )}
           </div>
@@ -851,13 +889,23 @@ export default function CronPanel() {
                     {(runPage.page > 0 || runPage.hasMore) && (
                       <div className={styles.runPager}>
                         {runPage.page > 0 && (
-                          <button
-                            className={styles.btnGhost}
-                            disabled={runsLoading === job.id}
-                            onClick={() => goRunPage(job, runPage.page - 1)}
-                          >
-                            Newer
-                          </button>
+                          <>
+                            <button
+                              className={styles.btnGhost}
+                              data-jump-newest="1"
+                              disabled={runsLoading === job.id}
+                              onClick={() => goRunPage(job, 0)}
+                            >
+                              Jump to newest
+                            </button>
+                            <button
+                              className={styles.btnGhost}
+                              disabled={runsLoading === job.id}
+                              onClick={() => goRunPage(job, runPage.page - 1)}
+                            >
+                              Newer
+                            </button>
+                          </>
                         )}
                         <span className={styles.runMeta}>
                           Page {runPage.page + 1}
