@@ -36,6 +36,7 @@ interface CronDraft {
 }
 
 interface SchedulerStatus {
+  enabled: boolean;
   leaseHeld: boolean;
   leaseGroup: string;
   leaseExpireAt: string | null;
@@ -644,25 +645,37 @@ export default function CronPanel() {
           <div className={styles.schedulerRow}>
             {scheduler ? (
               <>
-                <span
-                  className={`${styles.schedulerChip} ${
-                    scheduler.leaseHeld
-                      ? styles.schedulerActive
-                      : styles.schedulerStandby
-                  }`}
-                  title={
-                    scheduler.leaseHeld
-                      ? "This backend replica owns the scheduler lease; due jobs fire here with failover in ~5 s."
-                      : "Another backend replica owns the scheduler lease; this node stands by (failover in ~5 s) but still serves CRUD and Run now."
-                  }
-                >
-                  {scheduler.leaseHeld
-                    ? "Scheduler active on this node"
-                    : "Scheduler standby — lease held elsewhere"}
-                </span>
+                {scheduler.enabled === false ? (
+                  <span
+                    className={`${styles.schedulerChip} ${styles.schedulerStandby}`}
+                    title="This backend runs in API-only mode (CRON_SCHEDULER_ENABLED=false): no background scheduler, no lease, no boot recovery; CRUD and Run now still work."
+                  >
+                    Scheduler disabled — API-only
+                  </span>
+                ) : (
+                  <span
+                    className={`${styles.schedulerChip} ${
+                      scheduler.leaseHeld
+                        ? styles.schedulerActive
+                        : styles.schedulerStandby
+                    }`}
+                    title={
+                      scheduler.leaseHeld
+                        ? "This backend replica owns the scheduler lease; due jobs fire here with failover in ~5 s."
+                        : "Another backend replica owns the scheduler lease; this node stands by (failover in ~5 s) but still serves CRUD and Run now."
+                    }
+                  >
+                    {scheduler.leaseHeld
+                      ? "Scheduler active on this node"
+                      : "Scheduler standby — lease held elsewhere"}
+                  </span>
+                )}
                 <span className={styles.schedulerMeta}>
-                  last beat {scheduler.lastTickAt ? formatTime(scheduler.lastTickAt) : "—"}
-                  {scheduler.leaseHeld &&
+                  {scheduler.enabled === false
+                    ? "no lease · no background firing"
+                    : `last beat ${scheduler.lastTickAt ? formatTime(scheduler.lastTickAt) : "—"}`}
+                  {scheduler.enabled !== false &&
+                    scheduler.leaseHeld &&
                     scheduler.leaseExpireAt &&
                     ` · lease to ${formatTime(scheduler.leaseExpireAt)}`}
                 </span>
