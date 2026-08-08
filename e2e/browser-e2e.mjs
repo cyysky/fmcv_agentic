@@ -101,6 +101,12 @@ const API = process.env.E2E_API_BASE || APP.replace(/:\d+/, ":5555") + "/api";
 // behaves the same no matter where it is invoked from.
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
+// Round 88: E2E_JOURNEYS=<comma-separated> picks which flows run (default
+// "all"). Names: routes, nav, agent, mobile, sessions, files, html, buckets,
+// cron, skills, settings. Skipped flows are reported as null and their
+// validation blocks are skipped too, so a quick regression run stays green.
+const JOURNEY_SELECT = (process.env.E2E_JOURNEYS || "all").toLowerCase().split(",").map((x) => x.trim()).filter(Boolean);
+const want = (name) => JOURNEY_SELECT.includes("all") || JOURNEY_SELECT.includes(name);
 // Mode-suffixed artifacts (Round 85): each run also writes
 // report-<mode>.json + screenshots/<mode>/ so enabled and API-only evidence
 // can both be committed; report.json mirrors whichever mode ran last.
@@ -5473,34 +5479,52 @@ async function main() {
   ];
 
   const version = await httpJson("/json/version");
-  const report = { mode: MODE, browser: version.Browser, app: APP, ranAt: new Date().toISOString(), routes: [], flow: null };
+  const report = { mode: MODE, journeys: JOURNEY_SELECT.slice(), browser: version.Browser, app: APP, ranAt: new Date().toISOString(), routes: [], flow: null };
   log("browser E2E start");
 
   try {
     report.staleSweep = await staleSweep();
-    for (const r of routes) {
-      report.routes.push(await probeRoute(r));
+    if (want("routes")) {
+      for (const r of routes) {
+        report.routes.push(await probeRoute(r));
+      }
     }
-    report.navFlow = await navFlow();
-    report.flow = await agentChannelFlow();
+    if (want("nav")) report.navFlow = await navFlow();
+    if (want("agent")) {
+report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
-    report.mobileChannelFlow = await mobileChannelFlow();
+    }
+    if (want("mobile")) {
+report.mobileChannelFlow = await mobileChannelFlow();
     report.mobileChannelFlow.cleanup = await mobileChannelCleanup(report.mobileChannelFlow);
+    }
 
-    report.sessionsFlow = await agentSessionsFlow();
+    if (want("sessions")) {
+report.sessionsFlow = await agentSessionsFlow();
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow.flow);
-    report.filesFlow = await filesFlow();
+    }
+    if (want("files")) {
+report.filesFlow = await filesFlow();
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
-    report.htmlFlow = await htmlFlow();
+    }
+    if (want("html")) {
+report.htmlFlow = await htmlFlow();
     report.htmlFlow.cleanup = await htmlCleanup(report.htmlFlow.flow);
-    report.bucketsFlow = await bucketsFlow();
+    }
+    if (want("buckets")) {
+report.bucketsFlow = await bucketsFlow();
     report.bucketsFlow.cleanup = await bucketsCleanup(report.bucketsFlow.flow);
-    report.cronFlow = await cronFlow();
+    }
+    if (want("cron")) {
+report.cronFlow = await cronFlow();
     report.cronFlow.cleanup = await cronCleanup(report.cronFlow.flow);
-    report.skillsFlow = await skillsFlow();
+    }
+    if (want("skills")) {
+report.skillsFlow = await skillsFlow();
     report.skillsFlow.cleanup = await skillsCleanup(report.skillsFlow.flow);
-    report.settingsFlow = await settingsFlow();
+    }
+    if (want("settings")) report.settingsFlow = await settingsFlow();
     log("browser E2E flows done");
   } finally {
     // Never leave check tabs behind, even when a route failed midway.
@@ -5521,6 +5545,7 @@ async function main() {
     const errs = errorCount(r.errors);
     if (errs > 0) failures.push(`${r.route}: ${errs} console/network error(s)`);
   }
+if (want("nav")) {
   const nf = report.navFlow;
   if (!nf || !nf.flow?.result?.active || nf.flow.steps.length < 7 || !nf.flow.homeActive || !nf.flow.bucketsActive || !nf.flow.cronActive || !nf.flow.skillsActive) {
     failures.push(`nav flow: journey not verified (${JSON.stringify(nf && nf.flow)})`);
@@ -5528,6 +5553,9 @@ async function main() {
   const navErrs = errorCount(nf ? nf.errors : {});
   if (navErrs > 0) failures.push(`nav flow: ${navErrs} console/network error(s)`);
 
+}
+
+if (want("agent")) {
   const f = report.flow;
   if (!terminalOk(f.flow.result)) {
     failures.push(`agent flow: terminal state not achieved (${JSON.stringify(f.flow.result)})`);
@@ -5546,6 +5574,9 @@ async function main() {
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
 
+}
+
+if (want("mobile")) {
   const mfl = report.mobileChannelFlow;
   if (
     !mfl ||
@@ -5559,6 +5590,9 @@ async function main() {
   const mobileErrs = errorCount(mfl ? mfl.errors : {});
   if (mobileErrs > 0) failures.push("mobile channel flow: " + mobileErrs + " console/network error(s)");
 
+}
+
+if (want("sessions")) {
   const sf = report.sessionsFlow;
   if (!sf || !sf.flow.answerSeen || !sf.flow.historySeen) {
     failures.push(`sessions flow: reply/persistence not verified (${JSON.stringify(sf && sf.flow)})`);
@@ -5603,6 +5637,9 @@ async function main() {
   const sessErrs = errorCount(sf ? sf.errors : {});
   if (sessErrs > 0) failures.push(`sessions flow: ${sessErrs} console/network error(s)`);
 
+}
+
+if (want("files")) {
   const ffl = report.filesFlow;
   if (
     !ffl ||
@@ -5619,6 +5656,9 @@ async function main() {
   const filesErrs = errorCount(ffl ? ffl.errors : {});
   if (filesErrs > 0) failures.push(`files flow: ${filesErrs} console/network error(s)`);
 
+}
+
+if (want("html")) {
   const hfl = report.htmlFlow;
   if (
     !hfl ||
@@ -5635,6 +5675,9 @@ async function main() {
   const htmlErrs = errorCount(hfl ? hfl.errors : {});
   if (htmlErrs > 0) failures.push(`html-view flow: ${htmlErrs} console/network error(s)`);
 
+}
+
+if (want("buckets")) {
   const bfl = report.bucketsFlow;
   if (
     !bfl ||
@@ -5655,6 +5698,9 @@ async function main() {
   const bucketsErrs = errorCount(bfl ? bfl.errors : {});
   if (bucketsErrs > 0) failures.push(`buckets flow: ${bucketsErrs} console/network error(s)`);
 
+}
+
+if (want("cron")) {
   const cfl = report.cronFlow;
   if (
     !cfl ||
@@ -5673,6 +5719,9 @@ async function main() {
   const cronErrs = errorCount(cfl ? cfl.errors : {});
   if (cronErrs > 0) failures.push(`cron flow: ${cronErrs} console/network error(s)`);
 
+}
+
+if (want("skills")) {
   const skfl = report.skillsFlow;
   if (
     !skfl ||
@@ -5692,6 +5741,9 @@ async function main() {
   const skillsErrs = errorCount(skfl ? skfl.errors : {});
   if (skillsErrs > 0) failures.push(`skills flow: ${skillsErrs} console/network error(s)`);
 
+}
+
+if (want("settings")) {
   const sfl = report.settingsFlow;
   if (
     !sfl ||
@@ -5735,6 +5787,8 @@ async function main() {
   }
   const settingsErrs = errorCount(sfl ? sfl.errors : {});
   if (settingsErrs > 0) failures.push(`settings flow: ${settingsErrs} console/network error(s)`);
+
+}
 
   const reportPaths = [REPORT, MODE_REPORT];
   for (const out of reportPaths) writeFileSync(out, JSON.stringify(report, null, 2));
