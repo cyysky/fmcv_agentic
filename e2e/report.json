@@ -1,14 +1,14 @@
 {
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-06T09:56:19.592Z",
+  "ranAt": "2026-08-08T05:01:55.908Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "E830040FEEF22337067B97CBFDB2AAB9",
+        "id": "FE4953D2C273A2E5161CBBA57417DFBD",
         "created": true
       },
       "checks": {
@@ -34,7 +34,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "4B4B44FD751F85FFB65A5F823DD75C47",
+        "id": "174EDDCA7DD69ABEE046462EBC9347BA",
         "created": true
       },
       "checks": {
@@ -58,7 +58,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "931C2CF50ACEB0441FA5425D53E7741E",
+        "id": "458D7889AD78D5AB57544F1FA3693A0F",
         "created": true
       },
       "checks": {
@@ -83,7 +83,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "92661B982529943540EE300E9F384143",
+        "id": "955D016E16F24684B56B1A5CC1F0575E",
         "created": true
       },
       "checks": {
@@ -109,7 +109,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "C78BE6C165942EDAFC93E084CB623DD7",
+        "id": "BA51964F004FD3755AE777C8ED2B5E3D",
         "created": true
       },
       "checks": {
@@ -131,7 +131,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "7337ABF429E8E7C6D257D64DF1A6F363",
+        "id": "3130746D1D15F4E668455052CA89A7E6",
         "created": true
       },
       "checks": {
@@ -155,7 +155,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "ABB83A13CF6B0F52968E95FA0018FD19",
+        "id": "2A24BC7EC527603297173BD980D31FE2",
         "created": true
       },
       "checks": {
@@ -179,7 +179,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "84D4C4EFD2D22DC1B604A1EED712C181",
+        "id": "E53B3C5227B4505907FE490F4AC7ACCB",
         "created": true
       },
       "checks": {
@@ -204,7 +204,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "D55A7960CEA757751EC58EABEA79FC31",
+        "id": "78E9269E5B1A1B8F1AA15DAFE8DCBC48",
         "created": true
       },
       "checks": {
@@ -228,7 +228,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "E1ACAA35BF58D862005DF1F3AAD39329",
+        "id": "1F509B41C0BF09F531B42A7C2F4D1B97",
         "created": true
       },
       "checks": {
@@ -250,7 +250,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "D166D036E3954E8955E17E3DDBB3C8C7",
+        "id": "7BD401C5F95A9CAB8CC6A02802E514C3",
         "created": true
       },
       "checks": {
@@ -274,7 +274,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "35B3864722894B6D8BB3671BD06EC410",
+        "id": "3081DEF60DD48F17A1987A276F7E2617",
         "created": true
       },
       "checks": {
@@ -297,10 +297,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "88DF930095599DBECBD6A7F48E546951",
+      "id": "0E647232F39DB7E25D215C4A0C74659F",
       "created": true
     },
-    "channelName": "browser-e2e-mshccxj0",
+    "channelName": "browser-e2e-msjwq1s2",
     "flow": {
       "steps": [
         "created-channel",
@@ -308,8 +308,8 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-06T09:56:40.064Z",
-        "finishedAt": "2026-08-06T09:56:42.747Z",
+        "postedAt": "2026-08-08T05:02:16.781Z",
+        "finishedAt": "2026-08-08T05:02:19.458Z",
         "elapsedMs": 1366
       },
       "result": {
@@ -318,8 +318,8 @@
         "error": false
       },
       "docTitle": "Agent - FMCV Agentic",
-      "channelName": "browser-e2e-mshccxj0",
-      "feedSnippet": "system\n[SYSTEM]\n2026-08-06T09:56:39.360Z\nAgent coder joined #browser-e2e-mshccxj0.\nsystem\n[SYSTEM]\n2026-08-06T09:56:39.380Z\nChannel #browser-e2e-mshccxj0 created.\nyou\n[USER]\n2026-08-06T09:56:40.066Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-06T09:56:42.239Z\nHello! I've written `round2.md` to my own agent folder as instructed.\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Roun"
+      "channelName": "browser-e2e-msjwq1s2",
+      "feedSnippet": "system\n[SYSTEM]\n2026-08-08T05:02:16.072Z\nAgent coder joined #browser-e2e-msjwq1s2.\nsystem\n[SYSTEM]\n2026-08-08T05:02:16.091Z\nChannel #browser-e2e-msjwq1s2 created.\nyou\n[USER]\n2026-08-08T05:02:16.781Z\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n2026-08-08T05:02:18.857Z\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
     },
     "errors": {
       "netFailures": [],
@@ -347,7 +347,7 @@
   "navFlow": {
     "url": "http://localhost:3333/",
     "tabInfo": {
-      "id": "83C174867C32A8636D9A24CDDD7A7F5C",
+      "id": "A1648622A1B722DD977F6D4C9F136947",
       "created": true
     },
     "flow": {
@@ -377,7 +377,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "5A9325DF6B426653AE98C2E4AC1E6E9C",
+      "id": "BA8BAC2027AC313A1145FB3F12CFE3A6",
       "created": true
     },
     "flow": {
@@ -390,20 +390,20 @@
         "history-rendered"
       ],
       "timings": {
-        "postedAt": "2026-08-06T09:56:45.350Z",
-        "finishedAt": "2026-08-06T09:56:46.957Z",
-        "elapsedMs": 2140
+        "postedAt": "2026-08-08T05:02:22.045Z",
+        "finishedAt": "2026-08-08T05:02:23.651Z",
+        "elapsedMs": 2135
       },
       "result": {
         "persisted": true,
         "renamed": true
       },
-      "createdAt": "2026-08-06T09:56:44.624Z",
-      "sentText": "Hello from sessions E2E (mshcd25t)",
+      "createdAt": "2026-08-08T05:02:21.321Z",
+      "sentText": "Hello from sessions E2E (msjwq6em)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (mshcd25t)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. What can I do for you today?",
+      "threadSnippet": "YOU\nHello from sessions E2E (msjwq6em)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. What would you like to work on?",
       "autoTitleSeen": true,
-      "renamedTitle": "Renamed mshcd3wi",
+      "renamedTitle": "Renamed msjwq850",
       "historySeen": true,
       "titleAfterReload": true
     },
@@ -419,22 +419,22 @@
   "filesFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "CA9AD2EC9CC2F69A8C702CAAFC65006A",
+      "id": "869EA50799BE68769454E8B4E06E47D7",
       "created": true
     },
     "flow": {
       "steps": [
-        "created browser-e2e-files-mshcd6ry/hello.txt",
-        "created .dot-mshcd6ry",
+        "created browser-e2e-files-msjwqb3v/hello.txt",
+        "created .dot-msjwqb3v",
         "root-lists-folder-and-dotfile",
         "navigated-into-folder",
         "downloaded-hello.txt",
         "deleted-hello.txt",
-        "deleted browser-e2e-files-mshcd6ry",
-        "deleted .dot-mshcd6ry"
+        "deleted browser-e2e-files-msjwqb3v",
+        "deleted .dot-msjwqb3v"
       ],
       "timings": {
-        "elapsedMs": 5122
+        "elapsedMs": 5152
       },
       "result": {
         "created": true,
@@ -442,11 +442,11 @@
         "deleted": true
       },
       "scope": "agent:coder",
-      "createdAt": "2026-08-06T09:56:50.813Z",
-      "folder": "browser-e2e-files-mshcd6ry",
-      "dotfile": ".dot-mshcd6ry",
-      "file": "browser-e2e-files-mshcd6ry/hello.txt",
-      "content": "hello from files e2e mshcd6ry",
+      "createdAt": "2026-08-08T05:02:27.627Z",
+      "folder": "browser-e2e-files-msjwqb3v",
+      "dotfile": ".dot-msjwqb3v",
+      "file": "browser-e2e-files-msjwqb3v/hello.txt",
+      "content": "hello from files e2e msjwqb3v",
       "contentSeen": true,
       "realDownload": "ok",
       "downloadVerified": true,
