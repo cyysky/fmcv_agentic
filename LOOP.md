@@ -4,14 +4,26 @@ You are in an autonomous loop. Each execution is one ROUND. You may run many rou
 in a single session — keep going until an exit condition fires.
 
 ## 0. Loop state (always read first)
+- Read `DIRECTION.md` once, at the start of the round (do not keep re-reading it).
+  - **If it contains instructions:** those come from the human. Treat them as this
+    round's direction — steadily and patiently plan a path, then move toward it; if
+    the direction is a bug report or fix request, fix it. It overrides "Next round
+    focus" from ROUND.md for this round.
+  - **If it is empty / whitespace-only:** no human direction right now — run the
+    normal loop below.
 - Load git log, README, CHANGELOG, docs, and `ROUND.md` (if present) to learn:
   - What round you are on (parse from commits, tags, or ROUND.md).
   - What the previous round completed, left broken, or planned next.
 - If ROUND.md exists, its "Next round focus" section is your primary goal this round.
+- If DIRECTION.md carried a human instruction this round, that instruction is your
+  primary goal this round instead of the ROUND.md focus.
 - If no state exists, this is Round 1: do orientation as described below.
 
 ## 1. Every round, do all of this:
 1. **Orient (10 min).** Diff since last round's tag/commit. Re-read anything touched.
+   You already read `DIRECTION.md` once at the start of this round (section 0) — do
+   not re-read it mid-round. If it held a human instruction, keep the plan steady
+   and patient until that direction is fulfilled.
 2. **Test.** Run the full suite. Add tests for new/changed behavior. Fix regressions.
    Red → Green → Refactor. Suite must be green before the round can end.
 3. **Use.** Walk the main user journeys by hand. Log every friction/bug/dead-end as a ticket.
