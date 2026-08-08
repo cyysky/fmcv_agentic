@@ -282,8 +282,12 @@ agents are rejected with a message listing the valid names (`coder`,
 # Unit tests (backend, no external services)
 cd backend && npm test -- --runInBand
 
-# API E2E against real Postgres (docker compose up -d db first)
+# API E2E against real Postgres: stop the live backend first — its cron
+# scheduler shares the same database and can steal the suite's jobs and
+# persist real (non-stub) results, making the stub-based assertions flaky:
+#   docker compose stop backend
 cd backend && npm run test:e2e
+#   docker compose start backend
 
 # Browser E2E via Chrome DevTools Protocol (Chrome must run with
 # --remote-debugging-port=9222; see e2e/README.md)

@@ -16,16 +16,31 @@ npm run start:dev    # watch mode (or `docker compose up --build` from the repo 
 
 ```bash
 npm test -- --runInBand    # unit tests (no external services)
-npm run test:e2e           # API E2E: needs PostgreSQL (docker compose up -d db)
+# API E2E: needs PostgreSQL (docker compose up -d db). The live backend
+# container must be stopped first — its scheduler fires jobs from the same
+# shared Postgres even when the suite runs its own lease group, so it can
+# steal e2e jobs and persist real-gateway (non-stub) answers:
+docker compose stop backend
+npm run test:e2e
+docker compose start backend   # restart the live stack afterwards
 ```
 
 E2E suites live in `test/`; `test/e2e-setup.ts` points `AGENT_WORKSPACE_ROOT`
 at a temp directory before the app module loads, and `test/jest-e2e.json`
 holds the config (30s timeout, `maxWorkers: 1`). The suites share one real
-Postgres, and the cron scheduler's boot-time "interrupted by restart" sweep
-marks any `running` row error cluster-wide, so running the suites in
-parallel lets one suite's app boot clobber another suite's in-flight job;
-serial execution keeps the suite deterministic.
+Postgres. Two interference sources require the live backend to be stopped
+and serial execution:
+
+- **Cross-stack scheduler races**: the cron scheduler's due-job scan is not
+  scoped to a lease group, so any running deployment (e.g. the Docker
+  backend) can claim the suite's jobs (`CRON_LEASE_GROUP` only isolates the
+  lease, not the due-job scan). The container has no `AGENT_LLM_STUB`, so a
+  stolen job runs against the real gateway and can persist a `done` row
+  with a null/empty message — exactly the symptom that makes the
+  multi-replica suite flaky.
+- **Boot-time recovery sweep**: `onModuleInit` marks every cluster-wide
+  `running` row `error`, so one suite's app boot can clobber another
+  suite's in-flight job; serial execution keeps the suite deterministic.
 
 ## Layout
 
