@@ -7,6 +7,9 @@
 //
 // Usage:
 //   E2E_APP_BASE=http://localhost:3333 node e2e/browser-e2e.mjs
+//   E2E_API_ONLY=1 E2E_APP_BASE=http://localhost:3333 node e2e/browser-e2e.mjs
+//     (run with the backend in API-only mode: the cron flow asserts the
+//      "Scheduler disabled — API-only" chip instead of active/standby)
 //   CHROME_DEBUG_PORT=9222 E2E_APP_BASE=http://10.0.151.7:3333 node e2e/browser-e2e.mjs
 //   E2E_CONN_HOST=<host-ip>  # host IP the Dockerized backend can reach for the fake upstream
 //                            # (defaults to the APP hostname or `hostname -I`)
@@ -44,7 +47,9 @@
 //   10c. Cron: create a cron job through the /cron UI, run it now (waiting
 //      for a Done/Failed terminal status pill), rename it through the UI,
 //      pause/resume it, then delete it with the two-click confirm and verify
-//      server-side cleanup
+//      server-side cleanup; the scheduler chip assertion switches with
+//      E2E_API_ONLY=1 (disabled chip + no background firing) vs the default
+//      enabled mode (active/standby chip)
 //   10d. Skills: create a skill through the /skills UI with instructions and
 //      install it (Installed pill + registry notice), reload and verify it
 //      persists, edit description/content, uninstall and reinstall it, then
@@ -2820,6 +2825,30 @@ async function cronFlow() {
     if (!page) throw new Error("cron flow: page never rendered");
     const started = Date.now();
 
+    // 0. Scheduler chip reflects the backend mode (Round 82): an API-only
+    //    node (E2E_API_ONLY=1, see compose CRON_SCHEDULER_ENABLED=false)
+    //    renders the disabled label; an enabled node renders active/standby.
+    //    This is the UI proof for the Round 79 API-only switch.
+    const apiOnly = process.env.E2E_API_ONLY === "1";
+    const chipExpr = apiOnly
+      ? `document.body.innerText.includes("Scheduler disabled — API-only") && document.body.innerText.includes("no lease · no background firing")`
+      : `document.body.innerText.includes("Scheduler active on this node") || document.body.innerText.includes("Scheduler standby — lease held elsewhere")`;
+    const chipSeen = await waitFor(
+      c,
+      chipExpr,
+      10000,
+      500,
+      `scheduler chip (${apiOnly ? "api-only" : "enabled"})`,
+    );
+    if (!chipSeen) {
+      throw new Error(
+        `cron flow: scheduler chip missing in ${apiOnly ? "api-only" : "enabled"} mode`,
+      );
+    }
+    flow.schedulerChip = apiOnly ? "disabled" : "enabled";
+    flow.steps.push("scheduler-chip");
+    await screenshot(c, apiOnly ? "cron-scheduler-disabled.png" : "cron-scheduler-chip.png");
+
     const stamp = Date.now().toString(36);
     const jobName = `browser-e2e-cron-${stamp}`;
     const renamed = `${jobName}-renamed`;
@@ -3234,22 +3263,40 @@ async function cronFlow() {
       "cluster overview",
     );
     if (!overviewBox) throw new Error("cron flow: cluster overview missing");
+    // Round 82: an API-only backend (CRON_SCHEDULER_ENABLED=false) has no
+    // lease, so the overview gauge chip must instead say "disabled"; the
+    // enabled backend must show the default group active/held.
+    const overviewLeaseExpr = apiOnly
+      ? `(() => {
+          const box = document.querySelector('[data-testid="cron-overview"]');
+          if (!box) return null;
+          const chips = [...box.querySelectorAll('[class*="schedulerChip"]')];
+          if (!chips.length) return null;
+          return chips.some((chip) => chip.textContent.includes("· disabled ·"))
+            ? "disabled"
+            : null;
+        })()`
+      : `(() => {
+          const box = document.querySelector('[data-testid="cron-overview"]');
+          if (!box) return null;
+          const chips = [...box.querySelectorAll('[class*="schedulerChip"]')];
+          if (!chips.length) return null;
+          return chips.some((chip) => chip.textContent.includes("· active ·"))
+            ? "active"
+            : null;
+        })()`;
     const overviewLease = await waitFor(
       c,
-      `(() => {
-        const box = document.querySelector('[data-testid="cron-overview"]');
-        if (!box) return null;
-        const chips = [...box.querySelectorAll('[class*="schedulerChip"]')];
-        if (!chips.length) return null;
-        return chips.some((chip) => chip.textContent.includes("· active ·"))
-          ? "active"
-          : null;
-      })()`,
+      overviewLeaseExpr,
       10000,
       500,
-      "overview lease chip",
+      `overview lease chip (${apiOnly ? "api-only" : "enabled"})`,
     );
-    if (!overviewLease) throw new Error("cron flow: no active lease chip in overview");
+    if (!overviewLease) {
+      throw new Error(
+        `cron flow: ${apiOnly ? "no disabled" : "no active"} lease chip in overview`,
+      );
+    }
     // The panel refreshes on a 5 s poll, so wait for the post-run stats to
     // catch up rather than reading whatever the last poll rendered.
     const overviewBody = await waitFor(

@@ -315,6 +315,9 @@ cd backend && npm run test:e2e
 # serves the new code:
 #   docker compose up -d --build backend frontend
 cd e2e && node browser-e2e.mjs
+# API-only mode: the cron flow asserts the "Scheduler disabled — API-only"
+# chip (run the backend with CRON_SCHEDULER_ENABLED=false first):
+#   E2E_API_ONLY=1 node browser-e2e.mjs
 
 # REST docs drift guard: every controller route must appear in the README
 # tables and vice versa (zero dependencies; run from the repo root)

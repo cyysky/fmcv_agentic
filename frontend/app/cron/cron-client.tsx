@@ -265,19 +265,24 @@ export default function CronPanel() {
   // the overview immediately and the poll keeps the filtered view fresh.
   useEffect(() => {
     let cancelled = false;
+    // Independent sequence guards per feed: the scheduler status and the
+    // overview event window are separate responses, so sharing one counter
+    // lets one feed's newer request silently discard the other's result
+    // (Round 82: the chip stayed empty even though /cron/scheduler 200'd).
+    let schedulerSeq = 0;
     let overviewSeq = 0;
     const load = async () => {
-      const seq = ++overviewSeq;
+      const seq = ++schedulerSeq;
       try {
         const res = await apiFetch("/cron/scheduler");
         if (!res.ok) throw new Error(await apiError(res));
         const body = (await res.json()) as SchedulerStatus;
-        if (!cancelled && seq === overviewSeq) {
+        if (!cancelled && seq === schedulerSeq) {
           setScheduler(body);
           setSchedulerError(false);
         }
       } catch {
-        if (!cancelled && seq === overviewSeq) setSchedulerError(true);
+        if (!cancelled && seq === schedulerSeq) setSchedulerError(true);
       }
     };
     const loadOverview = async () => {
@@ -711,14 +716,23 @@ export default function CronPanel() {
                 <span
                   key={lease.group}
                   className={`${styles.schedulerChip} ${
-                    lease.held ? styles.schedulerActive : styles.schedulerStandby
+                    scheduler?.enabled === false
+                      ? styles.schedulerStandby
+                      : lease.held
+                        ? styles.schedulerActive
+                        : styles.schedulerStandby
                   }`}
-                  title={`Group ${lease.group} · owner ${lease.owner} · lease ${
-                    lease.held ? "held" : "expired"
-                  } to ${formatTime(lease.expireAt)}`}
+                  title={
+                    scheduler?.enabled === false
+                      ? `Group ${lease.group} · API-only backend (CRON_SCHEDULER_ENABLED=false) — no lease`
+                      : `Group ${lease.group} · owner ${lease.owner} · lease ${
+                          lease.held ? "held" : "expired"
+                        } to ${formatTime(lease.expireAt)}`
+                  }
                 >
-                  {lease.group} · {lease.held ? "active" : "expired"} ·{" "}
-                  {lease.owner}
+                  {scheduler?.enabled === false
+                    ? `${lease.group} · disabled · no lease`
+                    : `${lease.group} · ${lease.held ? "active" : "expired"} · ${lease.owner}`}
                 </span>
               ))
             )}

@@ -32,6 +32,7 @@ Environment overrides:
 | `CHROME_DEBUG_HOST` | `127.0.0.1`                   | CDP host                            |
 | `CHROME_DEBUG_PORT` | `9222`                        | CDP port                            |
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
+| `E2E_API_ONLY`      | unset                          | run the cron flow against an API-only backend (`CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend`): asserts the "Scheduler disabled — API-only" chip, the "no lease · no background firing" meta, and the overview gauge's "disabled" lease chip |
 | `E2E_SHOT_DIR`      | `e2e/screenshots`             | screenshot output dir               |
 | `E2E_REPORT`        | `e2e/report.json`             | JSON report path                    |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
