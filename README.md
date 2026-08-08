@@ -211,6 +211,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + run throughput (totals, last hour, status breakdown, busiest jobs) |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -307,8 +308,10 @@ node scripts/verify-rest-docs.mjs
   running, run history persists a terminal `cronRun` row per firing,
   `runs()` lists newest first with clamped `limit`/`offset` pagination and
   a stable createdAt/id tie-break, per-job history prunes
-  past the 100-run retention cap, and 404s on unknown jobs), and the
-  skills service
+  past the 100-run retention cap, 404s on unknown jobs, and the cluster
+  overview aggregates every lease group's state plus run totals, last-hour
+  throughput, per-status breakdown, and busiest jobs), and the skills
+  service
   (create/list/get/update/delete, unique slug-form names with 409
   duplicate, invalid-name 400, install requires non-empty content,
   uninstall keeps the record, empty PATCH 400, content capped at 200k

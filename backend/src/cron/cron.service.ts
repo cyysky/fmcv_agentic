@@ -29,6 +29,8 @@ export const CRON_LEASE_GROUP = 'default';
 export const MAX_RUN_MESSAGE = 500;
 /** Retention cap for per-job run history: keep only the newest runs. */
 export const MAX_RUN_HISTORY = 100;
+/** How many busiest jobs to surface in the cluster overview (Round 69). */
+export const OVERVIEW_TOP_JOBS = 5;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Terminal status written by this service when a run ends. */
@@ -42,6 +44,42 @@ export const STATUS_RUNNING = 'running';
 const NOT_RUNNING_FILTER = {
   OR: [{ lastRunStatus: { not: STATUS_RUNNING } }, { lastRunStatus: null }],
 };
+
+/** One scheduler lease group's current state (Round 69). */
+export interface CronOverviewLease {
+  group: string;
+  owner: string;
+  expireAt: string | null;
+  held: boolean;
+  updatedAt: string | null;
+}
+
+/** Aggregate run stats broken down by terminal status (Round 69). */
+export interface CronRunStatusStat {
+  status: string;
+  count: number;
+  avgMs: number | null;
+}
+
+/** Run volume for one job in the cluster overview (Round 69). */
+export interface CronJobRunStat {
+  cronJobId: string;
+  name: string | null;
+  runCount: number;
+  avgMs: number | null;
+}
+
+/** Cluster-wide scheduler observability payload (Round 69). */
+export interface CronOverview {
+  now: string;
+  leases: CronOverviewLease[];
+  runs: {
+    total: number;
+    lastHour: number;
+    byStatus: CronRunStatusStat[];
+    perJob: CronJobRunStat[];
+  };
+}
 
 /** Parse `schedule` as a 5-field cron expression and return its next
  *  occurrence strictly after `from`. Throws a BadRequestException with a
@@ -513,6 +551,71 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       lastTickAt: this.lastTickAt?.toISOString() ?? null,
       jobCount: rows.length,
       enabledCount: rows.filter((row) => row.enabled).length,
+    };
+  }
+
+  /**
+   * Cluster-wide scheduler observability (Round 69): every lease group's
+   * current ownership/freshness plus aggregate run throughput (totals,
+   * last hour, status breakdown, busiest jobs) across all jobs, so
+   * multi-replica ownership and run volume are visible in one call.
+   */
+  async overview(): Promise<CronOverview> {
+    const now = new Date();
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const [leases, total, lastHour, byStatus, topJobs] = await Promise.all([
+      this.prisma.cronSchedulerLease.findMany({
+        orderBy: { schedulerGroup: 'asc' },
+      }),
+      this.prisma.cronRun.count(),
+      this.prisma.cronRun.count({
+        where: { createdAt: { gte: hourAgo } },
+      }),
+      this.prisma.cronRun.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+        _avg: { ms: true },
+      }),
+      this.prisma.cronRun.groupBy({
+        by: ['cronJobId'],
+        _count: { _all: true },
+        _avg: { ms: true },
+        orderBy: { _count: { cronJobId: 'desc' } },
+        take: OVERVIEW_TOP_JOBS,
+      }),
+    ]);
+    const jobNames = new Map(
+      (
+        await this.prisma.cronJob.findMany({
+          where: { id: { in: topJobs.map((row) => row.cronJobId) } },
+          select: { id: true, name: true },
+        })
+      ).map((job) => [job.id, job.name]),
+    );
+    return {
+      now: now.toISOString(),
+      leases: leases.map((lease) => ({
+        group: lease.schedulerGroup,
+        owner: lease.owner,
+        expireAt: lease.expireAt.toISOString(),
+        held: lease.expireAt.getTime() > now.getTime(),
+        updatedAt: lease.updatedAt.toISOString(),
+      })),
+      runs: {
+        total,
+        lastHour,
+        byStatus: byStatus.map((row) => ({
+          status: row.status,
+          count: row._count._all,
+          avgMs: row._avg.ms ?? null,
+        })),
+        perJob: topJobs.map((row) => ({
+          cronJobId: row.cronJobId,
+          name: jobNames.get(row.cronJobId) ?? null,
+          runCount: row._count._all,
+          avgMs: row._avg.ms ?? null,
+        })),
+      },
     };
   }
 

@@ -20,6 +20,7 @@ import { CronService } from './cron.service';
  *                              connection / maxSteps)
  *   GET    /api/cron           list jobs (with last/next run info)
  *   GET    /api/cron/scheduler this replica's scheduler lease/beat status
+ *   GET    /api/cron/overview  cluster-wide lease groups + run throughput
  *   GET    /api/cron/:id       get one job
  *   PATCH  /api/cron/:id       update name/schedule/prompt/task/enabled
  *   DELETE /api/cron/:id       delete a job (rejected while running)
@@ -42,6 +43,11 @@ export class CronController {
   @Get('scheduler')
   scheduler() {
     return this.cron.schedulerStatus();
+  }
+
+  @Get('overview')
+  overview() {
+    return this.cron.overview();
   }
 
   @Get(':id/runs')

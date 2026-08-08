@@ -32,6 +32,28 @@ interface CronRunRow {
   createdAt: string;
 }
 
+interface CronOverviewRow {
+  now: string;
+  leases: Array<{
+    group: string;
+    owner: string;
+    expireAt: string | null;
+    held: boolean;
+    updatedAt: string | null;
+  }>;
+  runs: {
+    total: number;
+    lastHour: number;
+    byStatus: Array<{ status: string; count: number; avgMs: number | null }>;
+    perJob: Array<{
+      cronJobId: string;
+      name: string | null;
+      runCount: number;
+      avgMs: number | null;
+    }>;
+  };
+}
+
 interface TypedResponse {
   body: unknown;
   headers: Record<string, string | string[] | undefined>;
@@ -276,6 +298,27 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
       await http().get(`/api/cron/${jobId}/runs?offset=99`).expect(200),
     );
     expect(beyond).toHaveLength(0);
+  });
+
+  it('exposes cluster-wide scheduler overview with leases and run throughput', async () => {
+    const res = await http().get('/api/cron/overview').expect(200);
+    const overview = json<CronOverviewRow>(res);
+    const defaultLease = overview.leases.find(
+      (lease) => lease.group === 'default',
+    );
+    if (!defaultLease) throw new Error('overview: default lease group missing');
+    expect(typeof defaultLease.owner).toBe('string');
+    expect(defaultLease.owner.length).toBeGreaterThan(0);
+    expect(defaultLease.expireAt).toBeTruthy();
+    expect(new Date(overview.now).getTime()).toBeLessThanOrEqual(Date.now());
+    // The job behind this suite has three terminal runs at this point.
+    expect(overview.runs.total).toBeGreaterThanOrEqual(3);
+    expect(overview.runs.lastHour).toBeGreaterThanOrEqual(3);
+    expect(overview.runs.byStatus.length).toBeGreaterThan(0);
+    const jobStat = overview.runs.perJob.find((job) => job.cronJobId === jobId);
+    if (!jobStat)
+      throw new Error('overview: this suite job missing from per-job stats');
+    expect(jobStat.runCount).toBeGreaterThanOrEqual(3);
   });
 
   it('404s running an unknown job', async () => {

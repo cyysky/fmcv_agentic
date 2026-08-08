@@ -60,6 +60,48 @@
   font-size: 0.75rem;
 }
 
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+}
+
+.overviewTitle {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin: 0;
+}
+
+.overviewRow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+
+.overviewLabel {
+  color: #6b7280;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.overviewStat {
+  color: #374151;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .headerActions {
   display: flex;
   gap: 0.6rem;
@@ -398,6 +440,20 @@
 
   .schedulerMeta {
     color: #6b7280;
+  }
+
+  .overview {
+    background: #111827;
+    border-color: #1f2937;
+  }
+
+  .overviewTitle,
+  .overviewLabel {
+    color: #9ca3af;
+  }
+
+  .overviewStat {
+    color: #d1d5db;
   }
 
   .errorBanner {

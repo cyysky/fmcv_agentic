@@ -46,6 +46,30 @@ interface SchedulerStatus {
   enabledCount: number;
 }
 
+interface CronOverviewLease {
+  group: string;
+  owner: string;
+  expireAt: string | null;
+  held: boolean;
+  updatedAt: string | null;
+}
+
+interface CronOverview {
+  now: string;
+  leases: CronOverviewLease[];
+  runs: {
+    total: number;
+    lastHour: number;
+    byStatus: Array<{ status: string; count: number; avgMs: number | null }>;
+    perJob: Array<{
+      cronJobId: string;
+      name: string | null;
+      runCount: number;
+      avgMs: number | null;
+    }>;
+  };
+}
+
 interface CronRunRow {
   id: string;
   cronJobId: string;
@@ -96,6 +120,8 @@ export default function CronPanel() {
   const [reloadKey, setReloadKey] = useState(0);
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
   const [schedulerError, setSchedulerError] = useState(false);
+  const [overview, setOverview] = useState<CronOverview | null>(null);
+  const [overviewError, setOverviewError] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CronJobRow | null>(null);
@@ -131,8 +157,9 @@ export default function CronPanel() {
     };
   }, [reloadKey]);
 
-  // Scheduler/lease status (Round 66): refresh every 5 s so the chip tracks
-  // lease failover without needing a page reload.
+  // Scheduler/lease status (Round 66) + cluster overview (Round 69):
+  // refresh every 5 s so lease failover and run throughput stay current
+  // without a page reload.
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -148,8 +175,25 @@ export default function CronPanel() {
         if (!cancelled) setSchedulerError(true);
       }
     };
+    const loadOverview = async () => {
+      try {
+        const res = await apiFetch("/cron/overview");
+        if (!res.ok) throw new Error(await apiError(res));
+        const body = (await res.json()) as CronOverview;
+        if (!cancelled) {
+          setOverview(body);
+          setOverviewError(false);
+        }
+      } catch {
+        if (!cancelled) setOverviewError(true);
+      }
+    };
     void load();
-    const timer = setInterval(() => void load(), 5000);
+    void loadOverview();
+    const timer = setInterval(() => {
+      void load();
+      void loadOverview();
+    }, 5000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -377,6 +421,66 @@ export default function CronPanel() {
           </button>
         </div>
       </header>
+
+      {overview ? (
+        <section className={styles.overview} data-testid="cron-overview">
+          <h2 className={styles.overviewTitle}>Cluster overview</h2>
+          <div className={styles.overviewRow}>
+            <span className={styles.overviewLabel}>Lease groups:</span>
+            {overview.leases.length === 0 ? (
+              <span className={styles.schedulerMeta}>No lease rows yet</span>
+            ) : (
+              overview.leases.map((lease) => (
+                <span
+                  key={lease.group}
+                  className={`${styles.schedulerChip} ${
+                    lease.held ? styles.schedulerActive : styles.schedulerStandby
+                  }`}
+                  title={`Group ${lease.group} · owner ${lease.owner} · lease ${
+                    lease.held ? "held" : "expired"
+                  } to ${formatTime(lease.expireAt)}`}
+                >
+                  {lease.group} · {lease.held ? "active" : "expired"} ·{" "}
+                  {lease.owner}
+                </span>
+              ))
+            )}
+          </div>
+          <div className={styles.overviewRow}>
+            <span className={styles.overviewLabel}>Runs:</span>
+            <span className={styles.overviewStat}>
+              {overview.runs.total} total · {overview.runs.lastHour} in the
+              last hour
+              {overview.runs.byStatus.map((stat) => (
+                <span key={stat.status}>
+                  {" "}
+                  · {stat.count}{" "}
+                  {(STATUS_LABEL[stat.status] ?? stat.status).toLowerCase()}
+                </span>
+              ))}
+            </span>
+          </div>
+          {overview.runs.perJob.length > 0 && (
+            <div className={styles.overviewRow}>
+              <span className={styles.overviewLabel}>Busiest jobs:</span>
+              <span className={styles.overviewStat}>
+                {overview.runs.perJob.map((job, index) => (
+                  <span key={job.cronJobId}>
+                    {index > 0 ? " · " : ""}
+                    {job.name ?? job.cronJobId} ({job.runCount})
+                  </span>
+                ))}
+              </span>
+            </div>
+          )}
+        </section>
+      ) : overviewError ? (
+        <div className={styles.schedulerRow}>
+          <span className={styles.schedulerMeta}>
+            Cluster overview unavailable
+          </span>
+        </div>
+      ) : null}
 
       {(error || notice) && (
         <button

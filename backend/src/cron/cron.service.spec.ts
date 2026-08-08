@@ -33,12 +33,15 @@ function prismaDouble(): {
     delete: jest.fn(async () => ({ id: 'job-1' })),
   };
   const cronSchedulerLease: MockStore = {
+    findMany: jest.fn(async () => []),
     updateMany: jest.fn(async () => ({ count: 1 })),
   };
   const cronRun: MockStore = {
     create: jest.fn(async () => ({ id: 'run-1' })),
     findMany: jest.fn(async () => []),
     deleteMany: jest.fn(async () => ({ count: 0 })),
+    count: jest.fn(async () => 0),
+    groupBy: jest.fn(async () => []),
   };
   return {
     cronJob,
@@ -441,6 +444,81 @@ describe('CronService', () => {
         id: { notIn: ['run-newest', 'run-older'] },
       },
     });
+  });
+
+  it('aggregates the cluster-wide scheduler overview', async () => {
+    const { service, prisma } = makeSvc();
+    const future = new Date(Date.now() + 60_000);
+    const past = new Date(Date.now() - 60_000);
+    prisma.cronSchedulerLease.findMany.mockResolvedValue([
+      {
+        id: 'default',
+        schedulerGroup: 'default',
+        owner: 'replica-a',
+        expireAt: future,
+        createdAt: past,
+        updatedAt: past,
+      },
+      {
+        id: 'e2e',
+        schedulerGroup: 'e2e',
+        owner: 'replica-b',
+        expireAt: past,
+        createdAt: past,
+        updatedAt: past,
+      },
+    ]);
+    prisma.cronRun.count.mockResolvedValueOnce(7).mockResolvedValueOnce(3);
+    prisma.cronRun.groupBy
+      .mockResolvedValueOnce([
+        { status: 'done', _count: { _all: 6 }, _avg: { ms: 120 } },
+        { status: 'error', _count: { _all: 1 }, _avg: { ms: 3000 } },
+      ])
+      .mockResolvedValueOnce([
+        { cronJobId: 'job-1', _count: { _all: 5 }, _avg: { ms: 100 } },
+        { cronJobId: 'job-2', _count: { _all: 2 }, _avg: { ms: 200 } },
+      ]);
+    prisma.cronJob.findMany.mockResolvedValue([
+      { id: 'job-1', name: 'daily-digest' },
+      { id: 'job-2', name: 'weekly-report' },
+    ]);
+    const overview = await service.overview();
+    expect(overview.leases).toEqual([
+      expect.objectContaining({
+        group: 'default',
+        owner: 'replica-a',
+        held: true,
+      }),
+      expect.objectContaining({
+        group: 'e2e',
+        owner: 'replica-b',
+        held: false,
+      }),
+    ]);
+    expect(overview.runs.total).toBe(7);
+    expect(overview.runs.lastHour).toBe(3);
+    expect(overview.runs.byStatus).toEqual([
+      { status: 'done', count: 6, avgMs: 120 },
+      { status: 'error', count: 1, avgMs: 3000 },
+    ]);
+    expect(overview.runs.perJob).toEqual([
+      { cronJobId: 'job-1', name: 'daily-digest', runCount: 5, avgMs: 100 },
+      { cronJobId: 'job-2', name: 'weekly-report', runCount: 2, avgMs: 200 },
+    ]);
+    expect(prisma.cronRun.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['status'],
+        _count: { _all: true },
+        _avg: { ms: true },
+      }),
+    );
+    expect(prisma.cronRun.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['cronJobId'],
+        orderBy: { _count: { cronJobId: 'desc' } },
+        take: 5,
+      }),
+    );
   });
 
   it('rejects a concurrent run after another replica claimed the job', async () => {

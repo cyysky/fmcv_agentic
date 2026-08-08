@@ -2958,6 +2958,59 @@ async function cronFlow() {
     if (!runsHidden) throw new Error("cron flow: run history did not collapse");
     await screenshot(c, "cron-history.png");
 
+    // 2c. Cluster overview: the panel must show the default lease group as
+    //     active/held and surface this job's fresh run in the throughput
+    //     stats (real stack, so the busiest-job name comes from the DB).
+    const overviewBox = await waitFor(
+      c,
+      `!!document.querySelector('[data-testid="cron-overview"]')`,
+      10000,
+      500,
+      "cluster overview",
+    );
+    if (!overviewBox) throw new Error("cron flow: cluster overview missing");
+    const overviewLease = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const chips = [...box.querySelectorAll('[class*="schedulerChip"]')];
+        if (!chips.length) return null;
+        return chips.some((chip) => chip.textContent.includes("· active ·"))
+          ? "active"
+          : null;
+      })()`,
+      10000,
+      500,
+      "overview lease chip",
+    );
+    if (!overviewLease) throw new Error("cron flow: no active lease chip in overview");
+    // The panel refreshes on a 5 s poll, so wait for the post-run stats to
+    // catch up rather than reading whatever the last poll rendered.
+    const overviewBody = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const text = box.innerText;
+        return text.includes("Runs:") &&
+          text.includes("total") &&
+          text.includes("in the last hour") &&
+          text.includes(${JSON.stringify(jobName)})
+          ? "ok"
+          : null;
+      })()`,
+      15000,
+      500,
+      "overview stats",
+    );
+    if (overviewBody !== "ok") {
+      throw new Error("cron flow: overview stats missing run/job info");
+    }
+    flow.overviewSeen = true;
+    flow.steps.push("overview");
+    await screenshot(c, "cron-overview.png");
+
     // 3. Rename through the UI.
     const editClicked = await evalJs(c, rowBtnExpr(jobName, "Edit"));
     if (!editClicked) throw new Error("cron flow: Edit button missing");
