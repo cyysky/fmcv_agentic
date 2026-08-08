@@ -16,3 +16,21 @@ export function apiFetch(path: string, init: RequestInit = {}): Promise<Response
   if (API_TOKEN) headers.set("Authorization", `Bearer ${API_TOKEN}`);
   return fetch(`${API_URL}${path}`, { ...init, headers });
 }
+
+/** Build a readable error message from a non-OK API response. */
+export async function apiError(res: Response): Promise<string> {
+  let detail = "";
+  try {
+    const body = await res.json();
+    if (typeof body?.message === "string") detail = body.message;
+    else if (Array.isArray(body?.message)) detail = body.message.join("; ");
+    else if (typeof body?.error === "string") detail = body.error;
+  } catch {
+    /* non-JSON error body */
+  }
+  return `HTTP ${res.status}${detail ? `: ${detail}` : ""}`;
+}
+
+/** Normalize an unknown thrown value into a displayable string. */
+export const errText = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);

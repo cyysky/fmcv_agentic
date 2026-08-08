@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./cron.module.css";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, apiError, errText } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -48,19 +48,6 @@ const SCHEDULE_RE = /^\S+\s+\S+\s+\S+\s+\S+\s+\S+$/;
 
 /* ------------------------------- helpers -------------------------------- */
 
-async function apiError(res: Response): Promise<string> {
-  let detail = "";
-  try {
-    const body = await res.json();
-    if (typeof body?.message === "string") detail = body.message;
-    else if (Array.isArray(body?.message)) detail = body.message.join("; ");
-    else if (typeof body?.error === "string") detail = body.error;
-  } catch {
-    /* non-JSON error body */
-  }
-  return `HTTP ${res.status}${detail ? `: ${detail}` : ""}`;
-}
-
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   const date = new Date(iso);
@@ -71,9 +58,6 @@ function formatDuration(ms: number | null): string {
   if (ms === null || ms === undefined) return "";
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
-
-const errText = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 const STATUS_LABEL: Record<string, string> = {
   running: "Running",

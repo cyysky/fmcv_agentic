@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./files.module.css";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, apiError, errText } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -64,19 +64,6 @@ const query = (params: Record<string, string>): string => {
   return usp.toString();
 };
 
-async function apiError(res: Response): Promise<string> {
-  let detail = "";
-  try {
-    const body = await res.json();
-    if (typeof body?.message === "string") detail = body.message;
-    else if (Array.isArray(body?.message)) detail = body.message.join("; ");
-    else if (typeof body?.error === "string") detail = body.error;
-  } catch {
-    /* non-JSON error body */
-  }
-  return `HTTP ${res.status}${detail ? `: ${detail}` : ""}`;
-}
-
 const joinPath = (dir: string, name: string): string =>
   dir ? `${dir}/${name}` : name;
 
@@ -91,9 +78,6 @@ function formatTime(ms: number): string {
 }
 
 const isHtmlName = (name: string): boolean => /\.html?$/i.test(name);
-
-const errText = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 /* ------------------------------ component ------------------------------- */
 

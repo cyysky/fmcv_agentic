@@ -1,3 +1,18 @@
+## Round 2026-08-08 — autonomous iteration round 63 (tag `round-63`)
+
+### Refactored
+- **Frontend API-error helpers deduplicated** — `apiError` and `errText`
+  moved from per-panel copies (files, buckets, cron, skills) into the shared
+  `frontend/lib/api.ts` client module (net −46 lines, no behavior change).
+
+### Test status
+- Backend unit 146/146 + API E2E 107/107; backend `tsc --noEmit` clean;
+  frontend lint + `tsc --noEmit` + `next build` clean (also rebuilt into the
+  deployed Docker image); docs drift guard passes (64 routes vs 63 docs
+  rows); browser E2E exit 0 against the rebuilt frontend (all route probes +
+  journeys, zero console/network/HTTP errors); live baseline audited clean.
+  Browser E2E report + screenshots refreshed against this round's run.
+
 ## Round 2026-08-08 — autonomous iteration round 58 (tag `round-58`)
 
 ### Changed

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./buckets.module.css";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, apiError, errText } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -51,19 +51,6 @@ interface BucketDetail extends BucketRow {
 
 /* ------------------------------- helpers -------------------------------- */
 
-async function apiError(res: Response): Promise<string> {
-  let detail = "";
-  try {
-    const body = await res.json();
-    if (typeof body?.message === "string") detail = body.message;
-    else if (Array.isArray(body?.message)) detail = body.message.join("; ");
-    else if (typeof body?.error === "string") detail = body.error;
-  } catch {
-    /* non-JSON error body */
-  }
-  return `HTTP ${res.status}${detail ? `: ${detail}` : ""}`;
-}
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -74,9 +61,6 @@ function formatTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
-
-const errText = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 const KIND_ICON: Record<DocumentKind, string> = {
   text: "📄",

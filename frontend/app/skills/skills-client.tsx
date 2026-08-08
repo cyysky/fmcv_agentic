@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./skills.module.css";
-import { apiFetch } from "../../lib/api";
+import { apiFetch, apiError, errText } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -34,19 +34,6 @@ const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /* ------------------------------- helpers -------------------------------- */
 
-async function apiError(res: Response): Promise<string> {
-  let detail = "";
-  try {
-    const body = await res.json();
-    if (typeof body?.message === "string") detail = body.message;
-    else if (Array.isArray(body?.message)) detail = body.message.join("; ");
-    else if (typeof body?.error === "string") detail = body.error;
-  } catch {
-    /* non-JSON error body */
-  }
-  return `HTTP ${res.status}${detail ? `: ${detail}` : ""}`;
-}
-
 function formatTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
@@ -59,9 +46,6 @@ function previewLine(content: string): string {
     .find((line) => line.length > 0);
   return first || "(no content yet)";
 }
-
-const errText = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 /* ------------------------------ component ------------------------------- */
 
