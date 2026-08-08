@@ -41,6 +41,14 @@ interface CronOverviewRow {
     held: boolean;
     updatedAt: string | null;
   }>;
+  events: Array<{
+    id: string;
+    group: string;
+    event: string;
+    owner: string;
+    previousOwner: string | null;
+    createdAt: string;
+  }>;
   runs: {
     total: number;
     lastHour: number;
@@ -311,6 +319,9 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     expect(defaultLease.owner.length).toBeGreaterThan(0);
     expect(defaultLease.expireAt).toBeTruthy();
     expect(new Date(overview.now).getTime()).toBeLessThanOrEqual(Date.now());
+    // Round 71: recent lease transition events ride along. This suite never
+    // fails over (single local replica, no transitions), so it is additive.
+    expect(Array.isArray(overview.events)).toBe(true);
     // The job behind this suite has three terminal runs at this point.
     expect(overview.runs.total).toBeGreaterThanOrEqual(3);
     expect(overview.runs.lastHour).toBeGreaterThanOrEqual(3);

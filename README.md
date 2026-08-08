@@ -104,7 +104,9 @@ and coordinate multi-agent teams in Slack-style channels.
   (History button: status, time, model, duration, message; newest first;
   an open history list auto-refreshes every 5 s and right after a manual
   run returns). The page also shows a cluster overview panel with every
-  scheduler lease group plus aggregate run throughput.
+  scheduler lease group, the recent lease transition history
+  (acquired/lost, previous owner, timestamp — so multi-replica failover is
+  auditable after the fact), and aggregate run throughput.
   The backend scheduler ticks every second, validates expressions up front,
   refuses deletes while a job is running, restores next-run timing on boot,
   and persists every run's terminal result (done/error, message, model,
@@ -214,7 +216,7 @@ and awaits the agent turn):
 | POST   | `/api/cron`          | create a job (`name`, `schedule`, `prompt`, optional `taskType`/`model`/`connectionId`/`maxSteps`/`enabled`) |
 | GET    | `/api/cron`          | list jobs (with last/next run info)                       |
 | GET    | `/api/cron/scheduler`| this replica's scheduler/lease status (leaseHeld, leaseExpireAt, lastTickAt, failoverMs, counts) |
-| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + run throughput (totals, last hour, status breakdown, busiest jobs) |
+| GET    | `/api/cron/overview` | cluster-wide observability: every lease group + recent lease transition events (acquired/lost, previous owner, timestamp) + run throughput (totals, last hour, status breakdown, busiest jobs) |
 | GET    | `/api/cron/:id`      | get one job                                               |
 | PATCH  | `/api/cron/:id`      | update any subset (name/schedule/taskType/prompt/model/connectionId/maxSteps/enabled) |
 | DELETE | `/api/cron/:id`      | delete a job (409 while running)                          |
@@ -359,7 +361,9 @@ node scripts/verify-rest-docs.mjs
   stays hermetic; plus a two-replica scheduler suite covering lease
   election, a ticker-vs-run-now race that fires the due job exactly once,
   and failover firing after the holder stops, with the race and failover
-  tests each asserting exactly one appended `cronRun` row), skills
+  tests each asserting exactly one appended `cronRun` row and the failover
+  test also asserting an append-only `acquired` lease-transition event whose
+  previous owner is the dead holder), skills
   (11: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes

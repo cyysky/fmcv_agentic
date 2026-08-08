@@ -54,9 +54,19 @@ interface CronOverviewLease {
   updatedAt: string | null;
 }
 
+interface CronOverviewEvent {
+  id: string;
+  group: string;
+  event: "acquired" | "lost";
+  owner: string;
+  previousOwner: string | null;
+  createdAt: string;
+}
+
 interface CronOverview {
   now: string;
   leases: CronOverviewLease[];
+  events: CronOverviewEvent[];
   runs: {
     total: number;
     lastHour: number;
@@ -476,6 +486,34 @@ export default function CronPanel() {
                   {lease.owner}
                 </span>
               ))
+            )}
+          </div>
+          <div className={styles.overviewRow}>
+            <span className={styles.overviewLabel}>Transitions:</span>
+            {overview.events.length === 0 ? (
+              <span className={styles.schedulerMeta}>
+                none recorded yet
+              </span>
+            ) : (
+              <span className={styles.overviewStat}>
+                {overview.events.map((evt, index) => (
+                  <span
+                    key={evt.id}
+                    title={`${evt.group} · ${evt.event} · owner ${evt.owner}${
+                      evt.previousOwner
+                        ? ` · previous ${evt.previousOwner}`
+                        : ""
+                    } at ${formatTime(evt.createdAt)}`}
+                  >
+                    {index > 0 ? " · " : ""}
+                    {evt.group} · {evt.event} · {evt.owner.slice(0, 8)}…
+                    {evt.previousOwner
+                      ? ` (was ${evt.previousOwner.slice(0, 8)}…)`
+                      : ""}{" "}
+                    · {formatTime(evt.createdAt)}
+                  </span>
+                ))}
+              </span>
             )}
           </div>
           <div className={styles.overviewRow}>

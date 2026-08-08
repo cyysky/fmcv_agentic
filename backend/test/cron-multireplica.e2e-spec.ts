@@ -98,6 +98,9 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
     await prisma.$executeRaw`DELETE FROM cron_scheduler_leases WHERE "schedulerGroup" = ${leaseGroup}`.catch(
       () => undefined,
     );
+    await prisma.$executeRaw`DELETE FROM cron_scheduler_events WHERE "schedulerGroup" = ${leaseGroup}`.catch(
+      () => undefined,
+    );
     if (process.env.CRON_LEASE_GROUP === leaseGroup) {
       delete process.env.CRON_LEASE_GROUP;
     }
@@ -202,6 +205,14 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
 
   it('fails the lease over and fires a due job on the new holder', async () => {
     const { holder, standby } = await electHolder([appA, appB]);
+    // Black-box owners: the lease row's owner before the holder dies and
+    // after the standby takes over.
+    const holderOwner = (
+      await prisma.cronSchedulerLease.findUnique({
+        where: { id: leaseGroup },
+      })
+    )?.owner;
+    expect(holderOwner).toBeTruthy();
     const failoverName = `e2e-cron-failover-${stamp}`;
     const created = (
       await request(standby.getHttpServer())
@@ -230,6 +241,31 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
         await sleep(300);
       }
       expect(takenOver).toBe(true);
+
+      // Round 71: the takeover must leave an append-only transition audit —
+      // an `acquired` event on the standby whose previousOwner is the dead
+      // holder, so cluster failover history is visible after the fact.
+      const standbyOwner = (
+        await prisma.cronSchedulerLease.findUnique({
+          where: { id: leaseGroup },
+        })
+      )?.owner;
+      expect(standbyOwner).toBeTruthy();
+      expect(standbyOwner).not.toBe(holderOwner);
+      const transitions = await prisma.cronSchedulerEvent.findMany({
+        where: { schedulerGroup: leaseGroup },
+        orderBy: { createdAt: 'asc' },
+      });
+      const takeover = transitions.find(
+        (evt) => evt.event === 'acquired' && evt.owner === standbyOwner,
+      );
+      expect(takeover).toBeDefined();
+      expect(takeover?.previousOwner).toBe(holderOwner);
+      expect(
+        transitions.filter(
+          (evt) => evt.event === 'acquired' && evt.owner === standbyOwner,
+        ),
+      ).toHaveLength(1);
 
       // ...and only once it owns the lease should the due job fire.
       await prisma.cronJob.update({

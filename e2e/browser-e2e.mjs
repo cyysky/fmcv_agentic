@@ -3038,6 +3038,26 @@ async function cronFlow() {
     if (overviewBody !== "ok") {
       throw new Error("cron flow: overview stats missing run/job info");
     }
+    // Round 71: the panel must surface recent lease transitions (empty on a
+    // stack that has never failed over, or acquired/lost entries when it has).
+    const overviewTransitions = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector('[data-testid="cron-overview"]');
+        if (!box) return null;
+        const text = box.innerText;
+        return text.includes("Transitions:") &&
+          (text.includes("none recorded yet") || /(acquired|lost)/.test(text))
+          ? "ok"
+          : null;
+      })()`,
+      10000,
+      500,
+      "overview transitions",
+    );
+    if (overviewTransitions !== "ok") {
+      throw new Error("cron flow: overview transitions line missing");
+    }
     flow.overviewSeen = true;
     flow.steps.push("overview");
     await screenshot(c, "cron-overview.png");

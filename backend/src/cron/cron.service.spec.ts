@@ -6,7 +6,12 @@ import {
 import { CronJob, Prisma } from '@prisma/client';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CronService, MAX_RUN_HISTORY, nextCronRun } from './cron.service';
+import {
+  CronService,
+  MAX_RUN_HISTORY,
+  OVERVIEW_RECENT_EVENTS,
+  nextCronRun,
+} from './cron.service';
 
 /** Minimal Prisma double covering cronJob + connection lookups. */
 type MockStore = Record<string, jest.Mock>;
@@ -14,6 +19,7 @@ function prismaDouble(): {
   cronJob: MockStore;
   connection: MockStore;
   cronSchedulerLease: MockStore;
+  cronSchedulerEvent: MockStore;
   cronRun: MockStore;
   $executeRaw: jest.Mock;
 } {
@@ -34,7 +40,12 @@ function prismaDouble(): {
   };
   const cronSchedulerLease: MockStore = {
     findMany: jest.fn(async () => []),
+    findUnique: jest.fn(async () => null),
     updateMany: jest.fn(async () => ({ count: 1 })),
+  };
+  const cronSchedulerEvent: MockStore = {
+    create: jest.fn(async () => ({ id: 'evt-1' })),
+    findMany: jest.fn(async () => []),
   };
   const cronRun: MockStore = {
     create: jest.fn(async () => ({ id: 'run-1' })),
@@ -47,6 +58,7 @@ function prismaDouble(): {
     cronJob,
     connection: { findUnique: jest.fn(async () => null) },
     cronSchedulerLease,
+    cronSchedulerEvent,
     cronRun,
     $executeRaw: jest.fn(async () => 1),
   };
@@ -450,6 +462,7 @@ describe('CronService', () => {
     const { service, prisma } = makeSvc();
     const future = new Date(Date.now() + 60_000);
     const past = new Date(Date.now() - 60_000);
+    const eventAt = new Date('2026-08-08T12:00:00Z');
     prisma.cronSchedulerLease.findMany.mockResolvedValue([
       {
         id: 'default',
@@ -482,6 +495,16 @@ describe('CronService', () => {
       { id: 'job-1', name: 'daily-digest' },
       { id: 'job-2', name: 'weekly-report' },
     ]);
+    prisma.cronSchedulerEvent.findMany.mockResolvedValue([
+      {
+        id: 'evt-1',
+        schedulerGroup: 'e2e',
+        owner: 'replica-c',
+        event: 'acquired',
+        previousOwner: 'replica-b',
+        createdAt: eventAt,
+      },
+    ]);
     const overview = await service.overview();
     expect(overview.leases).toEqual([
       expect.objectContaining({
@@ -505,6 +528,22 @@ describe('CronService', () => {
       { cronJobId: 'job-1', name: 'daily-digest', runCount: 5, avgMs: 100 },
       { cronJobId: 'job-2', name: 'weekly-report', runCount: 2, avgMs: 200 },
     ]);
+    expect(overview.events).toEqual([
+      {
+        id: 'evt-1',
+        group: 'e2e',
+        event: 'acquired',
+        owner: 'replica-c',
+        previousOwner: 'replica-b',
+        createdAt: '2026-08-08T12:00:00.000Z',
+      },
+    ]);
+    expect(prisma.cronSchedulerEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: OVERVIEW_RECENT_EVENTS,
+      }),
+    );
     expect(prisma.cronRun.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
         by: ['status'],
@@ -519,6 +558,62 @@ describe('CronService', () => {
         take: 5,
       }),
     );
+  });
+
+  it('records an acquired lease event with the previous owner on takeover', async () => {
+    const { service, prisma } = makeSvc();
+    // Startup: another replica already holds the lease, so this one stands by.
+    prisma.$executeRaw.mockResolvedValue(0);
+    await service.onModuleInit();
+    service.onModuleDestroy();
+    // The standby learns the current owner, then its claim wins the takeover.
+    prisma.cronSchedulerLease.findUnique.mockResolvedValue({
+      owner: 'replica-a',
+    });
+    prisma.$executeRaw.mockResolvedValue(1);
+    prisma.cronJob.findMany.mockResolvedValue([]);
+    await (service as unknown as { tick(): Promise<void> }).tick();
+    expect(prisma.cronSchedulerEvent.create).toHaveBeenCalledTimes(1);
+    expect(prisma.cronSchedulerEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          schedulerGroup: 'default',
+          event: 'acquired',
+          previousOwner: 'replica-a',
+          owner: expect.any(String) as string,
+        }),
+      }),
+    );
+    // Ordinary renewal: held before and after, so no transition event.
+    await (service as unknown as { tick(): Promise<void> }).tick();
+    expect(prisma.cronSchedulerEvent.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a lost lease event when a renewal races away to another replica', async () => {
+    const { service, prisma } = makeSvc();
+    // Startup: this replica wins the lease and becomes the holder.
+    prisma.$executeRaw.mockResolvedValue(1);
+    await service.onModuleInit();
+    service.onModuleDestroy();
+    await (service as unknown as { tick(): Promise<void> }).tick();
+    expect(prisma.cronSchedulerEvent.create).not.toHaveBeenCalled();
+    // The next renewal loses (another replica took the lease): a `lost`
+    // event records this replica as the previous holder.
+    prisma.$executeRaw.mockResolvedValue(0);
+    prisma.cronJob.findMany.mockResolvedValue([]);
+    await (service as unknown as { tick(): Promise<void> }).tick();
+    expect(prisma.cronSchedulerEvent.create).toHaveBeenCalledTimes(1);
+    const call = prisma.cronSchedulerEvent.create.mock.calls[0][0] as {
+      data: {
+        schedulerGroup: string;
+        owner: string;
+        event: string;
+        previousOwner: string | null;
+      };
+    };
+    expect(call.data.event).toBe('lost');
+    expect(call.data.schedulerGroup).toBe('default');
+    expect(call.data.previousOwner).toBe(call.data.owner);
   });
 
   it('rejects a concurrent run after another replica claimed the job', async () => {

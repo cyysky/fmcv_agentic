@@ -31,6 +31,8 @@ export const MAX_RUN_MESSAGE = 500;
 export const MAX_RUN_HISTORY = 100;
 /** How many busiest jobs to surface in the cluster overview (Round 69). */
 export const OVERVIEW_TOP_JOBS = 5;
+/** How many recent lease transitions to surface in the overview (Round 71). */
+export const OVERVIEW_RECENT_EVENTS = 10;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Terminal status written by this service when a run ends. */
@@ -69,10 +71,21 @@ export interface CronJobRunStat {
   avgMs: number | null;
 }
 
+/** One recorded lease transition for a scheduler group (Round 71). */
+export interface CronOverviewEvent {
+  id: string;
+  group: string;
+  event: 'acquired' | 'lost';
+  owner: string;
+  previousOwner: string | null;
+  createdAt: string;
+}
+
 /** Cluster-wide scheduler observability payload (Round 69). */
 export interface CronOverview {
   now: string;
   leases: CronOverviewLease[];
+  events: CronOverviewEvent[];
   runs: {
     total: number;
     lastHour: number;
@@ -372,13 +385,41 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     this.lastTickAt = new Date();
     // Only the replica holding a fresh lease fires due jobs. Standby
     // replicas keep serving CRUD/run-now and reclaim the lease on failover.
+    const group = process.env.CRON_LEASE_GROUP?.trim() || CRON_LEASE_GROUP;
+    // While standing by, learn who currently holds the lease so a takeover
+    // can record the previous owner in the transition audit.
+    const previousOwner = !this.leaseHeld
+      ? await this.prisma.cronSchedulerLease
+          .findUnique({ where: { id: group }, select: { owner: true } })
+          .then((row) => row?.owner ?? null)
+          .catch(() => null)
+      : null;
     const held = await this.acquireLease();
     if (this.leaseHeld !== held) {
+      const transition = held ? 'acquired' : 'lost';
       this.logger.log(
         held
           ? 'Cron scheduler lease acquired; taking over scheduled firing'
           : 'Cron scheduler lease lost; standing by',
       );
+      // Append-only audit (Round 71): a failover shows up as an `acquired`
+      // event whose previousOwner is the replica that died; `lost` records
+      // this replica dropping a lease it previously held. Best effort — a
+      // failed write is logged and never blocks the scheduler.
+      await this.prisma.cronSchedulerEvent
+        .create({
+          data: {
+            schedulerGroup: group,
+            owner: this.leaseOwner,
+            event: transition,
+            previousOwner: held ? previousOwner : this.leaseOwner,
+          },
+        })
+        .catch((err) => {
+          this.logger.warn(
+            `Could not record cron scheduler lease ${transition} event: ${(err as Error).message}`,
+          );
+        });
     }
     this.leaseHeld = held;
     if (!held) return;
@@ -558,32 +599,39 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * Cluster-wide scheduler observability (Round 69): every lease group's
    * current ownership/freshness plus aggregate run throughput (totals,
    * last hour, status breakdown, busiest jobs) across all jobs, so
-   * multi-replica ownership and run volume are visible in one call.
+   * multi-replica ownership and run volume are visible in one call. Round 71
+   * adds recent lease transition events so failover history (acquired/lost,
+   * previous owner, timestamp) is visible alongside current ownership.
    */
   async overview(): Promise<CronOverview> {
     const now = new Date();
     const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-    const [leases, total, lastHour, byStatus, topJobs] = await Promise.all([
-      this.prisma.cronSchedulerLease.findMany({
-        orderBy: { schedulerGroup: 'asc' },
-      }),
-      this.prisma.cronRun.count(),
-      this.prisma.cronRun.count({
-        where: { createdAt: { gte: hourAgo } },
-      }),
-      this.prisma.cronRun.groupBy({
-        by: ['status'],
-        _count: { _all: true },
-        _avg: { ms: true },
-      }),
-      this.prisma.cronRun.groupBy({
-        by: ['cronJobId'],
-        _count: { _all: true },
-        _avg: { ms: true },
-        orderBy: { _count: { cronJobId: 'desc' } },
-        take: OVERVIEW_TOP_JOBS,
-      }),
-    ]);
+    const [leases, events, total, lastHour, byStatus, topJobs] =
+      await Promise.all([
+        this.prisma.cronSchedulerLease.findMany({
+          orderBy: { schedulerGroup: 'asc' },
+        }),
+        this.prisma.cronSchedulerEvent.findMany({
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: OVERVIEW_RECENT_EVENTS,
+        }),
+        this.prisma.cronRun.count(),
+        this.prisma.cronRun.count({
+          where: { createdAt: { gte: hourAgo } },
+        }),
+        this.prisma.cronRun.groupBy({
+          by: ['status'],
+          _count: { _all: true },
+          _avg: { ms: true },
+        }),
+        this.prisma.cronRun.groupBy({
+          by: ['cronJobId'],
+          _count: { _all: true },
+          _avg: { ms: true },
+          orderBy: { _count: { cronJobId: 'desc' } },
+          take: OVERVIEW_TOP_JOBS,
+        }),
+      ]);
     const jobNames = new Map(
       (
         await this.prisma.cronJob.findMany({
@@ -600,6 +648,14 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         expireAt: lease.expireAt.toISOString(),
         held: lease.expireAt.getTime() > now.getTime(),
         updatedAt: lease.updatedAt.toISOString(),
+      })),
+      events: events.map((event) => ({
+        id: event.id,
+        group: event.schedulerGroup,
+        event: event.event as 'acquired' | 'lost',
+        owner: event.owner,
+        previousOwner: event.previousOwner,
+        createdAt: event.createdAt.toISOString(),
       })),
       runs: {
         total,

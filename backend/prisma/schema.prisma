@@ -224,6 +224,26 @@ model CronSchedulerLease {
   @@map("cron_scheduler_leases")
 }
 
+/**
+ * Scheduler lease transition audit (Round 71): an append-only record of
+ * every lease acquire/lose transition per scheduler group, so multi-replica
+ * failover history (who took over from whom, and when) is visible even after
+ * the lease row's current ownership rolls forward. `owner` is the replica
+ * the event is about; `previousOwner` is the holder before the transition
+ * (the losing replica for "lost", the previous holder for "acquired").
+ */
+model CronSchedulerEvent {
+  id             String   @id @default(cuid())
+  schedulerGroup String
+  owner          String
+  event          String // "acquired" | "lost"
+  previousOwner  String?
+  createdAt      DateTime @default(now())
+
+  @@index([schedulerGroup, createdAt])
+  @@map("cron_scheduler_events")
+}
+
 /** One terminal execution of a cron job (Round 67): append-only history so
  *  every firing is auditable even as `CronJob.lastRun*` rolls forward. */
 model CronRun {
