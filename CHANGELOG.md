@@ -1,3 +1,22 @@
+## Round 2026-08-08 — autonomous iteration round 31 (tag `round-31`)
+
+### Added
+- **Full verification sweep (no production changes)** — fresh browser E2E
+  run over the live compose stack confirming the four DIRECTION features
+  (managed document buckets, cron jobs, agent skills, HTML view by link /
+  new tab) all pass their unit, API E2E, and browser gates. `e2e/report.json`
+  and screenshots re-recorded; no code changes required.
+
+### Test status
+- Backend unit **145 passed / 14 suites**; API E2E **105 passed / 10 suites**;
+  backend build + `tsc` + eslint clean.
+- Frontend lint + `tsc --noEmit` + `next build` clean.
+- Browser E2E **exit 0**: all routes + journeys, zero console/network errors.
+
+### Known issues / accepted limitations
+- Unchanged from round 30: CSP `sandbox` preview limits, in-process scheduler /
+  in-memory skills install state, read-only buckets, test-file lint exemptions.
+
 ## Round 2026-08-08 — autonomous iteration round 30 (tag `round-30`)
 
 ### Added
