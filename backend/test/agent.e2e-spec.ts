@@ -38,7 +38,9 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
 
   it('persists conversation history to Postgres (restart resilience)', async () => {
     const prisma = app.get(PrismaService);
-    const rowBefore = await prisma.agentSession.findUnique({ where: { id: sessionId } });
+    const rowBefore = await prisma.agentSession.findUnique({
+      where: { id: sessionId },
+    });
     expect(rowBefore).not.toBeNull();
     expect(rowBefore!.messages).toBeDefined();
 
@@ -48,9 +50,18 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       .send({ message: 'remember this turn for me', maxSteps: 2 })
       .ok((r) => r.status === 201 || r.status === 200);
     expect([200, 201]).toContain(res.status);
-    const row = await prisma.agentSession.findUnique({ where: { id: sessionId } });
-    const texts = JSON.parse(JSON.stringify(row!.messages)) as Array<{ role: string; content: string | null }>;
-    expect(texts.some((m) => m.role === 'user' && m.content === 'remember this turn for me')).toBe(true);
+    const row = await prisma.agentSession.findUnique({
+      where: { id: sessionId },
+    });
+    const texts = JSON.parse(JSON.stringify(row!.messages)) as Array<{
+      role: string;
+      content: string | null;
+    }>;
+    expect(
+      texts.some(
+        (m) => m.role === 'user' && m.content === 'remember this turn for me',
+      ),
+    ).toBe(true);
   });
 
   it('converse returns a deterministic stub answer (hermetic, no gateway)', async () => {
@@ -119,7 +130,10 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
   });
 
   it('auto-titles a session from its first user message', async () => {
-    const created = await http().post('/api/agent/sessions').send({}).expect(201);
+    const created = await http()
+      .post('/api/agent/sessions')
+      .send({})
+      .expect(201);
     const id = created.body.id;
     try {
       await http()
@@ -137,7 +151,9 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       const after = await http().get(`/api/agent/sessions/${id}`).expect(200);
       expect(after.body.title).toBe('auto-title me please');
     } finally {
-      await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/agent/sessions/${id}`)
+        .ok((r) => r.status === 200);
     }
   });
   it('renames a session and persists the new title', async () => {
@@ -156,22 +172,36 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       const fetched = await http().get(`/api/agent/sessions/${id}`).expect(200);
       expect(fetched.body.title).toBe('after rename');
 
-      await http().patch(`/api/agent/sessions/${id}`).send({ title: '   ' }).expect(400);
+      await http()
+        .patch(`/api/agent/sessions/${id}`)
+        .send({ title: '   ' })
+        .expect(400);
       await http().patch(`/api/agent/sessions/${id}`).send({}).expect(400);
 
       const other = '00000000-0000-4000-8000-000000000000';
-      await http().patch(`/api/agent/sessions/${other}`).send({ title: 'x' }).expect(404);
+      await http()
+        .patch(`/api/agent/sessions/${other}`)
+        .send({ title: 'x' })
+        .expect(404);
     } finally {
-      await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/agent/sessions/${id}`)
+        .ok((r) => r.status === 200);
     }
   });
   it('deletes a session', async () => {
-    const del = await http().delete(`/api/agent/sessions/${sessionId}`).expect(200);
+    const del = await http()
+      .delete(`/api/agent/sessions/${sessionId}`)
+      .expect(200);
     expect(del.body).toEqual({ deleted: true });
     const prisma = app.get(PrismaService);
-    expect(await prisma.agentSession.findUnique({ where: { id: sessionId } })).toBeNull();
+    expect(
+      await prisma.agentSession.findUnique({ where: { id: sessionId } }),
+    ).toBeNull();
     sessionId = '';
-    await http().get(`/api/agent/sessions/00000000-0000-0000-0000-000000000001`).expect(404);
+    await http()
+      .get(`/api/agent/sessions/00000000-0000-0000-0000-000000000001`)
+      .expect(404);
   });
 
   it('manages workspace projects and agent folders', async () => {
@@ -180,7 +210,9 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       .send({ name: project })
       .expect(201);
     expect(proj.body.name).toBe(project);
-    const tree = await http().get(`/api/agent/workspaces/projects/${project}`).expect(200);
+    const tree = await http()
+      .get(`/api/agent/workspaces/projects/${project}`)
+      .expect(200);
     expect(tree.body).toBeDefined();
 
     // The agent-folder endpoint only manages the named agents (coder /
@@ -190,7 +222,9 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       .send({ name: 'researcher' })
       .expect(201);
     expect(folder.body.name).toBe('researcher');
-    const agentTree = await http().get('/api/agent/workspaces/agents/researcher').expect(200);
+    const agentTree = await http()
+      .get('/api/agent/workspaces/agents/researcher')
+      .expect(200);
     expect(agentTree.body).toBeDefined();
 
     // Arbitrary folder names are rejected — the system is closed to named
@@ -201,7 +235,6 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       .expect(400);
     expect(JSON.stringify(nonNamed.body.message)).toContain('Unknown agent');
   });
-
 
   it('runs sessions and turns against a saved connection', async () => {
     const prisma = app.get(PrismaService);
@@ -254,15 +287,27 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       // catalog model overrides the connection's stored model for the turn).
       await http()
         .post(`/api/agent/sessions/${pinned.body.id}/converse`)
-        .send({ message: 'qwen override', connectionId: connId, model: 'qwen3.6-35b', maxSteps: 2 })
+        .send({
+          message: 'qwen override',
+          connectionId: connId,
+          model: 'qwen3.6-35b',
+          maxSteps: 2,
+        })
         .ok((r) => r.status === 201 || r.status === 200);
 
       // Attach a connection to an existing session via converse.
-      const plain = await http().post('/api/agent/sessions').send({}).expect(201);
+      const plain = await http()
+        .post('/api/agent/sessions')
+        .send({})
+        .expect(201);
       sessionIds.push(plain.body.id);
       await http()
         .post(`/api/agent/sessions/${plain.body.id}/converse`)
-        .send({ message: 'switch to ollama', connectionId: connId, maxSteps: 2 })
+        .send({
+          message: 'switch to ollama',
+          connectionId: connId,
+          maxSteps: 2,
+        })
         .ok((r) => r.status === 201 || r.status === 200);
       const attRow = await waitForRow(plain.body.id);
       expect(attRow?.connectionId).toBe(connId);
@@ -278,7 +323,11 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       // on the wire for a stateless turn (baseUrl/key still from the row).
       const overrideTurn = await http()
         .post('/api/agent/turn')
-        .send({ message: 'ping qwen', connectionId: connId, model: 'qwen3.6-35b' })
+        .send({
+          message: 'ping qwen',
+          connectionId: connId,
+          model: 'qwen3.6-35b',
+        })
         .expect(201);
       expect(overrideTurn.body.answer).toMatch(/^\[stub\] /);
       expect(overrideTurn.body.model).toBe('qwen3.6-35b');
@@ -288,7 +337,11 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
       // fallback), and the turn reports it back.
       const rawOverrideTurn = await http()
         .post('/api/agent/turn')
-        .send({ message: 'ping raw', connectionId: connId, model: 'custom-provider-model-a' })
+        .send({
+          message: 'ping raw',
+          connectionId: connId,
+          model: 'custom-provider-model-a',
+        })
         .expect(201);
       expect(rawOverrideTurn.body.answer).toMatch(/^\[stub\] /);
       expect(rawOverrideTurn.body.model).toBe('custom-provider-model-a');
@@ -319,12 +372,15 @@ describe('Agent API (e2e, real Postgres + workspace)', () => {
         .expect(400);
     } finally {
       for (const id of sessionIds) {
-        await http().delete(`/api/agent/sessions/${id}`).ok((r) => r.status === 200);
+        await http()
+          .delete(`/api/agent/sessions/${id}`)
+          .ok((r) => r.status === 200);
       }
       if (connId) {
-        await http().delete(`/api/connections/${connId}`).ok((r) => r.status === 200);
+        await http()
+          .delete(`/api/connections/${connId}`)
+          .ok((r) => r.status === 200);
       }
     }
   });
 });
-

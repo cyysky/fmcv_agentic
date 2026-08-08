@@ -55,9 +55,16 @@ function agentDouble() {
 function makeSvc(
   prisma = prismaDouble(),
   agent = agentDouble(),
-): { service: CronService; prisma: ReturnType<typeof prismaDouble>; agent: ReturnType<typeof agentDouble> } {
+): {
+  service: CronService;
+  prisma: ReturnType<typeof prismaDouble>;
+  agent: ReturnType<typeof agentDouble>;
+} {
   return {
-    service: new CronService(prisma as unknown as PrismaService, agent as unknown as BaseAgentService),
+    service: new CronService(
+      prisma as unknown as PrismaService,
+      agent as unknown as BaseAgentService,
+    ),
     prisma,
     agent,
   };
@@ -87,13 +94,17 @@ describe('CronService', () => {
         }),
       }),
     );
-    const called = prisma.cronJob.create.mock.calls[0][0].data as { nextRunAt: Date };
+    const called = prisma.cronJob.create.mock.calls[0][0].data as {
+      nextRunAt: Date;
+    };
     expect(called.nextRunAt.getTime()).toBeGreaterThan(before);
   });
 
   it('keeps nextRunAt null and registers the job when created disabled', async () => {
     const { service, prisma } = makeSvc();
-    prisma.cronJob.create.mockResolvedValue(row({ enabled: false, nextRunAt: null }));
+    prisma.cronJob.create.mockResolvedValue(
+      row({ enabled: false, nextRunAt: null }),
+    );
     const created = await service.create({ ...createDto, enabled: false });
     expect(created.enabled).toBe(false);
     expect(created.nextRunAt).toBeNull();
@@ -145,7 +156,10 @@ describe('CronService', () => {
     prisma.cronJob.findUnique.mockResolvedValue(row());
     // Update the schedule: nextRunAt is recomputed for the new expression.
     prisma.cronJob.update.mockResolvedValue(
-      row({ schedule: '*/10 * * * *', nextRunAt: new Date('2099-02-02T00:00:00Z') }),
+      row({
+        schedule: '*/10 * * * *',
+        nextRunAt: new Date('2099-02-02T00:00:00Z'),
+      }),
     );
     await service.update('job-1', { schedule: '*/10 * * * *' });
     expect(prisma.cronJob.update).toHaveBeenCalledWith(
@@ -194,7 +208,7 @@ describe('CronService', () => {
     const { service, prisma, agent } = makeSvc();
     prisma.cronJob.findMany.mockResolvedValue([row()]);
     await service.onModuleInit();
-    await service.onModuleDestroy();
+    service.onModuleDestroy();
     prisma.cronJob.findUnique.mockResolvedValue(
       row({
         lastRunStatus: 'done',
@@ -251,8 +265,7 @@ describe('CronService', () => {
     agent.runTurn.mockImplementation(
       () =>
         new Promise((resolve) => {
-          release = () =>
-            resolve({ answer: 'slow', model: 'ds4-flash' });
+          release = () => resolve({ answer: 'slow', model: 'ds4-flash' });
         }),
     );
     prisma.cronJob.findUnique.mockResolvedValue(
@@ -275,8 +288,7 @@ describe('CronService', () => {
     agent.runTurn.mockImplementation(
       () =>
         new Promise((resolve) => {
-          release = () =>
-            resolve({ answer: 'slow', model: 'ds4-flash' });
+          release = () => resolve({ answer: 'slow', model: 'ds4-flash' });
         }),
     );
     const created = await service.create(createDto);
@@ -286,7 +298,9 @@ describe('CronService', () => {
     );
     release();
     await first;
-    await expect(service.delete(created.id)).resolves.toEqual({ deleted: true });
+    await expect(service.delete(created.id)).resolves.toEqual({
+      deleted: true,
+    });
     prisma.cronJob.findUnique.mockResolvedValue(null);
     await expect(
       service.delete('00000000-0000-4000-8000-000000000000'),
@@ -310,7 +324,7 @@ describe('CronService', () => {
     expect(prisma.cronJob.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'j1' } }),
     );
-    await service.onModuleDestroy();
+    service.onModuleDestroy();
   });
 
   it('computes the next cron occurrence via nextCronRun', () => {

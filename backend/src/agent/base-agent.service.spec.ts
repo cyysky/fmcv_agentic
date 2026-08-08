@@ -1,9 +1,12 @@
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { BaseAgentService, ChatMessage, DEFAULT_SYSTEM_PROMPT } from './base-agent.service';
+import {
+  BaseAgentService,
+  ChatMessage,
+  DEFAULT_SYSTEM_PROMPT,
+} from './base-agent.service';
 import { WorkspaceService } from './workspace.service';
-import type { ToolCallRequest } from './base-agent.service';
 
 function configMock(root: string, opts: { llmStub?: boolean } = {}) {
   return {
@@ -43,18 +46,25 @@ async function makeAgent() {
 }
 
 describe('BaseAgentService sessions', () => {
-
   it('persists sessions to Postgres and recovers them on startup', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-sess-'));
     try {
-      const fake = prismaDouble() as unknown as { agentSession: { upsert: jest.Mock; findMany: jest.Mock; delete: jest.Mock } };
+      const fake = prismaDouble() as unknown as {
+        agentSession: {
+          upsert: jest.Mock;
+          findMany: jest.Mock;
+          delete: jest.Mock;
+        };
+      };
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
 
       const s = await agent.createSession('persist me');
       // create + converse would both persist; here create alone does an upsert.
       expect(fake.agentSession.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ create: expect.objectContaining({ id: s.id, title: 'persist me' }) }),
+        expect.objectContaining({
+          create: expect.objectContaining({ id: s.id, title: 'persist me' }),
+        }),
       );
 
       // Simulate a restart: memory is cleared, startup reloads from DB.
@@ -72,19 +82,30 @@ describe('BaseAgentService sessions', () => {
       fake.agentSession.findMany.mockResolvedValue([row]);
       const fresh = new BaseAgentService(configMock(root), ws, fake as never);
       await fresh.onModuleInit();
-      expect(fresh.getSession(s.id).messages.map((m) => m.role)).toEqual(['system', 'user']);
+      expect(fresh.getSession(s.id).messages.map((m) => m.role)).toEqual([
+        'system',
+        'user',
+      ]);
 
       fresh.deleteSession(s.id);
-      expect(fake.agentSession.delete).toHaveBeenCalledWith({ where: { id: s.id } });
+      expect(fake.agentSession.delete).toHaveBeenCalledWith({
+        where: { id: s.id },
+      });
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
   it('auto-titles a default session from its first user message', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-autotitle-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-autotitle-'),
+    );
     try {
       const ws = new WorkspaceService(configMock(root));
-      const agent = new BaseAgentService(configMock(root, { llmStub: true }), ws, prismaDouble());
+      const agent = new BaseAgentService(
+        configMock(root, { llmStub: true }),
+        ws,
+        prismaDouble(),
+      );
 
       const s = await agent.createSession();
       expect(s.title).toBe('New session');
@@ -117,7 +138,9 @@ describe('BaseAgentService sessions', () => {
   it('renames a session, persists the new title, and rejects blank input', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-rename-'));
     try {
-      const fake = prismaDouble() as unknown as { agentSession: { upsert: jest.Mock } };
+      const fake = prismaDouble() as unknown as {
+        agentSession: { upsert: jest.Mock };
+      };
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
 
@@ -132,7 +155,9 @@ describe('BaseAgentService sessions', () => {
         }),
       );
       expect(() => agent.renameSession(s.id, '   ')).toThrow(/blank/);
-      expect(() => agent.renameSession('00000000-0000-4000-8000-000000000000', 'x')).toThrow();
+      expect(() =>
+        agent.renameSession('00000000-0000-4000-8000-000000000000', 'x'),
+      ).toThrow();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -198,7 +223,8 @@ describe('BaseAgentService loop', () => {
   it('executes tool calls and continues until a plain-text answer', async () => {
     const { agent, root } = await makeAgent();
     try {
-      const calls: jest.Mock = jest.fn()
+      const calls: jest.Mock = jest
+        .fn()
         .mockResolvedValueOnce({
           content: null,
           tool_calls: [
@@ -210,7 +236,7 @@ describe('BaseAgentService loop', () => {
                 path: 'hello.txt',
                 content: 'hello',
               }),
-            } as ToolCallRequest,
+            },
           ],
         })
         .mockResolvedValueOnce({
@@ -267,8 +293,12 @@ describe('BaseAgentService loop', () => {
           {
             id: 'call-1',
             name: 'write_workspace_file',
-            arguments: JSON.stringify({ name: 'coder', path: 'cap.txt', content: 'x' }),
-          } as ToolCallRequest,
+            arguments: JSON.stringify({
+              name: 'coder',
+              path: 'cap.txt',
+              content: 'x',
+            }),
+          },
         ],
       }));
       (agent as unknown as { callModel: jest.Mock }).callModel = calls;
@@ -287,7 +317,12 @@ describe('BaseAgentService loop', () => {
       // A lowered budget on the next call takes effect immediately.
       await agent.converse(s.id, 'q2', undefined, 1);
       expect(calls).toHaveBeenCalledTimes(3);
-      expect(await fs.readFile(path.join(root, 'agents', 'coder', 'cap.txt'), 'utf8')).toBe('x');
+      expect(
+        await fs.readFile(
+          path.join(root, 'agents', 'coder', 'cap.txt'),
+          'utf8',
+        ),
+      ).toBe('x');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -316,7 +351,9 @@ describe('BaseAgentService connections', () => {
   }
 
   it('pins a session to a saved connection and persists connectionId', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-persist-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-persist-'),
+    );
     try {
       const fake = withConn();
       const ws = new WorkspaceService(configMock(root));
@@ -335,13 +372,15 @@ describe('BaseAgentService connections', () => {
   });
 
   it('404s on an unknown connection for create and turn', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-bad-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-bad-'),
+    );
     try {
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, prismaDouble());
-      await expect(agent.createSession('bad', undefined, BAD_CONN_ID)).rejects.toThrow(
-        `Connection ${BAD_CONN_ID} not found`,
-      );
+      await expect(
+        agent.createSession('bad', undefined, BAD_CONN_ID),
+      ).rejects.toThrow(`Connection ${BAD_CONN_ID} not found`);
       await expect(
         agent.runTurn({ message: 'hi', connectionId: BAD_CONN_ID }),
       ).rejects.toThrow(`Connection ${BAD_CONN_ID} not found`);
@@ -351,7 +390,9 @@ describe('BaseAgentService connections', () => {
   });
 
   it('resolves the pinned connection for converse turns (baseUrl/model/key/params)', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-converse-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-converse-'),
+    );
     try {
       const fake = withConn();
       const ws = new WorkspaceService(configMock(root));
@@ -372,10 +413,16 @@ describe('BaseAgentService connections', () => {
         defaultParameters: { temperature: 0.7, top_p: 0.5 },
       });
       // A stateless turn on the same connection reports its wire model.
-      const turn = await agent.runTurn({ message: 'hi', connectionId: CONN_ID });
+      const turn = await agent.runTurn({
+        message: 'hi',
+        connectionId: CONN_ID,
+      });
       expect(turn.model).toBe('llama3.2');
       expect(calls.mock.calls[1][3]).toEqual(
-        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: 'llama3.2' }),
+        expect.objectContaining({
+          baseUrl: 'http://ollama.test/v1',
+          model: 'llama3.2',
+        }),
       );
       // Re-running the session keeps using the stored connection.
       await agent.converse(s.id, 'again');
@@ -388,7 +435,9 @@ describe('BaseAgentService connections', () => {
   });
 
   it('lets an explicit catalog model override the connection model on the wire', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-override-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-override-'),
+    );
     try {
       const fake = withConn();
       const ws = new WorkspaceService(configMock(root));
@@ -416,7 +465,10 @@ describe('BaseAgentService connections', () => {
 
       // The override is per-call: without an explicit model the connection's
       // stored modelName wins again.
-      const turn2 = await agent.runTurn({ message: 'hi again', connectionId: CONN_ID });
+      const turn2 = await agent.runTurn({
+        message: 'hi again',
+        connectionId: CONN_ID,
+      });
       expect(turn2.model).toBe('llama3.2');
       expect(calls.mock.calls[1][3]).toEqual(
         expect.objectContaining({ model: 'llama3.2' }),
@@ -427,7 +479,10 @@ describe('BaseAgentService connections', () => {
       const s = await agent.createSession('override chat', undefined, CONN_ID);
       await agent.converse(s.id, 'hello', 'qwen3.6-35b');
       expect(calls.mock.calls[2][3]).toEqual(
-        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: 'qwen3.6-35b' }),
+        expect.objectContaining({
+          baseUrl: 'http://ollama.test/v1',
+          model: 'qwen3.6-35b',
+        }),
       );
       expect(agent.getSession(s.id).model).toBe('qwen3.6-35b');
     } finally {
@@ -436,7 +491,9 @@ describe('BaseAgentService connections', () => {
   });
 
   it('uses a connection-provided (non-catalog) model verbatim on the wire', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-list-model-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-list-model-'),
+    );
     try {
       const fake = withConn();
       const ws = new WorkspaceService(configMock(root));
@@ -469,7 +526,10 @@ describe('BaseAgentService connections', () => {
       const s = await agent.createSession('list chat', undefined, CONN_ID);
       await agent.converse(s.id, 'hello', rawModel);
       expect(calls.mock.calls[1][3]).toEqual(
-        expect.objectContaining({ baseUrl: 'http://ollama.test/v1', model: rawModel }),
+        expect.objectContaining({
+          baseUrl: 'http://ollama.test/v1',
+          model: rawModel,
+        }),
       );
       expect(agent.getSession(s.id).model).toBe(rawModel);
     } finally {
@@ -478,9 +538,13 @@ describe('BaseAgentService connections', () => {
   });
 
   it('self-heals a session whose pinned connection was deleted (falls back to default)', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-gone-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-gone-'),
+    );
     try {
-      const fake = prismaDouble() as unknown as { connection: { findUnique: jest.Mock } };
+      const fake = prismaDouble() as unknown as {
+        connection: { findUnique: jest.Mock };
+      };
       fake.connection.findUnique.mockResolvedValue(null);
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
@@ -504,12 +568,17 @@ describe('BaseAgentService connections', () => {
   });
 
   it('attaches a connection to an existing session via converse', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-conn-attach-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-conn-attach-'),
+    );
     try {
       const fake = withConn();
       const ws = new WorkspaceService(configMock(root));
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
-      const calls: jest.Mock = jest.fn(async () => ({ content: 'ok', tool_calls: undefined }));
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'ok',
+        tool_calls: undefined,
+      }));
       (agent as unknown as { callModel: jest.Mock }).callModel = calls;
 
       const s = await agent.createSession('attach later');
@@ -532,7 +601,7 @@ describe('BaseAgentService streaming channel turns', () => {
       const events: string[] = [];
       const messages: ChatMessage[] = [];
 
-      let toolArgs = '';
+      const toolArgs = '';
       (agent as unknown as { callModel: jest.Mock }).callModel = jest
         .fn()
         .mockImplementationOnce(async () => ({
@@ -545,7 +614,10 @@ describe('BaseAgentService streaming channel turns', () => {
             },
           ],
         }))
-        .mockImplementationOnce(async () => ({ content: 'final', tool_calls: undefined }));
+        .mockImplementationOnce(async () => ({
+          content: 'final',
+          tool_calls: undefined,
+        }));
 
       const res = await agent.runChannelTurnStreaming({
         agentName: 'coder',
@@ -566,7 +638,11 @@ describe('BaseAgentService streaming channel turns', () => {
         interject: () => {
           // Drain one interjection queued between calls.
           if (messages.some((m) => m.content === 'interject-me')) return [];
-          messages.push({ role: 'user', content: 'interject-me', tool_call_id: undefined });
+          messages.push({
+            role: 'user',
+            content: 'interject-me',
+            tool_call_id: undefined,
+          });
           return ['interject-me'];
         },
       });
@@ -576,7 +652,9 @@ describe('BaseAgentService streaming channel turns', () => {
       expect(events[0]).toBe('status:Agent started');
       expect(events.some((e) => e === 'tool_call:channel_write')).toBe(true);
       expect(events.some((e) => e === 'answer:final')).toBe(true);
-      expect(events.some((e) => e.startsWith('status:used channel_write'))).toBe(true);
+      expect(
+        events.some((e) => e.startsWith('status:used channel_write')),
+      ).toBe(true);
 
       // Interjection text landed in the live message context.
       expect(messages.some((m) => m.content === 'interject-me')).toBe(true);
@@ -646,9 +724,15 @@ describe('BaseAgentService skills integration', () => {
   }
 
   it('registers read_skill only when a skill registry is wired', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillreg-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-skillreg-'),
+    );
     try {
-      const plain = new BaseAgentService(configMock(root), new WorkspaceService(configMock(root)), prismaDouble());
+      const plain = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+      );
       expect(plain.listTools().map((t) => t.name)).not.toContain('read_skill');
 
       const withSkills = new BaseAgentService(
@@ -667,7 +751,9 @@ describe('BaseAgentService skills integration', () => {
   });
 
   it('read_skill returns the body of an installed skill and errors otherwise', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-readskill-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-readskill-'),
+    );
     try {
       const skills = skillsDouble();
       const agent = new BaseAgentService(
@@ -683,24 +769,40 @@ describe('BaseAgentService skills integration', () => {
       await expect(readSkill.run({ name: 'absent' })).resolves.toContain(
         'No installed skill named',
       );
-      await expect(readSkill.run({})).resolves.toContain('Skill name is required');
+      await expect(readSkill.run({})).resolves.toContain(
+        'Skill name is required',
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
 
   it('runTurn injects the installed-skills registry into the LLM context', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillturn-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-skillturn-'),
+    );
     try {
       const skills = skillsDouble();
       const ws = new WorkspaceService(configMock(root));
-      const agent = new BaseAgentService(configMock(root), ws, prismaDouble(), skills as never);
-      const calls: jest.Mock = jest.fn(async () => ({ content: 'ok', tool_calls: undefined }));
+      const agent = new BaseAgentService(
+        configMock(root),
+        ws,
+        prismaDouble(),
+        skills as never,
+      );
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'ok',
+        tool_calls: undefined,
+      }));
       (agent as unknown as { callModel: jest.Mock }).callModel = calls;
 
       await agent.runTurn({ message: 'review this diff' });
       const sent = calls.mock.calls[0][0] as ChatMessage[];
-      const registry = sent.filter((m) => m.role === 'system' && m.content?.includes('Installed skills are available'));
+      const registry = sent.filter(
+        (m) =>
+          m.role === 'system' &&
+          m.content?.includes('Installed skills are available'),
+      );
       expect(registry).toHaveLength(1);
       expect(registry[0].content).toContain('code-review: A review checklist');
     } finally {
@@ -709,21 +811,41 @@ describe('BaseAgentService skills integration', () => {
   });
 
   it('converse injects the registry per turn but keeps the stored transcript clean', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillconv-'));
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-skillconv-'),
+    );
     try {
       const skills = skillsDouble();
       const ws = new WorkspaceService(configMock(root));
-      const agent = new BaseAgentService(configMock(root), ws, prismaDouble(), skills as never);
-      const calls: jest.Mock = jest.fn(async () => ({ content: 'done', tool_calls: undefined }));
+      const agent = new BaseAgentService(
+        configMock(root),
+        ws,
+        prismaDouble(),
+        skills as never,
+      );
+      const calls: jest.Mock = jest.fn(async () => ({
+        content: 'done',
+        tool_calls: undefined,
+      }));
       (agent as unknown as { callModel: jest.Mock }).callModel = calls;
 
       const s = await agent.createSession('skill chat');
       await agent.converse(s.id, 'review the diff');
       const sent = calls.mock.calls[0][0] as ChatMessage[];
-      expect(sent.some((m) => m.content === 'Installed skills are available to you. When one is relevant, call read_skill with its exact name to load its full instructions.\n- code-review: A review checklist')).toBe(true);
+      expect(
+        sent.some(
+          (m) =>
+            m.content ===
+            'Installed skills are available to you. When one is relevant, call read_skill with its exact name to load its full instructions.\n- code-review: A review checklist',
+        ),
+      ).toBe(true);
 
       const stored = agent.getSession(s.id).messages;
-      expect(stored.some((m) => m.content?.includes('Installed skills are available'))).toBe(false);
+      expect(
+        stored.some((m) =>
+          m.content?.includes('Installed skills are available'),
+        ),
+      ).toBe(false);
       expect(stored.some((m) => m.content === 'review the diff')).toBe(true);
     } finally {
       await fs.rm(root, { recursive: true, force: true });

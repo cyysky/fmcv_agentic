@@ -23,8 +23,10 @@ function prismaDouble() {
       }),
       findFirst: jest.fn(async ({ where }: any) => {
         for (const r of rows.values()) {
-          if (where.agentName && (r as any).agentName !== where.agentName) continue;
-          if (where.parentId && (r as any).parentId !== where.parentId) continue;
+          if (where.agentName && (r as any).agentName !== where.agentName)
+            continue;
+          if (where.parentId && (r as any).parentId !== where.parentId)
+            continue;
           return r;
         }
         return null;
@@ -57,7 +59,9 @@ function prismaDouble() {
       }),
       findUnique: jest.fn(async ({ where }: any) => {
         const key = `${where.channelId_agentName.channelId}::${where.channelId_agentName.agentName}`;
-        const row = members.find((m) => `${m.channelId}::${m.agentName}` === key);
+        const row = members.find(
+          (m) => `${m.channelId}::${m.agentName}` === key,
+        );
         return row ? { ...row } : null;
       }),
       findMany: jest.fn(async ({ where }: any) =>
@@ -127,7 +131,9 @@ describe('ChannelService', () => {
   it('slugifies names and rejects empties', async () => {
     const { prisma } = prismaDouble();
     const svc = new ChannelService(prisma, workspacesDouble());
-    await expect(svc.create({ name: '  ' })).rejects.toThrow(BadRequestException);
+    await expect(svc.create({ name: '  ' })).rejects.toThrow(
+      BadRequestException,
+    );
     const d = await svc.create({ name: 'My Team!!!' });
     expect(d.slug).toBe('my-team');
   });
@@ -136,7 +142,9 @@ describe('ChannelService', () => {
     const { prisma, rows } = prismaDouble();
     const svc = new ChannelService(prisma, workspacesDouble());
     (prisma as any).channel.findUnique.mockResolvedValueOnce({
-      id: 'existing', slug: 'dup', createdAt: new Date(),
+      id: 'existing',
+      slug: 'dup',
+      createdAt: new Date(),
     });
     await expect(svc.create({ name: 'dup' })).rejects.toThrow(
       'Channel #dup already exists',
@@ -151,13 +159,13 @@ describe('ChannelService', () => {
     const d = await svc.create({ name: 'team', creatorAgent: 'coder' });
     expect(d.members).toEqual(['coder']);
 
-    await expect(
-      svc.addMember(d.id, 'ghost'),
-    ).rejects.toThrow(/Unknown agent: ghost/);
+    await expect(svc.addMember(d.id, 'ghost')).rejects.toThrow(
+      /Unknown agent: ghost/,
+    );
 
-    await expect(
-      svc.removeMember(d.id, 'researcher'),
-    ).rejects.toThrow(BadRequestException);
+    await expect(svc.removeMember(d.id, 'researcher')).rejects.toThrow(
+      BadRequestException,
+    );
 
     await svc.addMember(d.id, 'researcher');
     await expect(svc.removeMember(d.id, 'researcher')).resolves.toBeDefined();
@@ -189,7 +197,9 @@ describe('ChannelService', () => {
     await svc.addMember(d.id, 'coder');
     await svc.addMember(d.id, 'researcher');
 
-    expect(await svc.resolveReplyAgent(d.id, 'please look @coder')).toBe('coder');
+    expect(await svc.resolveReplyAgent(d.id, 'please look @coder')).toBe(
+      'coder',
+    );
     expect(await svc.resolveReplyAgent(d.id, 'look at @researcher now')).toBe(
       'researcher',
     );

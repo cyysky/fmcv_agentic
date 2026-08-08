@@ -1,5 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { mkdir, writeFile } from 'node:fs/promises';
+import * as path from 'node:path';
 import { App } from 'supertest/types';
 import { bootstrapApp } from './test-app';
 
@@ -11,6 +13,27 @@ describe('Files API (e2e)', () => {
   const base = 'fm-e2e';
   const filePath = `${base}/hello.txt`;
   const htmlPath = `${base}/view.html`;
+
+  interface WriteResult {
+    scope: string;
+    path: string;
+    bytes: number;
+  }
+  interface ListEntry {
+    name: string;
+    type: 'file' | 'directory';
+    size: number;
+    mtimeMs: number;
+  }
+  interface ListResult {
+    entries: ListEntry[];
+  }
+  interface ReadResult {
+    content: string;
+  }
+  interface RemoveResult {
+    type: 'file' | 'directory';
+  }
 
   beforeAll(async () => {
     app = await bootstrapApp();
@@ -43,16 +66,18 @@ describe('Files API (e2e)', () => {
       .query({ scope, path: filePath })
       .send({ content: 'hello file manager' })
       .expect(200);
-    expect(created.body).toMatchObject({ scope, path: filePath });
-    expect(created.body.bytes).toBe('hello file manager'.length);
+    const createdBody = created.body as WriteResult;
+    expect(createdBody).toMatchObject({ scope, path: filePath });
+    expect(createdBody.bytes).toBe('hello file manager'.length);
 
     const list = await request(app.getHttpServer())
       .get('/api/files/list')
       .query({ scope, path: base })
       .expect(200);
-    const entry = list.body.entries.find(
-      (e: { name: string }) => e.name === 'hello.txt',
-    );
+    const listBody = list.body as ListResult;
+    const entry = listBody.entries.find((e) => e.name === 'hello.txt');
+    expect(entry).toBeDefined();
+    if (!entry) throw new Error('hello.txt entry missing');
     expect(entry).toMatchObject({ type: 'file' });
     expect(entry.size).toBe('hello file manager'.length);
     expect(typeof entry.mtimeMs).toBe('number');
@@ -61,7 +86,7 @@ describe('Files API (e2e)', () => {
       .get('/api/files/read')
       .query({ scope, path: filePath })
       .expect(200);
-    expect(read.body.content).toBe('hello file manager');
+    expect((read.body as ReadResult).content).toBe('hello file manager');
   });
 
   it('uses a directory-first listing for a mixed folder', async () => {
@@ -79,11 +104,8 @@ describe('Files API (e2e)', () => {
       .get('/api/files/list')
       .query({ scope, path: base })
       .expect(200);
-    expect(list.body.entries.map((e: { name: string }) => e.name)).toEqual([
-      'sub',
-      'a.txt',
-      'hello.txt',
-    ]);
+    const names = (list.body as ListResult).entries.map((e) => e.name);
+    expect(names).toEqual(['sub', 'a.txt', 'hello.txt']);
   });
 
   it('streams a downloadable text file with attachment headers', async () => {
@@ -109,10 +131,10 @@ describe('Files API (e2e)', () => {
 
   it('deletes an empty directory and then a file', async () => {
     const dir = (
-      await request(app.getHttpServer())
+      (await request(app.getHttpServer())
         .delete('/api/files/delete')
         .query({ scope, path: `${base}/sub` })
-        .expect(200)
+        .expect(200)) as { body: RemoveResult }
     ).body;
     expect(dir.type).toBe('directory');
 
@@ -136,14 +158,8 @@ describe('Files API (e2e)', () => {
     const binPath = `${base}/blob.bin`;
     const bytes = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd, 0x0a, 0x0d]);
     const wsRoot = (process.env.AGENT_WORKSPACE_ROOT ?? '').replace(/\/$/, '');
-    const target = require('node:path').join(
-      wsRoot,
-      'agents',
-      'coder',
-      binPath,
-    );
-    const { mkdir, writeFile } = require('node:fs/promises');
-    await mkdir(require('node:path').dirname(target), { recursive: true });
+    const target = path.join(wsRoot, 'agents', 'coder', binPath);
+    await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, bytes);
 
     const dl = await request(app.getHttpServer())

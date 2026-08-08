@@ -46,7 +46,9 @@ describe('AppThrottlerGuard', () => {
 
   it('defaults are generous enough for a local burst (fail open)', async () => {
     for (let i = 0; i < 5; i++) {
-      await expect(guard.canActivate(contextAt('10.0.0.1'))).resolves.toBe(true);
+      await expect(guard.canActivate(contextAt('10.0.0.1'))).resolves.toBe(
+        true,
+      );
     }
   });
 
@@ -73,7 +75,9 @@ describe('AppThrottlerGuard', () => {
   it('RATE_LIMIT_MAX=0 disables throttling entirely', async () => {
     process.env.RATE_LIMIT_MAX = '0';
     for (let i = 0; i < 10; i++) {
-      await expect(guard.canActivate(contextAt('10.0.0.4'))).resolves.toBe(true);
+      await expect(guard.canActivate(contextAt('10.0.0.4'))).resolves.toBe(
+        true,
+      );
     }
   });
 

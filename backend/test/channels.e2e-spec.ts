@@ -21,7 +21,9 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
   afterAll(async () => {
     if (channelId) {
       // Best-effort cleanup if the delete test never ran.
-      await http().delete(`/api/channels/${channelId}`).ok((r) => r.status === 200 || r.status === 404);
+      await http()
+        .delete(`/api/channels/${channelId}`)
+        .ok((r) => r.status === 200 || r.status === 404);
     }
     await app.close();
   });
@@ -35,7 +37,9 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
     expect(res.body.slug).toBe(slug);
     expect(res.body.projectName).toBe(slug);
     expect(res.body.members).toContain('coder');
-    expect(res.body.messages.map((m: { role: string }) => m.role)).toContain('system');
+    expect(res.body.messages.map((m: { role: string }) => m.role)).toContain(
+      'system',
+    );
   });
 
   it('rejects duplicate slugs', async () => {
@@ -56,7 +60,10 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
   });
 
   it('rejects empty channel names', async () => {
-    const res = await http().post('/api/channels').send({ name: '   ' }).expect(400);
+    const res = await http()
+      .post('/api/channels')
+      .send({ name: '   ' })
+      .expect(400);
     expect(JSON.stringify(res.body.message)).toContain('empty');
   });
 
@@ -165,7 +172,11 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
 
     const job = await http()
       .post(`/api/channels/${id}/jobs`)
-      .send({ agentName: 'coder', message: 'work in the channel', maxSteps: 20 })
+      .send({
+        agentName: 'coder',
+        message: 'work in the channel',
+        maxSteps: 20,
+      })
       .expect(201);
     expect(job.body.status).toBe('running');
 
@@ -190,7 +201,9 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
     // Wait for the run to reach a terminal state (real streaming loop).
     let terminal: { status: string } | null = null;
     for (let i = 0; i < 40; i++) {
-      const poll = await http().get(`/api/channels/${channelId}/jobs/${jobId}`).expect(200);
+      const poll = await http()
+        .get(`/api/channels/${channelId}/jobs/${jobId}`)
+        .expect(200);
       if (['done', 'error', 'stopped'].includes(poll.body.status)) {
         terminal = poll.body;
         break;
@@ -204,10 +217,14 @@ describe('Channel API (e2e, real Postgres + workspace)', () => {
     expect(row).not.toBeNull();
     expect(row!.status).toBe(terminal!.status);
     expect(Array.isArray(row!.events)).toBe(true);
-    expect((row!.events as Array<{ type: string }>).length).toBeGreaterThanOrEqual(1);
+    expect(
+      (row!.events as Array<{ type: string }>).length,
+    ).toBeGreaterThanOrEqual(1);
 
     // Deleting the channel cascade-deletes its run history.
-    await http().delete(`/api/channels/${channelId}/jobs`).ok(() => true);
+    await http()
+      .delete(`/api/channels/${channelId}/jobs`)
+      .ok(() => true);
   });
 
   it('deletes a channel', async () => {

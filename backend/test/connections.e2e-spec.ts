@@ -17,7 +17,11 @@ describe('Connections API (e2e, real Postgres)', () => {
     modelName: 'ds4-flash',
     contextLength: 131000,
   };
-  const keyedPayload = { ...payload, displayName: payload.displayName + '-keyed', apiKey: 'sk-e2esupersecret123' };
+  const keyedPayload = {
+    ...payload,
+    displayName: payload.displayName + '-keyed',
+    apiKey: 'sk-e2esupersecret123',
+  };
   let createdId = '';
 
   beforeAll(async () => {
@@ -50,8 +54,7 @@ describe('Connections API (e2e, real Postgres)', () => {
           return;
         }
         const parsed = JSON.parse(body || '{}');
-        const valid =
-          parsed.model === 'probe-model' && parsed.max_tokens === 1;
+        const valid = parsed.model === 'probe-model' && parsed.max_tokens === 1;
         if (!valid) {
           res.writeHead(400, { 'content-type': 'application/json' });
           res.end('{"error":"bad probe payload"}');
@@ -61,20 +64,27 @@ describe('Connections API (e2e, real Postgres)', () => {
         res.end('{"choices":[{"message":{"content":"pong"}}]}');
       });
     });
-    await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+    await new Promise<void>((resolve) =>
+      upstream.listen(0, '127.0.0.1', resolve),
+    );
     upstreamUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/v1`;
   });
 
   afterAll(async () => {
     if (createdId) {
-      await http().delete(`/api/connections/${createdId}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/connections/${createdId}`)
+        .ok((r) => r.status === 200);
     }
     await new Promise<void>((resolve) => upstream.close(() => resolve()));
     await app.close();
   });
 
   it('rejects incomplete connection payloads', async () => {
-    const res = await http().post('/api/connections').send({ displayName: 'x' }).expect(400);
+    const res = await http()
+      .post('/api/connections')
+      .send({ displayName: 'x' })
+      .expect(400);
     expect(JSON.stringify(res.body.message)).toContain('baseUrl');
   });
 
@@ -87,7 +97,10 @@ describe('Connections API (e2e, real Postgres)', () => {
   });
 
   it('creates, lists (masked), reads, updates, and deletes a connection', async () => {
-    const created = await http().post('/api/connections').send(payload).expect(201);
+    const created = await http()
+      .post('/api/connections')
+      .send(payload)
+      .expect(201);
     createdId = created.body.id;
     expect(created.body.baseUrl).toBe('http://127.0.0.1:9/v1'); // trailing slash normalized
     expect(created.body.apiKey).toBeNull(); // never exposed when none set
@@ -105,12 +118,17 @@ describe('Connections API (e2e, real Postgres)', () => {
     expect(patched.body.contextLength).toBe(200000);
 
     // A stored API key is returned masked, never in the clear.
-    const keyed = await http().post('/api/connections').send(keyedPayload).expect(201);
+    const keyed = await http()
+      .post('/api/connections')
+      .send(keyedPayload)
+      .expect(201);
     expect(keyed.body.apiKey).toContain('***');
     expect(keyed.body.apiKey).not.toContain('sk-e2esupersecret123');
     await http().delete(`/api/connections/${keyed.body.id}`).expect(200);
 
-    const del = await http().delete(`/api/connections/${createdId}`).expect(200);
+    const del = await http()
+      .delete(`/api/connections/${createdId}`)
+      .expect(200);
     expect(del.body).toEqual({ deleted: true });
     createdId = '';
     await http().get(`/api/connections/${one.body.id}`).expect(404);
@@ -119,7 +137,10 @@ describe('Connections API (e2e, real Postgres)', () => {
   it('clears a stored API key when the edit explicitly sends an empty string', async () => {
     const created = await http()
       .post('/api/connections')
-      .send({ ...keyedPayload, displayName: `e2e-clear-${Date.now().toString(36)}` })
+      .send({
+        ...keyedPayload,
+        displayName: `e2e-clear-${Date.now().toString(36)}`,
+      })
       .expect(201);
     expect(created.body.apiKey).toContain('***');
 
@@ -130,15 +151,22 @@ describe('Connections API (e2e, real Postgres)', () => {
         .expect(200);
       expect(cleared.body.apiKey).toBeNull();
 
-      const fetched = await http().get(`/api/connections/${created.body.id}`).expect(200);
+      const fetched = await http()
+        .get(`/api/connections/${created.body.id}`)
+        .expect(200);
       expect(fetched.body.apiKey).toBeNull();
     } finally {
-      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/connections/${created.body.id}`)
+        .ok((r) => r.status === 200);
     }
   });
 
   it('rejects updates with no fields', async () => {
-    const created = await http().post('/api/connections').send(payload).expect(201);
+    const created = await http()
+      .post('/api/connections')
+      .send(payload)
+      .expect(201);
     const invalid = await http()
       .patch(`/api/connections/${created.body.id}`)
       .send({})
@@ -161,7 +189,9 @@ describe('Connections API (e2e, real Postgres)', () => {
       expect(created.body.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
 
       const listed = await http().get('/api/connections').expect(200);
-      const row = listed.body.find((c: { id: string }) => c.id === created.body.id);
+      const row = listed.body.find(
+        (c: { id: string }) => c.id === created.body.id,
+      );
       expect(row.models).toEqual(['llama-3.1-70b', 'mixtral-8x7b']);
 
       // PATCH replaces the whole list.
@@ -178,7 +208,9 @@ describe('Connections API (e2e, real Postgres)', () => {
         .expect(200);
       expect(cleared.body.models).toEqual([]);
     } finally {
-      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/connections/${created.body.id}`)
+        .ok((r) => r.status === 200);
     }
   });
 
@@ -188,18 +220,28 @@ describe('Connections API (e2e, real Postgres)', () => {
       .send({
         ...payload,
         displayName: `e2e-models-ci-${Date.now().toString(36)}`,
-        models: ['Llama-3.1-70B', 'llama-3.1-70b', 'MIXTRAL-8x7B', 'mixtral-8x7b'],
+        models: [
+          'Llama-3.1-70B',
+          'llama-3.1-70b',
+          'MIXTRAL-8x7B',
+          'mixtral-8x7b',
+        ],
       })
       .expect(201);
     try {
       expect(created.body.models).toEqual(['Llama-3.1-70B', 'MIXTRAL-8x7B']);
     } finally {
-      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/connections/${created.body.id}`)
+        .ok((r) => r.status === 200);
     }
   });
 
   it('rejects malformed model lists', async () => {
-    const created = await http().post('/api/connections').send(payload).expect(201);
+    const created = await http()
+      .post('/api/connections')
+      .send(payload)
+      .expect(201);
     try {
       const notArray = await http()
         .patch(`/api/connections/${created.body.id}`)
@@ -213,14 +255,18 @@ describe('Connections API (e2e, real Postgres)', () => {
         .expect(400);
       expect(JSON.stringify(notStrings.body.message)).toContain('models');
     } finally {
-      await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+      await http()
+        .delete(`/api/connections/${created.body.id}`)
+        .ok((r) => r.status === 200);
     }
   });
 
   describe('connection test endpoint', () => {
     async function cleanup(id?: string) {
       if (id) {
-        await http().delete(`/api/connections/${id}`).ok((r) => r.status === 200);
+        await http()
+          .delete(`/api/connections/${id}`)
+          .ok((r) => r.status === 200);
       }
     }
 
@@ -279,7 +325,9 @@ describe('Connections API (e2e, real Postgres)', () => {
       // Bind + close a throwaway server to get a port that is almost surely
       // closed by the time the probe runs.
       const probe = createServer();
-      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>((resolve) =>
+        probe.listen(0, '127.0.0.1', resolve),
+      );
       const closedPort = (probe.address() as AddressInfo).port;
       await new Promise<void>((resolve) => probe.close(() => resolve()));
 
@@ -328,7 +376,9 @@ describe('Connections API (e2e, real Postgres)', () => {
           .post(`/api/connections/${created.body.id}/test`)
           .expect(200);
 
-        const row = await http().get(`/api/connections/${created.body.id}`).expect(200);
+        const row = await http()
+          .get(`/api/connections/${created.body.id}`)
+          .expect(200);
         expect(row.body.lastProbeOk).toBe(true);
         expect(row.body.lastProbeStatus).toBe(200);
         expect(row.body.lastProbeLatencyMs).toBeGreaterThanOrEqual(0);
@@ -346,7 +396,9 @@ describe('Connections API (e2e, real Postgres)', () => {
           .post(`/api/connections/${created.body.id}/test`)
           .expect(200);
         expect(failed.body.ok).toBe(false);
-        const row2 = await http().get(`/api/connections/${created.body.id}`).expect(200);
+        const row2 = await http()
+          .get(`/api/connections/${created.body.id}`)
+          .expect(200);
         expect(row2.body.lastProbeOk).toBe(false);
         expect(row2.body.lastProbeStatus).toBe(401);
         expect(String(row2.body.lastProbeMessage)).toContain('401');
@@ -396,7 +448,9 @@ describe('Connections API (e2e, real Postgres)', () => {
 
     it('reports unreachable draft endpoints gracefully', async () => {
       const probe = createServer();
-      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>((resolve) =>
+        probe.listen(0, '127.0.0.1', resolve),
+      );
       const closedPort = (probe.address() as AddressInfo).port;
       await new Promise<void>((resolve) => probe.close(() => resolve()));
 
@@ -447,7 +501,9 @@ describe('Connections API (e2e, real Postgres)', () => {
         expect(String(res.body.message)).toContain('Fetched 2 models');
         expect(lastAuth).toBe('Bearer sk-e2e-supersecret123');
       } finally {
-        await http().delete(`/api/connections/${created.body.id}`).ok((r) => r.status === 200);
+        await http()
+          .delete(`/api/connections/${created.body.id}`)
+          .ok((r) => r.status === 200);
       }
     });
 
@@ -467,7 +523,9 @@ describe('Connections API (e2e, real Postgres)', () => {
 
     it('reports endpoints without a reachable /models route gracefully', async () => {
       const probe = createServer();
-      await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', resolve));
+      await new Promise<void>((resolve) =>
+        probe.listen(0, '127.0.0.1', resolve),
+      );
       const closedPort = (probe.address() as AddressInfo).port;
       await new Promise<void>((resolve) => probe.close(() => resolve()));
 

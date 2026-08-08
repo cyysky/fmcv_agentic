@@ -22,7 +22,9 @@ describe('ApiTokenGuard', () => {
   it('rejects missing or malformed credentials when a token is set', () => {
     process.env.API_TOKEN = 's3cret';
     const guard = new ApiTokenGuard();
-    expect(() => guard.canActivate(contextWith())).toThrow(UnauthorizedException);
+    expect(() => guard.canActivate(contextWith())).toThrow(
+      UnauthorizedException,
+    );
     expect(() => guard.canActivate(contextWith('Token s3cret'))).toThrow(
       UnauthorizedException,
     );

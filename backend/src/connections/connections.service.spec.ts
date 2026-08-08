@@ -1,5 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
-import { ConnectionsService, ConnectionTestResult } from './connections.service';
+import {
+  ConnectionsService,
+  ConnectionTestResult,
+} from './connections.service';
 
 /** Minimal Prisma double with just the rows this service touches. */
 function prismaDouble(conn: unknown) {
@@ -38,7 +41,8 @@ describe('ConnectionsService.test()', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
-    if (originalTimeout === undefined) delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+    if (originalTimeout === undefined)
+      delete process.env.CONNECTION_TEST_TIMEOUT_MS;
     else process.env.CONNECTION_TEST_TIMEOUT_MS = originalTimeout;
   });
 
@@ -68,7 +72,11 @@ describe('ConnectionsService.test()', () => {
     expect(result.message).toBe('Connected — probe-model responded.');
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(sentUrl).toBe('http://127.0.0.1:9876/v1/chat/completions');
-    const body = JSON.parse(String(sent?.body));
+    expect(typeof sent?.body).toBe('string');
+    const body = JSON.parse(sent?.body as string) as {
+      model: string;
+      max_tokens: number;
+    };
     expect(body.model).toBe('probe-model');
     expect(body.max_tokens).toBe(1);
     expect((sent?.headers as Record<string, string>).authorization).toBe(
@@ -106,7 +114,9 @@ describe('ConnectionsService.test()', () => {
 
   it('reports abort as a timeout instead of a raw error', async () => {
     global.fetch = jest.fn(async () => {
-      const err = new Error('This operation was aborted') as Error & { name: string };
+      const err = new Error('This operation was aborted') as Error & {
+        name: string;
+      };
       err.name = 'AbortError';
       throw err;
     }) as never;
@@ -182,7 +192,8 @@ describe('ConnectionsService.testDraft()', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
-    if (originalTimeout === undefined) delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+    if (originalTimeout === undefined)
+      delete process.env.CONNECTION_TEST_TIMEOUT_MS;
     else process.env.CONNECTION_TEST_TIMEOUT_MS = originalTimeout;
   });
 
@@ -213,7 +224,11 @@ describe('ConnectionsService.testDraft()', () => {
     expect(result.status).toBe(200);
     expect(result.model).toBe('draft-model');
     expect(sentUrl).toBe('http://127.0.0.1:4567/v1/chat/completions'); // trailing slash normalized
-    const body = JSON.parse(String(sent?.body));
+    expect(typeof sent?.body).toBe('string');
+    const body = JSON.parse(sent?.body as string) as {
+      model: string;
+      max_tokens: number;
+    };
     expect(body.model).toBe('draft-model');
     expect(body.max_tokens).toBe(1);
     expect((sent?.headers as Record<string, string>).authorization).toBe(
@@ -284,7 +299,8 @@ describe('ConnectionsService model discovery (GET /models)', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
-    if (originalTimeout === undefined) delete process.env.CONNECTION_TEST_TIMEOUT_MS;
+    if (originalTimeout === undefined)
+      delete process.env.CONNECTION_TEST_TIMEOUT_MS;
     else process.env.CONNECTION_TEST_TIMEOUT_MS = originalTimeout;
   });
 
@@ -421,7 +437,9 @@ describe('ConnectionsService model discovery (GET /models)', () => {
 
   it('throws NotFoundException when fetching models for an unknown connection', async () => {
     const service = new ConnectionsService(prismaDouble(null));
-    await expect(service.fetchModels('missing')).rejects.toThrow(NotFoundException);
+    await expect(service.fetchModels('missing')).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
 
@@ -520,7 +538,12 @@ describe('ConnectionsService models normalization', () => {
       baseUrl: 'http://127.0.0.1:1/v1',
       modelName: 'default-model',
       contextLength: 128000,
-      models: ['Llama-3.1-70B', 'llama-3.1-70b', 'MIXTRAL-8x7B', 'mixtral-8x7b'],
+      models: [
+        'Llama-3.1-70B',
+        'llama-3.1-70b',
+        'MIXTRAL-8x7B',
+        'mixtral-8x7b',
+      ],
     });
 
     const data = prisma.connection.create.mock.calls[0][0].data;

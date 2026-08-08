@@ -41,7 +41,7 @@ function agentDouble() {
   return { runChannelTurnStreaming: jest.fn() };
 }
 
-function streamingResult(opts: Record<string, unknown>) {
+function streamingResult() {
   return { answer: 'done', steps: 2, trace: [] };
 }
 
@@ -49,11 +49,11 @@ describe('ChannelJobService', () => {
   it('runs a streaming turn and publishes the final answer', async () => {
     const channels = channelsDouble();
     const agent = agentDouble();
-    (agent.runChannelTurnStreaming as jest.Mock).mockImplementation(
+    agent.runChannelTurnStreaming.mockImplementation(
       (opts: { onEvent: (e: unknown) => void }) => {
         opts.onEvent({ type: 'status', text: 'Agent started' });
         opts.onEvent({ type: 'answer', text: 'done', step: 2 });
-        return Promise.resolve(streamingResult(opts));
+        return Promise.resolve(streamingResult());
       },
     );
     const svc = makeSvc(channels, agent);
@@ -84,12 +84,14 @@ describe('ChannelJobService', () => {
   it('marks an error job and emits exactly one error event', async () => {
     const channels = channelsDouble();
     const agent = agentDouble();
-    (agent.runChannelTurnStreaming as jest.Mock).mockRejectedValue(
-      new Error('llm down'),
-    );
+    agent.runChannelTurnStreaming.mockRejectedValue(new Error('llm down'));
     const svc = makeSvc(channels, agent);
 
-    const job = svc.create({ channelId: 'ch1', agentName: 'coder', message: 'x' });
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
     await job.process;
 
     expect(job.status).toBe('error');
@@ -101,12 +103,14 @@ describe('ChannelJobService', () => {
     const channels = channelsDouble();
     const agent = agentDouble();
     let release: () => void = () => {};
-    const gate = new Promise<{ answer: string; steps: number; trace: unknown[] }>(
-      (resolve) => {
-        release = () => resolve({ answer: '[stopped]', steps: 0, trace: [] });
-      },
-    );
-    (agent.runChannelTurnStreaming as jest.Mock).mockImplementation(
+    const gate = new Promise<{
+      answer: string;
+      steps: number;
+      trace: unknown[];
+    }>((resolve) => {
+      release = () => resolve({ answer: '[stopped]', steps: 0, trace: [] });
+    });
+    agent.runChannelTurnStreaming.mockImplementation(
       (opts: { onEvent: (e: unknown) => void }) => {
         opts.onEvent({ type: 'status', text: 'Agent started' });
         return gate;
@@ -114,7 +118,11 @@ describe('ChannelJobService', () => {
     );
     const svc = makeSvc(channels, agent);
 
-    const job = svc.create({ channelId: 'ch1', agentName: 'coder', message: 'x' });
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
     await new Promise((r) => setImmediate(r));
     svc.stop(job.id, 'ch1');
     expect(job.status).toBe('stopped');
@@ -134,7 +142,9 @@ describe('ChannelJobService', () => {
       channelId: 'ch1',
       agentName: 'coder',
       status: 'running',
-      events: [{ type: 'status', ts: '2026-08-06T00:00:00.000Z', text: 'started' }],
+      events: [
+        { type: 'status', ts: '2026-08-06T00:00:00.000Z', text: 'started' },
+      ],
       answer: null,
       steps: null,
       error: null,
@@ -183,21 +193,26 @@ describe('ChannelJobService', () => {
     const prisma = prismaDouble();
     const channels = channelsDouble();
     const agent = agentDouble();
-    (agent.runChannelTurnStreaming as jest.Mock).mockResolvedValue({
+    agent.runChannelTurnStreaming.mockResolvedValue({
       answer: 'ok',
       steps: 1,
       trace: [],
     });
     const svc = makeSvc(channels, agent, prisma);
-    const job = svc.create({ channelId: 'ch1', agentName: 'coder', message: 'x' });
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
     await job.process;
 
     expect(job.status).toBe('done');
     // upsert: once on create, once at terminal (done) — plus channelPost etc.
     expect(prisma._upsert).toHaveBeenCalledTimes(2);
-    const updateArg = (prisma._upsert as jest.Mock).mock.calls[1][0] as {
-      update: { status: string; answer: string; finishedAt: Date | null };
-    };
+    const calls1 = (prisma._upsert as jest.Mock).mock.calls[1] as [
+      { update: { status: string; answer: string; finishedAt: Date | null } },
+    ];
+    const updateArg = calls1[0];
     expect(updateArg.update.status).toBe('done');
     expect(updateArg.update.answer).toBe('ok');
     expect(updateArg.update.finishedAt).not.toBeNull();
@@ -206,7 +221,7 @@ describe('ChannelJobService', () => {
   it('rejects new jobs while a channel tree is being deleted', async () => {
     const channels = channelsDouble();
     const agent = agentDouble();
-    (agent.runChannelTurnStreaming as jest.Mock).mockResolvedValue({
+    agent.runChannelTurnStreaming.mockResolvedValue({
       answer: 'done',
       steps: 0,
       trace: [],
@@ -221,13 +236,21 @@ describe('ChannelJobService', () => {
     ).toThrow('being deleted');
 
     // ...but other channels are unaffected.
-    const other = svc.create({ channelId: 'ch2', agentName: 'coder', message: 'x' });
+    const other = svc.create({
+      channelId: 'ch2',
+      agentName: 'coder',
+      message: 'x',
+    });
     expect(other.status).toBe('running');
     await other.process;
 
     // After deletion finishes, the channel accepts jobs again.
     svc.endChannelDelete(['ch1']);
-    const again = svc.create({ channelId: 'ch1', agentName: 'coder', message: 'x' });
+    const again = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
     expect(again.status).toBe('running');
     await again.process;
     expect(again.status).toBe('done');
@@ -237,7 +260,7 @@ describe('ChannelJobService', () => {
     const channels = channelsDouble();
     const agent = agentDouble();
     let capturedInterject: (() => string[]) | null = null;
-    (agent.runChannelTurnStreaming as jest.Mock).mockImplementation(
+    agent.runChannelTurnStreaming.mockImplementation(
       (opts: { interject: () => string[]; onEvent: (e: unknown) => void }) => {
         capturedInterject = opts.interject;
         opts.onEvent({ type: 'status', text: 'Agent started' });
@@ -245,7 +268,11 @@ describe('ChannelJobService', () => {
       },
     );
     const svc = makeSvc(channels, agent);
-    const job = svc.create({ channelId: 'ch1', agentName: 'coder', message: 'x' });
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
 
     svc.interject(job.id, 'ch1', 'do it differently');
     expect((job as unknown as { mailbox: string[] }).mailbox).toEqual([

@@ -1,8 +1,4 @@
-import {
-  MODEL_CATALOG,
-  fallbackFor,
-  resolveModel,
-} from './agent.models';
+import { MODEL_CATALOG, fallbackFor, resolveModel } from './agent.models';
 
 describe('agent models catalog', () => {
   it('defaults to ds4-flash', () => {
@@ -26,12 +22,12 @@ describe('agent models catalog', () => {
     expect(MODEL_CATALOG.find((m) => m.id === 'ds4-flash')?.is_fallback).toBe(
       true,
     );
-    expect(MODEL_CATALOG.find((m) => m.id === 'ds4-flash')?.context_window).toBe(
-      131000,
-    );
-    expect(MODEL_CATALOG.find((m) => m.id === 'qwen3.6-35b')?.context_window).toBe(
-      131000,
-    );
+    expect(
+      MODEL_CATALOG.find((m) => m.id === 'ds4-flash')?.context_window,
+    ).toBe(131000);
+    expect(
+      MODEL_CATALOG.find((m) => m.id === 'qwen3.6-35b')?.context_window,
+    ).toBe(131000);
   });
 
   it('never falls back from the fallback (avoids loops)', () => {

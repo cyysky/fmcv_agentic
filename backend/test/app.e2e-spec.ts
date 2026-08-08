@@ -1,5 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { bootstrapApp } from './test-app';
@@ -16,20 +15,31 @@ describe('App API (e2e)', () => {
   });
 
   it('GET /api — app root responds', () => {
-    return request(app.getHttpServer()).get('/api').expect(200).expect('Hello World!');
+    return request(app.getHttpServer())
+      .get('/api')
+      .expect(200)
+      .expect('Hello World!');
   });
 
   it('GET /api/agent/models — catalog of known models', async () => {
-    const res = await request(app.getHttpServer()).get('/api/agent/models').expect(200);
+    const res = await request(app.getHttpServer())
+      .get('/api/agent/models')
+      .expect(200);
     expect(Array.isArray(res.body)).toBe(true);
-    const ids = res.body.map((m: { id: string }) => m.id);
+    const ids = (res.body as { id: string }[]).map((m) => m.id);
     expect(ids).toContain('ds4-flash');
   });
 
   it('GET /api/agent/workspaces — lists projects and named agents', async () => {
-    const res = await request(app.getHttpServer()).get('/api/agent/workspaces').expect(200);
-    expect(Array.isArray(res.body.projects)).toBe(true);
-    const agentNames = res.body.agents.map((a: { name: string }) => a.name);
+    const res = await request(app.getHttpServer())
+      .get('/api/agent/workspaces')
+      .expect(200);
+    expect(Array.isArray((res.body as { projects: unknown[] }).projects)).toBe(
+      true,
+    );
+    const agentNames = (res.body as { agents: { name: string }[] }).agents.map(
+      (a) => a.name,
+    );
     expect(agentNames).toEqual(expect.arrayContaining(['coder', 'researcher']));
   });
 
@@ -38,7 +48,9 @@ describe('App API (e2e)', () => {
       .post('/api/agent/workspaces/projects')
       .send({ name: 'valid-project', whatever: true })
       .expect(400);
-    expect(JSON.stringify(res.body.message)).toContain('whatever');
+    expect(
+      JSON.stringify((res.body as { message: unknown }).message),
+    ).toContain('whatever');
   });
 
   it('validates workspace project names (alphanumeric, dash, underscore)', async () => {
@@ -46,6 +58,8 @@ describe('App API (e2e)', () => {
       .post('/api/agent/workspaces/projects')
       .send({ name: 'bad name!' })
       .expect(400);
-    expect(JSON.stringify(res.body.message)).toContain('alphanumeric');
+    expect(
+      JSON.stringify((res.body as { message: unknown }).message),
+    ).toContain('alphanumeric');
   });
 });

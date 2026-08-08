@@ -5,7 +5,9 @@ import * as path from 'path';
 import { NAMED_AGENTS, WorkspaceService } from './workspace.service';
 
 function configMock(root: string) {
-  return { get: (k: string, d?: string) => (k === 'AGENT_WORKSPACE_ROOT' ? root : d) } as never;
+  return {
+    get: (k: string, d?: string) => (k === 'AGENT_WORKSPACE_ROOT' ? root : d),
+  } as never;
 }
 
 describe('WorkspaceService', () => {
@@ -42,7 +44,9 @@ describe('WorkspaceService', () => {
   it('rejects unknown named agents with a hint listing valid names', () => {
     expect(() => ws.assertAgentName('coder')).not.toThrow();
     expect(() => ws.assertAgentName('ghost')).toThrow(
-      new RegExp(`Valid named agents: ${NAMED_AGENTS.map((a) => a.name).join(', ')}`),
+      new RegExp(
+        `Valid named agents: ${NAMED_AGENTS.map((a) => a.name).join(', ')}`,
+      ),
     );
   });
 
@@ -69,7 +73,12 @@ describe('WorkspaceService', () => {
     const tree = await ws.readTree(path.join(ws.getAgentRoot('coder')), 3);
     expect((tree['tree-demo'] as Record<string, unknown>)['a.txt']).toBeNull();
     expect(
-      ((tree['tree-demo'] as Record<string, unknown>)['sub'] as Record<string, unknown>)['b.txt'],
+      (
+        (tree['tree-demo'] as Record<string, unknown>)['sub'] as Record<
+          string,
+          unknown
+        >
+      )['b.txt'],
     ).toBeNull();
   });
 
@@ -97,9 +106,9 @@ describe('WorkspaceService', () => {
       await expect(ws.safeResolve(root2, '../outside')).rejects.toThrow(
         'path outside allowed root',
       );
-      await expect(ws.safeResolve(root2, '../../../etc/passwd')).rejects.toThrow(
-        'path outside allowed root',
-      );
+      await expect(
+        ws.safeResolve(root2, '../../../etc/passwd'),
+      ).rejects.toThrow('path outside allowed root');
       await expect(ws.safeResolve(root2, '/etc/passwd')).rejects.toThrow(
         'path outside allowed root',
       );
@@ -108,9 +117,9 @@ describe('WorkspaceService', () => {
     it('rejects symlink escapes pointing outside the root', async () => {
       const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-outside-'));
       await fs.symlink(outside, path.join(root2, 'escape-link'));
-      await expect(ws.safeResolve(root2, 'escape-link/secret.txt')).rejects.toThrow(
-        'path outside allowed root',
-      );
+      await expect(
+        ws.safeResolve(root2, 'escape-link/secret.txt'),
+      ).rejects.toThrow('path outside allowed root');
       await fs.rm(outside, { recursive: true, force: true });
       await fs.unlink(path.join(root2, 'escape-link'));
     });

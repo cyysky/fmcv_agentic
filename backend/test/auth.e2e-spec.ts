@@ -20,7 +20,10 @@ describe('API token gate (e2e, real Postgres)', () => {
   it('rejects unauthenticated reads and mutations with 401', async () => {
     await http().get('/api/agent/models').expect(401);
     await http().get('/api/connections').expect(401);
-    await http().post('/api/connections').send({ displayName: 'x' }).expect(401);
+    await http()
+      .post('/api/connections')
+      .send({ displayName: 'x' })
+      .expect(401);
     await http().post('/api/agent/turn').send({ message: 'hi' }).expect(401);
   });
 
@@ -45,6 +48,9 @@ describe('API token gate (e2e, real Postgres)', () => {
         contextLength: 131000,
       })
       .expect(201);
-    await http().delete(`/api/connections/${created.body.id}`).set(auth).expect(200);
+    await http()
+      .delete(`/api/connections/${(created.body as { id: string }).id}`)
+      .set(auth)
+      .expect(200);
   });
 });

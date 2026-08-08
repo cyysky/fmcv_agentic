@@ -6,7 +6,9 @@ import { buildWorkspaceTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
 
 function configMock(root: string) {
-  return { get: (k: string, d?: string) => (k === 'AGENT_WORKSPACE_ROOT' ? root : d) } as never;
+  return {
+    get: (k: string, d?: string) => (k === 'AGENT_WORKSPACE_ROOT' ? root : d),
+  } as never;
 }
 
 describe('workspace tools', () => {
