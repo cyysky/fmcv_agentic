@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel, resolveWireModel } from './agent.models';
@@ -7,6 +7,7 @@ import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import type { SkillsService } from '../skills/skills.service';
 
 /**
  * Base agent for FMCC Agentic.
@@ -138,10 +139,15 @@ export class BaseAgentService implements OnModuleInit {
   /** Registered tools, keyed by tool name. */
   private readonly tools = new Map<string, BaseTool>();
 
+  /** Optional skill registry (DIRECTION item 3). When injected, agents get a
+   *  `read_skill` tool and a system-prompt block listing installed skills. */
+  private readonly skills?: SkillsService | null;
+
   constructor(
     config: ConfigService,
     workspaces: WorkspaceService,
     prisma: PrismaService,
+    @Optional() skills?: SkillsService,
   ) {
     this.baseUrl = (config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? '').replace(/\/+$/, '');
     this.envApiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
@@ -153,6 +159,37 @@ export class BaseAgentService implements OnModuleInit {
     this.workspaces = workspaces;
     this.prisma = prisma;
     this.registerTools(buildWorkspaceTools(workspaces));
+    if (skills) {
+      this.skills = skills;
+      this.registerTool({
+        name: 'read_skill',
+        description:
+          'Load the full instructions of an installed skill by its exact name. Use it whenever a named skill is relevant to the request.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Exact name of the installed skill',
+            },
+          },
+          required: ['name'],
+        },
+        run: async (args: Record<string, unknown>) => {
+          const name = typeof args.name === 'string' ? args.name.trim() : '';
+          if (!name) {
+            return JSON.stringify({ error: 'Skill name is required' });
+          }
+          const content = await this.skillsContent(name);
+          if (content === null) {
+            return JSON.stringify({
+              error: `No installed skill named "${name}"`,
+            });
+          }
+          return content;
+        },
+      });
+    }
     this.logger.log(
       `Base agent ready. baseUrl=${this.baseUrl} defaultModel=${this.defaultModelId} stub=${this.llmStub}`,
     );
@@ -342,6 +379,36 @@ export class BaseAgentService implements OnModuleInit {
       );
     }
   }
+  /** Installed-skill registry snippet for system prompts. Returns null when
+   *  there are no installed skills (or no skill registry is wired). */
+  private async buildSkillsBlock(): Promise<string | null> {
+    if (!this.skills) return null;
+    let installed: { name: string; description: string }[];
+    try {
+      installed = await this.skills.listInstalled();
+    } catch (err) {
+      this.logger.warn(
+        `Could not load installed skills: ${(err as Error).message}`,
+      );
+      return null;
+    }
+    if (installed.length === 0) return null;
+    const lines = installed.map(
+      (skill) => `- ${skill.name}: ${skill.description || 'no description'}`,
+    );
+    return [
+      'Installed skills are available to you. When one is relevant, call read_skill with its exact name to load its full instructions.',
+      ...lines,
+    ].join('\n');
+  }
+
+  /** Content of an installed skill for the `read_skill` tool (null when no
+   *  registry is wired or the skill is missing/not installed). */
+  private async skillsContent(name: string): Promise<string | null> {
+    if (!this.skills) return null;
+    return this.skills.contentFor(name);
+  }
+
   /* ------------------------------------------------------------------ *
    * Public turn entry points
    * ------------------------------------------------------------------ */
@@ -372,8 +439,12 @@ export class BaseAgentService implements OnModuleInit {
       endpoint && modelOverride
         ? { ...endpoint, model: resolveWireModel(opts.model as string) }
         : endpoint;
+    const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
     const messages: ChatMessage[] = [
       { role: 'system', content: DEFAULT_SYSTEM_PROMPT },
+      ...(skillsBlock
+        ? [{ role: 'system' as const, content: skillsBlock }]
+        : []),
       ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
       { role: 'user', content: opts.message },
     ];
@@ -432,13 +503,25 @@ export class BaseAgentService implements OnModuleInit {
       session.title = deriveSessionTitle(message);
     }
     const maxRunSteps = maxSteps && maxSteps > 0 ? maxSteps : 10;
+    const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
+    let runMessages = session.messages;
+    if (skillsBlock) {
+      runMessages = [...session.messages];
+      runMessages.splice(1, 0, { role: 'system', content: skillsBlock });
+    }
     const { answer, steps, messages } = await this.runLoop(
-      session.messages,
+      runMessages,
       spec,
       maxRunSteps,
       wireEndpoint ?? undefined,
     );
-    session.messages = messages;
+    // Keep the persisted transcript free of the per-turn skills registry:
+    // it is re-injected fresh on every turn, so stored history stays clean.
+    session.messages = skillsBlock
+      ? messages.filter(
+          (m) => !(m.role === 'system' && m.content === skillsBlock),
+        )
+      : messages;
     this.safePersistSession(session);
     return { answer, steps };
   }
@@ -462,6 +545,7 @@ export class BaseAgentService implements OnModuleInit {
   }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
 
+    const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
     const systemPrompt = [
       DEFAULT_SYSTEM_PROMPT,
       '',
@@ -473,7 +557,8 @@ export class BaseAgentService implements OnModuleInit {
       'channel_list / channel_read / channel_write tools, and you can also work',
       'in your own agent folder with the workspace tools. Use channel_post to',
       'publish short updates to the channel feed so your teammates can see them.',
-    ].join('\n');
+    ].join('\n') +
+      (skillsBlock ? `\n\n${skillsBlock}` : '');
 
     const threadBlock =
       opts.thread && opts.thread.trim().length > 0
@@ -559,6 +644,7 @@ export class BaseAgentService implements OnModuleInit {
   }): Promise<{ answer: string; steps: number; trace?: ToolTraceStep[] }> {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
 
+    const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
     const systemPrompt = [
       DEFAULT_SYSTEM_PROMPT,
       '',
@@ -570,7 +656,8 @@ export class BaseAgentService implements OnModuleInit {
       'channel_list / channel_read / channel_write tools, and you can also work',
       'in your own agent folder with the workspace tools. Use channel_post to',
       'publish short updates to the channel feed so your teammates can see them.',
-    ].join('\n');
+    ].join('\n') +
+      (skillsBlock ? `\n\n${skillsBlock}` : '');
 
     const threadBlock =
       opts.thread && opts.thread.trim().length > 0

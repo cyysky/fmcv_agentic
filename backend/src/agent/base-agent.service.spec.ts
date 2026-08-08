@@ -630,3 +630,103 @@ describe('BaseAgentService streaming channel turns', () => {
     }
   });
 });
+
+describe('BaseAgentService skills integration', () => {
+  function skillsDouble(
+    installed: { name: string; description: string }[] = [
+      { name: 'code-review', description: 'A review checklist' },
+    ],
+  ) {
+    return {
+      listInstalled: jest.fn(async () => installed),
+      contentFor: jest.fn(async (name: string) =>
+        name === 'code-review' ? '# Code review\nCheck edge cases.' : null,
+      ),
+    };
+  }
+
+  it('registers read_skill only when a skill registry is wired', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillreg-'));
+    try {
+      const plain = new BaseAgentService(configMock(root), new WorkspaceService(configMock(root)), prismaDouble());
+      expect(plain.listTools().map((t) => t.name)).not.toContain('read_skill');
+
+      const withSkills = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+        skillsDouble() as never,
+      );
+      const tools = withSkills.listTools();
+      const readSkill = tools.find((t) => t.name === 'read_skill');
+      expect(readSkill).toBeTruthy();
+      expect(readSkill?.description).toContain('installed skill');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('read_skill returns the body of an installed skill and errors otherwise', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-readskill-'));
+    try {
+      const skills = skillsDouble();
+      const agent = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+        skills as never,
+      );
+      const readSkill = agent.listTools().find((t) => t.name === 'read_skill')!;
+      await expect(readSkill.run({ name: 'code-review' })).resolves.toBe(
+        '# Code review\nCheck edge cases.',
+      );
+      await expect(readSkill.run({ name: 'absent' })).resolves.toContain(
+        'No installed skill named',
+      );
+      await expect(readSkill.run({})).resolves.toContain('Skill name is required');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('runTurn injects the installed-skills registry into the LLM context', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillturn-'));
+    try {
+      const skills = skillsDouble();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, prismaDouble(), skills as never);
+      const calls: jest.Mock = jest.fn(async () => ({ content: 'ok', tool_calls: undefined }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      await agent.runTurn({ message: 'review this diff' });
+      const sent = calls.mock.calls[0][0] as ChatMessage[];
+      const registry = sent.filter((m) => m.role === 'system' && m.content?.includes('Installed skills are available'));
+      expect(registry).toHaveLength(1);
+      expect(registry[0].content).toContain('code-review: A review checklist');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('converse injects the registry per turn but keeps the stored transcript clean', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-skillconv-'));
+    try {
+      const skills = skillsDouble();
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, prismaDouble(), skills as never);
+      const calls: jest.Mock = jest.fn(async () => ({ content: 'done', tool_calls: undefined }));
+      (agent as unknown as { callModel: jest.Mock }).callModel = calls;
+
+      const s = await agent.createSession('skill chat');
+      await agent.converse(s.id, 'review the diff');
+      const sent = calls.mock.calls[0][0] as ChatMessage[];
+      expect(sent.some((m) => m.content === 'Installed skills are available to you. When one is relevant, call read_skill with its exact name to load its full instructions.\n- code-review: A review checklist')).toBe(true);
+
+      const stored = agent.getSession(s.id).messages;
+      expect(stored.some((m) => m.content?.includes('Installed skills are available'))).toBe(false);
+      expect(stored.some((m) => m.content === 'review the diff')).toBe(true);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});

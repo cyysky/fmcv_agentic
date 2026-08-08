@@ -197,3 +197,23 @@ model CronJob {
   @@index([connectionId])
   @@map("cron_jobs")
 }
+
+/**
+ * An agent skill (DIRECTION.md item 3). A skill is a named, uniquely
+ * identified capability: a description plus markdown instructions (the skill
+ * body, e.g. a SKILL.md) that agents can load and follow. Skills are
+ * authored here, marked `installed` when ready for use, and surfaced to
+ * agent turns through the `read_skill` tool + a system-prompt registry
+ * block. Uninstalling keeps the authored record; deleting removes it.
+ */
+model Skill {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String   @default("")
+  content     String   @default("")
+  installed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("skills")
+}
