@@ -167,7 +167,7 @@ describe('BaseAgentService sessions', () => {
 
       // Manually renamed sessions keep their custom title.
       const named = await agent.createSession();
-      agent.renameSession(named.id, 'My title');
+      await agent.renameSession(named.id, 'My title');
       await agent.converse(named.id, 'hello');
       expect(agent.getSession(named.id).title).toBe('My title');
 
@@ -189,7 +189,7 @@ describe('BaseAgentService sessions', () => {
       const agent = new BaseAgentService(configMock(root), ws, fake as never);
 
       const s = await agent.createSession('old title');
-      const renamed = agent.renameSession(s.id, '  new title  ');
+      const renamed = await agent.renameSession(s.id, '  new title  ');
       expect(renamed.title).toBe('new title');
       expect(agent.getSession(s.id).title).toBe('new title');
       expect(fake.agentSession.upsert).toHaveBeenCalledWith(
@@ -198,10 +198,10 @@ describe('BaseAgentService sessions', () => {
           update: expect.objectContaining({ title: 'new title' }),
         }),
       );
-      expect(() => agent.renameSession(s.id, '   ')).toThrow(/blank/);
-      expect(() =>
+      await expect(agent.renameSession(s.id, '   ')).rejects.toThrow(/blank/);
+      await expect(
         agent.renameSession('00000000-0000-4000-8000-000000000000', 'x'),
-      ).toThrow();
+      ).rejects.toThrow();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

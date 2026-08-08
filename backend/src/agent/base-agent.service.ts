@@ -311,7 +311,7 @@ export class BaseAgentService implements OnModuleInit {
       await this.resolveConnectionEndpoint(connectionId, false);
     }
     this.sessions.set(session.id, session);
-    this.safePersistSession(session);
+    await this.persistSession(session);
     return session;
   }
 
@@ -340,14 +340,14 @@ export class BaseAgentService implements OnModuleInit {
       });
   }
 
-  renameSession(id: string, title: string): Session {
+  async renameSession(id: string, title: string): Promise<Session> {
     const clean = title.trim();
     if (!clean) {
       throw new BadRequestException('Session title must not be blank');
     }
     const session = this.getSession(id);
     session.title = clean;
-    this.safePersistSession(session);
+    await this.persistSession(session);
     return session;
   }
 
@@ -369,10 +369,12 @@ export class BaseAgentService implements OnModuleInit {
   }
 
   /** Best-effort write of a session row to Postgres; a DB failure must never
-   *  break the in-memory session flow, so it is logged and swallowed. */
-  private safePersistSession(session: Session): void {
-    void this.prisma.agentSession
-      .upsert({
+   *  break the in-memory session flow, so it is logged and swallowed. Callers
+   *  await the promise so a completed turn never races ahead of its own
+   *  persisted row (read-your-writes for API callers). */
+  private async persistSession(session: Session): Promise<void> {
+    try {
+      await this.prisma.agentSession.upsert({
         where: { id: session.id },
         create: {
           id: session.id,
@@ -392,12 +394,12 @@ export class BaseAgentService implements OnModuleInit {
             : { connectionId: null }),
           messages: session.messages as unknown as Prisma.InputJsonValue,
         },
-      })
-      .catch((err) => {
-        this.logger.warn(
-          `Could not persist session ${session.id}: ${(err as Error).message}`,
-        );
       });
+    } catch (err) {
+      this.logger.warn(
+        `Could not persist session ${session.id}: ${(err as Error).message}`,
+      );
+    }
   }
 
   /** Map a persisted row onto the public Session shape. */
@@ -593,7 +595,7 @@ export class BaseAgentService implements OnModuleInit {
           (m) => !(m.role === 'system' && m.content === skillsBlock),
         )
       : messages;
-    this.safePersistSession(session);
+    await this.persistSession(session);
     return { answer, steps };
   }
 
