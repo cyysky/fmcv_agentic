@@ -55,6 +55,11 @@
 //      link points at that proxy, click "Open in new tab" and prove the same
 //      link renders the document in a fresh tab, then delete the fixture
 //      through the UI and verify server-side cleanup
+//   10f. Mobile channel dashboard: at 360x640 the channel dashboard stacks
+//      sidebar / conversation / right column with no horizontal overflow,
+//      the member panel is reachable, and clicking a member opens the debug
+//      panel inside the scrollable column (screenshots + channel fixture
+//      cleanup)
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -779,6 +784,169 @@ async function agentChannelCleanup(f) {
     log(`  cleanup FAILED: ${err.message}`);
     return `error: ${err.message}`;
   }
+  return parts.join("+");
+}
+
+/** Mobile channel-dashboard flow: at a 360x640 phone viewport the channel
+ *  dashboard must stack sidebar / conversation / right column with no
+ *  horizontal overflow, and the member debug panel must be reachable inside
+ *  the scrollable column (the member list lives below the conversation). */
+async function mobileChannelFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  const channelName = `browser-e2e-mobile-${Date.now().toString(36)}`;
+  const created = await fetch(`${API}/channels`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: channelName, creatorAgent: "coder" }),
+  });
+  if (!created.ok) {
+    throw new Error(`mobile channel flow: create fixture #${channelName} -> HTTP ${created.status}`);
+  }
+  log(`flow mobile channel dashboard -> ${url} (fixture #${channelName})`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, channelName };
+  const started = Date.now();
+  try {
+    wireErrorCapture(c, sink);
+    // Force a phone-shaped viewport before the page boots.
+    await c.send("Emulation.setDeviceMetricsOverride", {
+      width: 360,
+      height: 640,
+      deviceScaleFactor: 2,
+      mobile: true,
+    });
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "mobile agent ready");
+    if (!ready) throw new Error("mobile channel flow: page never loaded");
+
+    // 1. Open the Channels tab, then the fixture channel row.
+    const channelsTab = await waitFor(
+      c,
+      `(() => { const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Channels"); if (!b) return false; b.click(); return true; })()`,
+      15000,
+      500,
+      "channels tab",
+    );
+    if (!channelsTab) throw new Error("mobile channel flow: Channels tab not found");
+    const listSeen = await waitFor(
+      c,
+      `!!${selExpr('[class*="channelList"]')}`,
+      15000,
+      500,
+      "channel list",
+    );
+    if (!listSeen) throw new Error("mobile channel flow: channel list never rendered");
+    const rowOpened = await evalJs(c, `(() => {
+      const rows = [...document.querySelectorAll('[class*="channelList"] [class*="channelRow"]')];
+      const row = rows.find((r) => r.innerText.includes(${JSON.stringify(channelName)}));
+      const b = row && row.querySelector("button");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!rowOpened) throw new Error(`mobile channel flow: fixture row #${channelName} not found`);
+
+    // 2. Wait for the member list, then assert the stacked layout.
+    const membersReady = await waitFor(
+      c,
+      `document.querySelectorAll('[class*="memberList"] [class*="memberRow"]').length > 0`,
+      15000,
+      500,
+      "member list",
+    );
+    if (!membersReady) throw new Error("mobile channel flow: member list never appeared");
+    const layout = await evalJs(c, `(() => {
+      const vw = innerWidth;
+      const inView = (el) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.left >= -1 && r.right <= vw + 1;
+      };
+      const sidebar = document.querySelector('[class*="channelSidebar"]');
+      const conversation = document.querySelector('[class*="conversation"]');
+      const rightCol = document.querySelector('[class*="rightCol"]');
+      const channels = document.querySelector('[class*="channels"]');
+      const rect = (el) => (el ? el.getBoundingClientRect() : null);
+      return {
+        noHorizontalOverflow: document.documentElement.scrollWidth <= vw + 2,
+        stacked: !!channels && getComputedStyle(channels).flexDirection === "column",
+        sidebarInView: inView(sidebar),
+        conversationInView: inView(conversation),
+        rightColInView: inView(rightCol),
+        widths: {
+          sidebar: rect(sidebar)?.width ?? -1,
+          conversation: rect(conversation)?.width ?? -1,
+          rightCol: rect(rightCol)?.width ?? -1,
+        },
+      };
+    })()`);
+    flow.layout = layout;
+    if (
+      !layout.noHorizontalOverflow ||
+      !layout.stacked ||
+      !layout.sidebarInView ||
+      !layout.conversationInView ||
+      !layout.rightColInView
+    ) {
+      throw new Error(`mobile channel flow: stacked dashboard layout broken (${JSON.stringify(layout)})`);
+    }
+    flow.steps.push("dashboard-layout");
+    await screenshot(c, "agent-channels-mobile.png");
+
+    // 3. Click a member row and prove the debug panel opens without overflow.
+    const memberClicked = await evalJs(c, `(() => {
+      const b = document.querySelector('[class*="memberList"] [class*="memberRow"]');
+      if (!b) return false;
+      b.scrollIntoView({ block: "nearest" });
+      b.click();
+      return true;
+    })()`);
+    if (!memberClicked) throw new Error("mobile channel flow: no member row to click");
+    const debugSeen = await waitFor(
+      c,
+      `!!${selExpr('[class*="memberDebug"]')}`,
+      10000,
+      400,
+      "member debug",
+    );
+    if (!debugSeen) throw new Error("mobile channel flow: member debug never opened");
+    const overflowAfterDebug = await evalJs(c, "document.documentElement.scrollWidth <= innerWidth + 2");
+    if (!overflowAfterDebug) {
+      throw new Error("mobile channel flow: horizontal overflow after opening member debug");
+    }
+    flow.result = { layoutOk: true, memberDebugReachable: true, overflowAfterDebug };
+    flow.steps.push("member-debug");
+    await delay(300);
+    await screenshot(c, "agent-channels-member-mobile.png");
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  mobile channel dashboard verified in ${flow.timings.elapsedMs}ms`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Mobile channel-dashboard cleanup: delete the fixture channel, then prove
+ *  its per-channel project folder is gone from the workspace. */
+async function mobileChannelCleanup(f) {
+  if (!f?.channelName) return null;
+  const parts = [];
+  try {
+    parts.push(await cleanupChannel(f.channelName));
+    const prune = await projectFolderPruneCheck("browser-e2e-mobile-");
+    if (prune.ok === false) {
+      parts.push(`project-leftovers:${prune.leftovers.join(",")}`);
+    } else if (prune.ok === true) {
+      parts.push("project-folder-clean");
+    } else {
+      parts.push(`prune-skipped:${prune.note ?? prune.error}`);
+    }
+  } catch (err) {
+    log(`  cleanup FAILED: ${err.message}`);
+    return `error: ${err.message}`;
+  }
+  log(`  cleanup: mobile channel fixture removed (${parts.join("+")})`);
   return parts.join("+");
 }
 
@@ -4227,6 +4395,9 @@ async function main() {
     report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
+    report.mobileChannelFlow = await mobileChannelFlow();
+    report.mobileChannelFlow.cleanup = await mobileChannelCleanup(report.mobileChannelFlow);
+
     report.sessionsFlow = await agentSessionsFlow();
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow.flow);
     report.filesFlow = await filesFlow();
@@ -4284,6 +4455,19 @@ async function main() {
   }
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
+
+  const mfl = report.mobileChannelFlow;
+  if (
+    !mfl ||
+    !mfl.flow.result?.layoutOk ||
+    !mfl.flow.result?.memberDebugReachable ||
+    !mfl.cleanup?.includes("deleted") ||
+    String(mfl.cleanup).includes("project-leftovers")
+  ) {
+    failures.push("mobile channel flow: responsive dashboard/member debug not verified (" + JSON.stringify(mfl && mfl.flow) + ")");
+  }
+  const mobileErrs = errorCount(mfl ? mfl.errors : {});
+  if (mobileErrs > 0) failures.push("mobile channel flow: " + mobileErrs + " console/network error(s)");
 
   const sf = report.sessionsFlow;
   if (!sf || !sf.flow.answerSeen || !sf.flow.historySeen) {

@@ -142,11 +142,23 @@ Environment overrides:
     channel done, sessions picker/connection, files before/after,
     html-view/iframe/new-tab/clean, buckets
     created/uploaded/downloaded/reloaded, skills created/reload/edited/
-    deleted) are captured to `e2e/screenshots/`.
+    deleted, mobile channel dashboard + member debug) are captured to
+    `e2e/screenshots/`.
 
+11. **Mobile channel-dashboard journey**: on `/agent` emulated at 360×640,
+    the script creates a fixture channel (with `coder` as creator), opens the
+    Channels tab and the channel row, and asserts the dashboard stacks —
+    sidebar, conversation, and member/project column each fit the viewport
+    with no horizontal overflow. It then clicks a member row and proves the
+    debug pane opens and the page still fits; both screenshots
+    (`agent-channels-mobile.png`, `agent-channels-member-mobile.png`) are
+    captured and the fixture channel is deleted afterwards (project-folder
+    prune verified via the workspace API).
 ## Exit code / gate
 
-Exit code `0` only when every route check and the channel journey pass
+Exit code `0` only when every route check and every journey (channel,
+mobile channel dashboard, sessions, files, HTML view, buckets, cron,
+skills, settings) pass
 *without* console/network errors — this is the Phase-5 browser quality gate.
 Failures print the failing routes/checks and the collected errors in
 `e2e/report.json`.
@@ -183,3 +195,6 @@ Failures print the failing routes/checks and the collected errors in
   `browser-e2e-html-*` fixture folders — emptying each folder first because
   the files API refuses to delete non-empty directories — plus `.dot-*`
   fixture files left by interrupted runs.
+- The mobile channel-dashboard journey's `browser-e2e-mobile-*` fixture is
+  covered by the same pre-run stale sweep as the other `browser-e2e-*`
+  channels, so an interrupted run is cleaned up on the next start.

@@ -1834,3 +1834,57 @@
     border-left-color: #3b82f6;
   }
 }
+
+/* --------------------- channel dashboard: small screens ------------------ */
+
+@media (max-width: 760px) {
+  .containerWide {
+    min-width: 0;
+  }
+
+  .header {
+    min-width: 0;
+  }
+
+  .channels {
+    flex-direction: column;
+    min-width: 0;
+    gap: 0.75rem;
+    overflow-y: auto;
+  }
+
+  .channelSidebar {
+    width: 100%;
+    max-height: 30vh;
+    flex-shrink: 0;
+  }
+
+  .conversation {
+    min-width: 0;
+    width: 100%;
+    min-height: 38vh;
+    flex: 1;
+  }
+
+  .chMsgLabel {
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+  }
+
+  .chMsgTime {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .rightCol {
+    width: 100%;
+    flex-direction: column;
+    max-height: 42vh;
+    flex-shrink: 0;
+  }
+
+  .rightCol .memberPanel,
+  .rightCol .projectPanel {
+    max-height: 42vh;
+  }
+}

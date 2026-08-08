@@ -1,3 +1,21 @@
+## Round 2026-08-08 — autonomous iteration round 50 (tag `round-50`)
+
+### Fixed
+- Mobile channel dashboard: at ≤760px the channel dashboard now stacks the
+  sidebar, conversation, and member/project column vertically with per-panel
+  max heights and no horizontal overflow; message labels wrap with full-width
+  timestamps. The member panel (and its debug pane) is reachable on a 360×640
+  phone instead of being clipped behind an ~876px-wide flex row.
+
+### Changed
+- Browser E2E gained a mobile channel-dashboard journey (360×640): creates a
+  fixture channel, opens the dashboard, asserts the stacked layout and
+  in-viewport panels, opens a member's debug panel without overflow
+  (`agent-channels-mobile.png`, `agent-channels-member-mobile.png`), then
+  deletes the fixture and proves the channel project folder is pruned.
+- Docs updated (README responsive/browser-E2E bullets, `e2e/README.md`);
+  `e2e/report.json` + screenshots refreshed against the passing run.
+
 ## Round 2026-08-08 — autonomous iteration round 49 (tag `round-49`)
 
 ### Changed

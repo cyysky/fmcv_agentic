@@ -32,7 +32,9 @@ and coordinate multi-agent teams in Slack-style channels.
   channel UI, landing card) that follow the OS theme with no toggle needed.
 - **Responsive layout** — the app is usable down to 320px-wide screens: the
   nav compacts (brand shortens to "FMCV"), header control rows wrap, files
-  rows truncate names with ellipsis, and the agent composer stays on-screen.
+  rows truncate names with ellipsis, the agent composer stays on-screen, and
+  the channel dashboard stacks its sidebar / conversation / member+project
+  panels into one scrollable column with the member debug panel reachable.
 - **Connections CRUD** — add/list/update/delete OpenAI-compatible API
   connections (display name, base URL, model, context length, concurrent
   connections, optional key). Every row has a **Test** button that probes the
@@ -343,7 +345,9 @@ cd e2e && node browser-e2e.mjs
   inputs),
   re-probes all seven routes at 360×640 device metrics asserting no horizontal
   overflow, fit nav links, a visible agent composer, and the files responsive
-  row grid,
+  row grid; it then opens a fixture channel at 360×640 and proves the channel
+  dashboard stacks (sidebar / conversation / right column in-viewport, no
+  horizontal overflow) with the member debug panel reachable,
   and drives a nav journey that clicks through every route
   verifying URL, title and active state, then runs live journeys: a channel create → post →
   agent answer → delete, a sessions create → live converse → auto-title in the
