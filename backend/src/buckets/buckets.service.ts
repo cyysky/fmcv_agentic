@@ -89,9 +89,10 @@ export function deriveDocumentKind(
  * folder or an agent folder. Physical content is stored on disk under the
  * mapped folder (`<folderRoot>/<bucket name>/<file name>`) — a bucket folder
  * per bucket, so a project/agent folder can hold many buckets. Bucket
- * metadata has no update/delete endpoints (read-only); documents can only be
- * added and read, and a file name can never be uploaded twice into the same
- * bucket (`wx` file creation + a DB unique index both enforce this).
+ * names can be renamed (folder moved to match) and buckets deleted (folder +
+ * rows removed). Documents can only be added and read, and a file name can
+ * never be uploaded twice into the same bucket (`wx` file creation + a DB
+ * unique index both enforce this).
  */
 @Injectable()
 export class BucketsService {
@@ -141,8 +142,8 @@ export class BucketsService {
     });
   }
 
-  /** Get one bucket with its documents (no bucket editing/deleting exists —
-   *  buckets are read-only). */
+  /** Get one bucket with its documents (rename/delete live on PATCH/DELETE
+   *  :id). */
   async getBucket(
     id: string,
   ): Promise<Bucket & { documents: ManagedDocument[] }> {
@@ -262,7 +263,132 @@ export class BucketsService {
     };
   }
 
+  /** Rename a bucket: validate the new unique name, move the physical bucket
+   *  folder, then update the row. The folder move is rolled back if the DB
+   *  write fails. Renaming to the current name is an idempotent no-op. */
+  async renameBucket(id: string, name: string): Promise<Bucket> {
+    const bucket = await this.getBucket(id); // 404 when missing
+    if (bucket.name === name) return bucket;
+
+    const mappedRoot = await this.resolveMappedRoot(
+      bucket.folderType as 'project' | 'agent',
+      bucket.folderName,
+    );
+    const oldDir = this.bucketFolder(mappedRoot, bucket.name);
+    const newDir = this.bucketFolder(mappedRoot, name);
+
+    // Pre-check the unique name before touching the filesystem; the DB
+    // unique index remains the final authority (rolled back if it trips).
+    const clash = await this.prisma.bucket.findUnique({ where: { name } });
+    if (clash && clash.id !== id) {
+      throw new ConflictException(`Bucket name "${name}" already exists`);
+    }
+    let newDirExists = false;
+    try {
+      newDirExists = (await fs.stat(newDir)).isDirectory();
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        throw new BadRequestException(
+          `Cannot inspect target folder: ${(err as Error).message}`,
+        );
+      }
+    }
+    if (newDirExists) {
+      throw new ConflictException(
+        `A bucket folder named "${name}" already exists`,
+      );
+    }
+
+    let moved = false;
+    try {
+      try {
+        await fs.rename(oldDir, newDir);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') {
+          // Row exists but its folder is missing (inconsistency): recreate
+          // the folder under the new name instead of failing the rename.
+          await fs.mkdir(newDir, { recursive: true });
+        } else if (code === 'EEXIST' || code === 'ENOTEMPTY') {
+          throw new ConflictException(
+            `A bucket folder named "${name}" already exists`,
+          );
+        } else {
+          throw err;
+        }
+      }
+      moved = true;
+      try {
+        return await this.prisma.bucket.update({
+          where: { id },
+          data: { name },
+        });
+      } catch (err) {
+        await fs.rename(newDir, oldDir).catch(() => undefined);
+        if (this.isUniqueViolation(err)) {
+          throw new ConflictException(`Bucket name "${name}" already exists`);
+        }
+        throw err;
+      }
+    } catch (err) {
+      if (
+        err instanceof BadRequestException ||
+        err instanceof ConflictException
+      ) {
+        throw err;
+      }
+      const detail = moved
+        ? (err as Error).message
+        : `Cannot rename bucket folder: ${(err as Error).message}`;
+      throw new BadRequestException(detail);
+    }
+  }
+
+  /** Delete a bucket: remove its folder (all stored documents) first, then
+   *  the DB rows. If the row delete fails the folder is restored so no
+   *  half-deleted state survives. */
+  async deleteBucket(id: string): Promise<{ deleted: boolean }> {
+    const bucket = await this.getBucket(id); // 404 when missing
+    const mappedRoot = await this.resolveMappedRoot(
+      bucket.folderType as 'project' | 'agent',
+      bucket.folderName,
+    );
+    const bucketDir = this.bucketFolder(mappedRoot, bucket.name);
+    try {
+      await fs.rm(bucketDir, { recursive: true, force: true });
+    } catch (err) {
+      throw new BadRequestException(
+        `Cannot remove bucket folder: ${(err as Error).message}`,
+      );
+    }
+    try {
+      await this.prisma.$transaction([
+        this.prisma.managedDocument.deleteMany({ where: { bucketId: id } }),
+        this.prisma.bucket.delete({ where: { id } }),
+      ]);
+    } catch (err) {
+      await fs.mkdir(bucketDir, { recursive: true }).catch(() => undefined);
+      throw err;
+    }
+    return { deleted: true };
+  }
+
   /* ----------------------------- internals ----------------------------- */
+
+  /** Resolve `<mappedRoot>/<bucketName>` defensively: the name comes from the
+   *  DB (validated on create/rename), but never allow a path that escapes the
+   *  mapped root. */
+  private bucketFolder(mappedRoot: string, bucketName: string): string {
+    const dir = path.resolve(mappedRoot, bucketName);
+    const rel = path.relative(path.resolve(mappedRoot), dir);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new BadRequestException(
+        `Bucket name "${bucketName}" escapes its mapped folder`,
+      );
+    }
+    return dir;
+  }
 
   /** Resolve the mapped project/agent folder root and validate it exists. */
   private async resolveMappedRoot(

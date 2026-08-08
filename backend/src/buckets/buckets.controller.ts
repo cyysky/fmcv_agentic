@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Res,
   UploadedFile,
@@ -11,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
-import { CreateBucketDto } from './buckets.dto';
+import { CreateBucketDto, RenameBucketDto } from './buckets.dto';
 import { BucketsService } from './buckets.service';
 import type { UploadedFileLike } from './buckets.service';
 
@@ -23,10 +25,14 @@ import type { UploadedFileLike } from './buckets.service';
  *   GET        /api/buckets/:id                           get one + documents
  *   GET        /api/buckets/:id/documents                 list documents
  *   POST       /api/buckets/:id/documents                 upload a managed document
+ *   PATCH      /api/buckets/:id                           rename (unique name,
+ *                                                         folder moved to match)
+ *   DELETE     /api/buckets/:id                           delete bucket + all
+ *                                                         documents (folder removed)
  *   GET        /api/buckets/:id/documents/:docId/download stream the document
  *
- * Buckets are read-only: there are intentionally no update or delete
- * endpoints, and documents cannot be edited or overwritten once added.
+ * Buckets can be renamed or deleted; documents stay immutable once added
+ * (never edited or overwritten).
  */
 @Controller('buckets')
 export class BucketsController {
@@ -45,6 +51,19 @@ export class BucketsController {
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string) {
     return this.buckets.getBucket(id);
+  }
+
+  @Patch(':id')
+  rename(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenameBucketDto,
+  ) {
+    return this.buckets.renameBucket(id, dto.name);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.buckets.deleteBucket(id);
   }
 
   @Get(':id/documents')

@@ -23,3 +23,15 @@ export class CreateBucketDto {
   @MaxLength(80)
   folderName: string;
 }
+
+/** Rename target for an existing bucket (same filesystem-safe rules as
+ *  creation; the folder is physically renamed to match). */
+export class RenameBucketDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  @Matches(BUCKET_NAME_RE, {
+    message: 'name must use letters, digits, dash or underscore only',
+  })
+  name: string;
+}

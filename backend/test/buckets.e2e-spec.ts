@@ -37,6 +37,7 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
   let prisma: PrismaService;
   const stamp = Date.now().toString(36);
   const bucketName = `e2e-bucket-${stamp}`;
+  const dupeName = `e2e-bucket-dupe-${stamp}`;
   const projectName = `e2e-proj-${stamp}`;
   let bucketId = '';
   let docId = '';
@@ -55,15 +56,21 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
   afterAll(async () => {
     if (bucketId) {
       await prisma.managedDocument.deleteMany({ where: { bucketId } });
-      await prisma.bucket.deleteMany({ where: { id: bucketId } });
     }
+    await prisma.bucket.deleteMany({
+      where: { name: { in: [bucketName, `${bucketName}-renamed`, dupeName] } },
+    });
     // The bucket folder lives under the temp E2E workspace; remove it so the
     // next run starts clean even if a test failed mid-way.
     const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
-    const bucketDir = path.join(root, 'projects', projectName, bucketName);
-    await fs
-      .rm(bucketDir, { recursive: true, force: true })
-      .catch(() => undefined);
+    for (const folder of new Set([bucketName, `${bucketName}-renamed`, dupeName])) {
+      await fs
+        .rm(path.join(root, 'projects', projectName, folder), {
+          recursive: true,
+          force: true,
+        })
+        .catch(() => undefined);
+    }
     await app.close();
   });
 
@@ -145,6 +152,56 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
     expect(row.documents).toEqual([]);
   });
 
+  it('renames the bucket and moves its folder on disk', async () => {
+    const newName = `${bucketName}-renamed`;
+    const res = await http()
+      .patch(`/api/buckets/${bucketId}`)
+      .send({ name: newName })
+      .expect(200);
+    const row = json<BucketRow>(res);
+    expect(row.name).toBe(newName);
+
+    const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
+    await expect(
+      fs.stat(path.join(root, 'projects', projectName, bucketName)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    const moved = await fs.stat(
+      path.join(root, 'projects', projectName, newName),
+    );
+    expect(moved.isDirectory()).toBe(true);
+  });
+
+  it('400s renaming to an invalid bucket name', async () => {
+    await http()
+      .patch(`/api/buckets/${bucketId}`)
+      .send({ name: 'bad name!' })
+      .expect(400);
+  });
+
+  it('409s renaming to a name owned by another bucket, then deletes that bucket', async () => {
+    const created = await http()
+      .post('/api/buckets')
+      .send({
+        name: dupeName,
+        folderType: 'project',
+        folderName: projectName,
+      })
+      .expect(201);
+    const dupe = json<BucketRow>(created);
+    await http()
+      .patch(`/api/buckets/${bucketId}`)
+      .send({ name: dupeName })
+      .expect(409);
+
+    // The conflict bucket is disposable: exercise the new DELETE endpoint.
+    await http().delete(`/api/buckets/${dupe.id}`).expect(200);
+    await http().get(`/api/buckets/${dupe.id}`).expect(404);
+    const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
+    await expect(
+      fs.stat(path.join(root, 'projects', projectName, dupeName)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('404s for an unknown bucket', async () => {
     await http()
       .get('/api/buckets/00000000-0000-4000-8000-000000000000')
@@ -217,5 +274,17 @@ describe('Buckets API (e2e, real Postgres + temp workspace)', () => {
         `/api/buckets/${bucketId}/documents/00000000-0000-4000-8000-000000000000/download`,
       )
       .expect(404);
+  });
+
+  it('deletes the bucket with its documents through the API', async () => {
+    await http().delete(`/api/buckets/${bucketId}`).expect(200);
+    await http().get(`/api/buckets/${bucketId}`).expect(404);
+    const list = await http().get('/api/buckets').expect(200);
+    const rows = json<BucketRow[]>(list);
+    expect(rows.some((b) => b.id === bucketId)).toBe(false);
+    const root = process.env.AGENT_WORKSPACE_ROOT ?? '';
+    await expect(
+      fs.stat(path.join(root, 'projects', projectName, `${bucketName}-renamed`)),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

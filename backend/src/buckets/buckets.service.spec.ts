@@ -18,16 +18,26 @@ import {
 
 /** Minimal Prisma double for the two models the buckets service touches. */
 type MockStore = Record<string, jest.Mock>;
-function prismaDouble(): { bucket: MockStore; managedDocument: MockStore } {
+function prismaDouble(): {
+  bucket: MockStore;
+  managedDocument: MockStore;
+  $transaction: jest.Mock;
+} {
   const make = (defaultValue: unknown): MockStore => ({
     create: jest.fn().mockResolvedValue(defaultValue),
     findMany: jest.fn().mockResolvedValue([]),
     findUnique: jest.fn().mockResolvedValue(null),
     findFirst: jest.fn().mockResolvedValue(null),
+    update: jest.fn().mockResolvedValue(defaultValue),
+    delete: jest.fn().mockResolvedValue(defaultValue),
+    deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
   });
   return {
     bucket: make({ id: 'bucket-1' }),
     managedDocument: make({ id: 'doc-1' }),
+    $transaction: jest
+      .fn()
+      .mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops)),
   };
 }
 
@@ -146,6 +156,153 @@ describe('BucketsService', () => {
     await expect(service.getBucket('missing-id')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('renames a bucket and moves its folder on disk', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    (prisma.bucket.update as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research-renamed',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const oldDir = path.join(root, 'projects', 'docs', 'research');
+    await fs.mkdir(oldDir, { recursive: true });
+    await fs.writeFile(path.join(oldDir, 'paper.pdf'), 'x');
+
+    const renamed = await service.renameBucket('bucket-1', 'research-renamed');
+
+    expect(renamed.name).toBe('research-renamed');
+    expect(prisma.bucket.update).toHaveBeenCalledWith({
+      where: { id: 'bucket-1' },
+      data: { name: 'research-renamed' },
+    });
+    await expect(fs.stat(oldDir)).rejects.toMatchObject({ code: 'ENOENT' });
+    const moved = await fs.stat(
+      path.join(root, 'projects', 'docs', 'research-renamed'),
+    );
+    expect(moved.isDirectory()).toBe(true);
+    expect(
+      await fs.readFile(
+        path.join(root, 'projects', 'docs', 'research-renamed', 'paper.pdf'),
+        'utf8',
+      ),
+    ).toBe('x');
+  });
+
+  it('recreates the folder when a renamed bucket row has no folder', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'ghost',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    (prisma.bucket.update as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'ghost-fixed',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const renamed = await service.renameBucket('bucket-1', 'ghost-fixed');
+    expect(renamed.name).toBe('ghost-fixed');
+    const stat = await fs.stat(
+      path.join(root, 'projects', 'docs', 'ghost-fixed'),
+    );
+    expect(stat.isDirectory()).toBe(true);
+  });
+
+  it('renaming to the current name is an idempotent no-op', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const out = await service.renameBucket('bucket-1', 'research');
+    expect(out.name).toBe('research');
+    expect(prisma.bucket.update).not.toHaveBeenCalled();
+  });
+
+  it('409s when the new bucket name already exists', async () => {
+    (prisma.bucket.findUnique as jest.Mock)
+      .mockResolvedValueOnce({
+        id: 'bucket-1',
+        name: 'research',
+        folderType: 'project',
+        folderName: 'docs',
+      })
+      .mockResolvedValueOnce({
+        id: 'bucket-2',
+        name: 'taken',
+        folderType: 'project',
+        folderName: 'docs',
+      });
+    await expect(
+      service.renameBucket('bucket-1', 'taken'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('409s when the target folder already exists on disk', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await fs.mkdir(
+      path.join(root, 'projects', 'docs', 'research-renamed'),
+      { recursive: true },
+    );
+    await expect(
+      service.renameBucket('bucket-1', 'research-renamed'),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects a rename that escapes the mapped root', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    await expect(
+      service.renameBucket('bucket-1', '../../evil'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('deletes a bucket: removes its folder and both row types', async () => {
+    (prisma.bucket.findUnique as jest.Mock).mockResolvedValue({
+      id: 'bucket-1',
+      name: 'research',
+      folderType: 'project',
+      folderName: 'docs',
+    });
+    const bucketDir = path.join(root, 'projects', 'docs', 'research');
+    await fs.mkdir(bucketDir, { recursive: true });
+    await fs.writeFile(path.join(bucketDir, 'paper.pdf'), 'x');
+
+    await expect(service.deleteBucket('bucket-1')).resolves.toEqual({
+      deleted: true,
+    });
+    expect(prisma.managedDocument.deleteMany).toHaveBeenCalledWith({
+      where: { bucketId: 'bucket-1' },
+    });
+    expect(prisma.bucket.delete).toHaveBeenCalledWith({
+      where: { id: 'bucket-1' },
+    });
+    await expect(fs.stat(bucketDir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('delete 404s for an unknown bucket and touches no rows', async () => {
+    await expect(service.deleteBucket('missing-id')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.bucket.delete).not.toHaveBeenCalled();
   });
 
   it('stores an uploaded document exactly once and derives its kind', async () => {
