@@ -1,16 +1,15 @@
-# ROUND 37 — 2026-08-08 (autonomous iteration round 37)
+# ROUND 38 — 2026-08-08 (autonomous iteration round 38)
 
 User instruction: generic loop prompt ("read on loop.md and do works") with no
 new human direction; `DIRECTION.md` items 1-4 (managed document buckets, cron
 jobs, agent skills, HTML view by link / new tab) remain completed and in
-effect. Round 36's handoff set "Next round focus: None"; this round re-ran the
-full verification gate against the live stack to confirm the four directed
-features still work end-to-end.
+effect. Round 37's handoff set "Next round focus: None"; this round re-ran the
+full verification gate from a clean tree (zero diff since `round-37`).
 
 ## What changed this round
 
-- **Browser E2E artifacts refreshed** — `e2e/report.json` and 28 screenshots
-  re-recorded against the current live stack (timestamps/bytes differ; same
+- **Browser E2E artifacts re-recorded** — `e2e/report.json` and 26 screenshots
+  refreshed against the current live stack (timestamps/bytes differ; same
   passing checks).
 - **No source or test changes** — pure verification round; the four directed
   features are unchanged and green.
@@ -19,15 +18,15 @@ features still work end-to-end.
 
 - Backend unit: **146 passed / 14 suites**.
 - API E2E: **105 passed / 10 suites** (Postgres via compose).
-- Backend `nest build` + `npx tsc --noEmit` + eslint clean; frontend
-  `npm run lint` + `npx tsc --noEmit` + `npm run build` clean.
+- Backend `npm run lint` + `nest build` + `npx tsc --noEmit` clean; frontend
+  `npm run lint` + `npx tsc --noEmit` + `npm run build` clean (routes include
+  `/buckets`, `/cron`, `/skills`, `/agent`, `/files` + `/api/files/view`).
 - Browser E2E **exit 0** — 21 route probes (incl. dark/mobile variants), all
   8 flows (nav, sessions+connection, files, html-view, buckets, cron, skills,
   settings), zero console/network/HTTP errors; cleanup reported `clean` at
   every stage.
-- Live fixtures back to baseline after the run: buckets 0, cron 0, skills 0,
-  sessions 0, channels `FMCV`/`coder` only (spot-checked via GET after the
-  run).
+- Live fixture spot-check after the run: buckets 0, cron 0, skills 0,
+  sessions 0, channels `FMCV`/`coder` only (verified via GET).
 
 ## Known issues / open tickets
 
@@ -47,7 +46,7 @@ features still work end-to-end.
 
 - **None.** Exit conditions C and D reached: ROUND.md "Next round focus" is
   empty, no open tickets remain, and no improvement is obviously valuable.
-  Rounds 35-37 are pure verification rounds with no net user-visible change,
-  so the degenerate-loop guard also stops the loop here. Continue only if the
+  Rounds 35-38 are pure verification rounds with no net user-visible change,
+  so the degenerate-loop guard stops the loop here. Continue only if the
   human updates `DIRECTION.md`, reports new real-use friction, or asks for the
   trash folders/scratch files to be pruned.
