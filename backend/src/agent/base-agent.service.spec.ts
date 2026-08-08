@@ -87,10 +87,54 @@ describe('BaseAgentService sessions', () => {
         'user',
       ]);
 
-      fresh.deleteSession(s.id);
+      await fresh.deleteSession(s.id);
       expect(fake.agentSession.delete).toHaveBeenCalledWith({
         where: { id: s.id },
       });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+  it('lists and deletes sessions persisted outside the live map', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-orphan-'));
+    try {
+      const fake = prismaDouble() as unknown as {
+        agentSession: {
+          upsert: jest.Mock;
+          findMany: jest.Mock;
+          findUnique: jest.Mock;
+          delete: jest.Mock;
+        };
+      };
+      const ws = new WorkspaceService(configMock(root));
+      const agent = new BaseAgentService(configMock(root), ws, fake as never);
+      const orphan = {
+        id: '4f9e207a-70ba-46df-8add-b3ca5e27cbb0',
+        title: 'skill-aware e2e',
+        model: 'ds4-flash',
+        connectionId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        messages: [{ role: 'system', content: DEFAULT_SYSTEM_PROMPT }],
+      };
+      fake.agentSession.findMany.mockResolvedValue([orphan]);
+      fake.agentSession.findUnique.mockResolvedValue(orphan);
+
+      const listed = await agent.listSessions();
+      expect(listed.map((s) => s.id)).toContain(orphan.id);
+      expect(listed.find((s) => s.id === orphan.id)?.title).toBe(
+        'skill-aware e2e',
+      );
+
+      await expect(agent.deleteSession(orphan.id)).resolves.toEqual({
+        deleted: true,
+      });
+      expect(fake.agentSession.delete).toHaveBeenCalledWith({
+        where: { id: orphan.id },
+      });
+
+      fake.agentSession.findUnique.mockResolvedValue(null);
+      await expect(agent.deleteSession(orphan.id)).rejects.toThrow(/not found/);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -171,10 +215,12 @@ describe('BaseAgentService sessions', () => {
       expect(agent.getSession(s.id).id).toBe(s.id);
       const s2 = await agent.createSession('t2', 'not-a-model');
       expect(s2.model).toBe('ds4-flash');
-      expect(agent.listSessions()).toHaveLength(2);
-      expect(agent.deleteSession(s.id)).toEqual({ deleted: true });
-      expect(agent.listSessions()).toHaveLength(1);
-      expect(() => agent.deleteSession(s.id)).toThrow();
+      await expect(agent.listSessions()).resolves.toHaveLength(2);
+      await expect(agent.deleteSession(s.id)).resolves.toEqual({
+        deleted: true,
+      });
+      await expect(agent.listSessions()).resolves.toHaveLength(1);
+      await expect(agent.deleteSession(s.id)).rejects.toThrow(/not found/);
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

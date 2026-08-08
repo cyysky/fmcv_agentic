@@ -321,8 +321,23 @@ export class BaseAgentService implements OnModuleInit {
     return s;
   }
 
-  listSessions(): Session[] {
-    return [...this.sessions.values()];
+  listSessions(): Promise<Session[]> {
+    const live = [...this.sessions.values()];
+    return this.prisma.agentSession
+      .findMany({ orderBy: { createdAt: 'desc' } })
+      .then((rows) => {
+        const known = new Set(this.sessions.keys());
+        const persisted = rows
+          .filter((row) => !known.has(row.id))
+          .map((row) => this.sessionFromRow(row));
+        return [...live, ...persisted];
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Could not list persisted sessions: ${(err as Error).message}`,
+        );
+        return live;
+      });
   }
 
   renameSession(id: string, title: string): Session {
@@ -336,12 +351,18 @@ export class BaseAgentService implements OnModuleInit {
     return session;
   }
 
-  deleteSession(id: string): { deleted: boolean } {
-    const ok = this.sessions.delete(id);
-    if (!ok) throw new NotFoundException(`Session ${id} not found`);
-    // The row is removed after the in-memory map, best effort (a session may
-    // have existed only in memory).
-    void this.prisma.agentSession
+  async deleteSession(id: string): Promise<{ deleted: boolean }> {
+    const hadLive = this.sessions.delete(id);
+    if (!hadLive) {
+      const row = await this.prisma.agentSession
+        .findUnique({ where: { id } })
+        .catch(() => null);
+      if (!row) throw new NotFoundException(`Session ${id} not found`);
+    }
+    // Remove the row after the in-memory map. A row missing from the map can
+    // still exist in Postgres (e.g. written by another process against the
+    // shared DB), so the DB delete is the fallback that makes cleanup work.
+    await this.prisma.agentSession
       .delete({ where: { id } })
       .catch(() => undefined);
     return { deleted: true };
@@ -379,6 +400,25 @@ export class BaseAgentService implements OnModuleInit {
       });
   }
 
+  /** Map a persisted row onto the public Session shape. */
+  private sessionFromRow(row: {
+    id: string;
+    title: string;
+    model: string;
+    connectionId: string | null;
+    createdAt: Date;
+    messages: unknown;
+  }): Session {
+    return {
+      id: row.id,
+      title: row.title,
+      model: row.model,
+      ...(row.connectionId ? { connectionId: row.connectionId } : {}),
+      createdAt: row.createdAt.toISOString(),
+      messages: (row.messages as ChatMessage[]) ?? [],
+    };
+  }
+
   /** Reload persisted sessions after a restart so `/api/agent/sessions`
    *  and GET-by-id keep working (in-memory wins for live sessions). */
   async onModuleInit(): Promise<void> {
@@ -388,14 +428,7 @@ export class BaseAgentService implements OnModuleInit {
       });
       for (const row of rows) {
         if (this.sessions.has(row.id)) continue;
-        this.sessions.set(row.id, {
-          id: row.id,
-          title: row.title,
-          model: row.model,
-          ...(row.connectionId ? { connectionId: row.connectionId } : {}),
-          createdAt: row.createdAt.toISOString(),
-          messages: (row.messages as unknown as ChatMessage[]) ?? [],
-        });
+        this.sessions.set(row.id, this.sessionFromRow(row));
       }
       if (rows.length > 0) {
         this.logger.log(`Recovered ${rows.length} persisted session(s)`);
