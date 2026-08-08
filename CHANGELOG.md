@@ -1,3 +1,26 @@
+## Round 2026-08-08 — autonomous iteration round 48 (tag `round-48`)
+
+### Fixed
+- Session persistence race: `createSession`, `renameSession`, and
+  `converse` now await the best-effort Postgres upsert before responding,
+  so API callers always read their own writes. Previously a turn could
+  return before its row landed, making the restart-persistence E2E flaky
+  (the user message could be missing from the DB row read immediately after
+  the response).
+
+### Changed
+- Re-verified the completed DIRECTION.md items 1-4 (managed document
+  buckets, cron jobs, agent skills, HTML view): backend unit 146/146, API
+  E2E 107/107 across three consecutive runs, backend lint + `nest build` +
+  `npx tsc --noEmit` clean, frontend lint + `npx tsc --noEmit` clean; live
+  smoke (`/`, buckets, cron, skills) all 200.
+- Browser E2E re-run (exit 0): 21 route probes + channel, sessions/files,
+  HTML view/new-tab, buckets, cron, skills, and settings journeys with zero
+  console/network errors; `e2e/report.json` + screenshots refreshed.
+- Confirmed the DB and workspace fixture baseline is clean after the run
+  (buckets/cron/skills/sessions/connections at 0; only the two default
+  channels remain).
+
 ## Round 2026-08-08 — autonomous iteration round 47 (verification, tag `round-47`)
 
 ### Changed
