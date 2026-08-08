@@ -1,3 +1,44 @@
+## Round 2026-08-08 — autonomous iteration round 21 (tag `round-21`)
+
+### Added
+- Settings probe results show the full picture in one glance: the backend
+  success message is short (`Connected — <model> responded.`) and the UI
+  composes the structured `HTTP <status> · <latency> ms` line beneath it in
+  both the row test result and the edit form's test result — latency/status
+  are no longer duplicated inside the message text.
+- Edit replays the row's last-known probe: opening the edit form shows the
+  connection's known health (message + HTTP status + latency) until any
+  probed field changes.
+- Auto-probe on save: when a connection is saved with values that were never
+  probed in the form, the client probes the persisted row right after the save
+  lands (best-effort — the save is never blocked by a slow endpoint). The
+  success banner reports `Probe: <summary>` or a graceful
+  `Probe unavailable: <message>`.
+- Browser E2E: the settings journey now proves the auto-probe path through the
+  form against a hermetic fake upstream — saved row shows
+  `Connected · HTTP 200 · <n> ms`, the banner shows `Probe:`, the upstream
+  receives `/chat/completions` with `max_tokens: 1` and the stored bearer key,
+  and reopening Edit replays the probe result into the form.
+
+### Fixed
+- Probe results no longer repeat latency/status inside the message text when
+  the structured fields are already rendered by the UI.
+
+### Test status
+- Unit **80 passed / 11 suites** (count unchanged; reachable-probe message
+  assertion updated to the new short form).
+- API E2E **56 passed / 7 suites**.
+- Backend `nest build` + `tsc --noEmit` clean; frontend `tsc --noEmit` +
+  `eslint` clean (0 warnings).
+- Browser E2E all green (exit 0, zero console/network errors) including the
+  extended settings journey (auto-probe-on-save + edit-probe replay;
+  `autoProbeRowSeen`, `autoProbeBannerSeen`, `autoProbeUpstreamHit`,
+  `autoProbeUpstreamAuthOk`, `autoProbeUpstreamModel`,
+  `autoProbeUpstreamMaxTokens`, `autoEditReplaysProbe`, `autoCleanup` all
+  verified). `e2e/report.json` + screenshots refreshed, including
+  `settings-auto-probe.png`.
+
+## Round 2026-08-08 — autonomous iteration round 20 (tag `round-20`)
 ## Round 2026-08-08 — autonomous iteration round 20 (tag `round-20`)
 
 ### Added

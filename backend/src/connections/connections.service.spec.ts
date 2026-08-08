@@ -63,6 +63,9 @@ describe('ConnectionsService.test()', () => {
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
     expect(result.model).toBe('probe-model');
+    // Latency/status are structured fields; the UI composes them after the
+    // message so nothing is duplicated in the rendered probe result.
+    expect(result.message).toBe('Connected — probe-model responded.');
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
     expect(sentUrl).toBe('http://127.0.0.1:9876/v1/chat/completions');
     const body = JSON.parse(String(sent?.body));

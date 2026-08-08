@@ -1648,7 +1648,8 @@ async function settingsFlow() {
   const url = `${APP}/settings`;
   log(`flow settings -> ${url}`);
   const { tab, c } = await setupPage(url);
-  const flow = { steps: [], result: null, fixtureId: null };
+  const flow = { steps: [], result: null, fixtureId: null, autoFixtureId: null };
+  let autoUpstream = null;
   try {
     wireErrorCapture(c, sink);
 
@@ -1887,6 +1888,103 @@ async function settingsFlow() {
     flow.steps.push("test-result-rendered");
     await screenshot(c, "settings-test-result.png");
 
+    // 5. Auto-probe on save: creating a connection through the form (against
+    //    a hermetic fake upstream) triggers a client-side probe of the saved
+    //    row; the row shows the structured status + latency result, and the
+    //    save banner reports it — saving is never blocked by the probe.
+    const autoName = `e2e-auto-${Date.now().toString(36)}`;
+    const autoKey = `sk-e2e-auto-${Date.now().toString(36)}`;
+    const autoModel = process.env.E2E_CONN_MODEL || "ds4-flash";
+    autoUpstream = await startFakeUpstream();
+    const autoBaseUrl = `http://${connectionHostIp()}:${autoUpstream.port}/v1`;
+    await c.send("Page.navigate", { url });
+    // The fixture row (renamed) only renders after the client fetch finishes,
+    // so this also guarantees React hydration before the form is filled —
+    // otherwise jsSetInput + submit can race the server-rendered shell and the
+    // native submit would silently do nothing.
+    const autoReady = await waitFor(c, `document.body.innerText.includes("Connections (") && document.body.innerText.includes(${JSON.stringify(renamed)})`, 30000, 600, "auto-probe page hydrated");
+    if (!autoReady) throw new Error("settings flow: page never reloaded for auto-probe");
+    await evalJs(c, jsSetInput('input[name="displayName"]', autoName));
+    await evalJs(c, jsSetInput('input[name="baseUrl"]', autoBaseUrl));
+    await evalJs(c, jsSetInput('input[name="modelName"]', autoModel));
+    await evalJs(c, jsSetInput('input[name="apiKey"]', autoKey));
+    await delay(100);
+    const autoSubmitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector('input[name="displayName"]'));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!autoSubmitted) throw new Error("settings flow: auto-probe Add button not found/enabled");
+    const autoRowSeen = await waitFor(c, `document.body.innerText.includes(${JSON.stringify(autoName)})`, 20000, 500, "auto-probe row");
+    if (!autoRowSeen) throw new Error("settings flow: auto-probe fixture row never rendered");
+    // The UI never exposes the id; resolve it from the API so cleanup + wire
+    // assertions can target the exact fixture.
+    const autoRows = await fetch(`${API}/connections`).then((r) => r.json());
+    const autoRowRec = autoRows.find((x) => x.displayName === autoName);
+    flow.autoFixtureId = autoRowRec ? autoRowRec.id : null;
+    if (!flow.autoFixtureId) {
+      throw new Error(`settings flow: auto-probe fixture id not found (${JSON.stringify(autoRows)})`);
+    }
+    const autoProbeSeen = await waitFor(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(autoName)}));
+      const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+      if (!r) return false;
+      const t = r.innerText;
+      return t.includes("Connected") && /HTTP 200/.test(t) && /\\d+ ms/.test(t);
+    })()`, 20000, 500, "auto-probe row result");
+    flow.autoProbeRowSeen = !!autoProbeSeen;
+    if (!flow.autoProbeRowSeen) {
+      const snapshot = await evalJs(c, `(() => {
+        const rs = [...document.querySelectorAll('[class*="testResult"]')].map((el) => el.innerText.trim());
+        return rs.length ? rs.join(" | ") : document.body.innerText.slice(0, 1500);
+      })()`);
+      throw new Error(`settings flow: saved connection was never auto-probed (snapshot: ${JSON.stringify(snapshot)})`);
+    }
+    flow.autoProbeRowText = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(autoName)}));
+      const r = li && [...li.querySelectorAll('[class*="testResult"]')][0];
+      return r ? r.innerText.trim() : null;
+    })()`);
+    const autoBanner = await waitFor(c, `document.body.innerText.includes("Probe:")`, 10000, 300, "auto-probe banner");
+    flow.autoProbeBannerSeen = !!autoBanner;
+    const autoProbeHit = autoUpstream.received.find(
+      (r) => r.method === "POST" && (r.url ?? "").endsWith("/chat/completions"),
+    );
+    flow.autoProbeUpstreamHit = !!autoProbeHit;
+    flow.autoProbeUpstreamAuthOk = autoProbeHit?.authorization === `Bearer ${autoKey}`;
+    flow.autoProbeUpstreamModel = autoProbeHit?.body?.model;
+    flow.autoProbeUpstreamMaxTokens = autoProbeHit?.body?.max_tokens;
+    if (!flow.autoProbeUpstreamHit || !flow.autoProbeUpstreamAuthOk) {
+      throw new Error(`settings flow: auto-probe did not hit the fake upstream with the stored key (${JSON.stringify(autoUpstream.received)})`);
+    }
+    flow.steps.push("auto-probe-on-save");
+
+    // 6. Edit replays the last-known probe until a probed value changes.
+    const autoEditClicked = await evalJs(c, `(() => {
+      const li = [...document.querySelectorAll("li")].find((x) => x.innerText.includes(${JSON.stringify(autoName)}));
+      const b = li && [...li.querySelectorAll("button")].find((x) => x.textContent.trim() === "Edit");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!autoEditClicked) throw new Error("settings flow: auto-probe Edit button missing");
+    const autoEditMode = await waitFor(c, `document.body.innerText.includes("Edit Connection")`, 15000, 400, "auto edit mode");
+    if (!autoEditMode) throw new Error("settings flow: auto-probe edit mode never opened");
+    const autoEditReplay = await waitFor(c, `(() => {
+      const el = document.querySelector('[data-form-test-result]');
+      if (!el) return false;
+      const t = el.innerText;
+      return t.includes("Connected") && /HTTP 200/.test(t) && /\\d+ ms/.test(t);
+    })()`, 15000, 400, "auto edit-probe replay");
+    flow.autoEditReplaysProbe = !!autoEditReplay;
+    if (!flow.autoEditReplaysProbe) {
+      throw new Error("settings flow: edit form did not replay the saved probe");
+    }
+    flow.steps.push("auto-probe-replayed-in-edit");
+    await screenshot(c, "settings-auto-probe.png");
+
     // 4. Server-side cleanup: drop the fixture and confirm the row disappears.
     await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" });
     flow.fixtureId = null;
@@ -1899,6 +1997,22 @@ async function settingsFlow() {
       "fixture removal",
     );
     flow.cleanup = gone ? "clean" : "leftover";
+
+    // 7. Auto-probe fixture cleanup.
+    if (flow.autoFixtureId) {
+      await fetch(`${API}/connections/${flow.autoFixtureId}`, { method: "DELETE" }).catch(() => undefined);
+      flow.autoFixtureId = null;
+    }
+    await c.send("Page.navigate", { url });
+    const autoGone = await waitFor(
+      c,
+      `!document.body.innerText.includes(${JSON.stringify(autoName)})`,
+      15000,
+      400,
+      "auto fixture removal",
+    );
+    flow.autoCleanup = autoGone ? "clean" : "leftover";
+
     flow.result = {
       keyBlankOnEdit: flow.keyBlankOnEdit,
       keyNotSentOnPatch: flow.keyNotSentOnPatch,
@@ -1907,12 +2021,31 @@ async function settingsFlow() {
       clearKeySent: flow.clearKeySent,
       keyClearedServerSide: flow.keyClearedServerSide,
       testGracefulFailure: flow.testGracefulFailure,
+      autoProbeRowSeen: flow.autoProbeRowSeen,
+      autoProbeBannerSeen: flow.autoProbeBannerSeen,
+      autoProbeUpstreamHit: flow.autoProbeUpstreamHit,
+      autoProbeUpstreamAuthOk: flow.autoProbeUpstreamAuthOk,
+      autoProbeUpstreamModel: flow.autoProbeUpstreamModel,
+      autoProbeUpstreamMaxTokens: flow.autoProbeUpstreamMaxTokens,
+      autoProbeRowText: flow.autoProbeRowText,
+      autoEditReplaysProbe: flow.autoEditReplaysProbe,
+      autoCleanup: flow.autoCleanup,
       cleanup: flow.cleanup,
     };
     return { flow, errors: sink };
   } finally {
     if (flow.fixtureId) {
       await fetch(`${API}/connections/${flow.fixtureId}`, { method: "DELETE" }).catch(() => undefined);
+    }
+    if (flow.autoFixtureId) {
+      await fetch(`${API}/connections/${flow.autoFixtureId}`, { method: "DELETE" }).catch(() => undefined);
+    }
+    if (autoUpstream) {
+      try {
+        autoUpstream.server.close();
+      } catch {
+        // socket already closed
+      }
     }
     c.close();
   }
@@ -2194,6 +2327,20 @@ async function main() {
   }
   if (sfl && sfl.flow.result?.cleanup !== "clean") {
     failures.push(`settings flow: fixture cleanup not verified (${sfl.flow.result.cleanup})`);
+  }
+  const sflr = sfl && sfl.flow.result;
+  if (
+    !sflr ||
+    !sflr.autoProbeRowSeen ||
+    !sflr.autoProbeBannerSeen ||
+    !sflr.autoProbeUpstreamHit ||
+    !sflr.autoProbeUpstreamAuthOk ||
+    sflr.autoProbeUpstreamModel !== (process.env.E2E_CONN_MODEL || "ds4-flash") ||
+    sflr.autoProbeUpstreamMaxTokens !== 1 ||
+    !sflr.autoEditReplaysProbe ||
+    sflr.autoCleanup !== "clean"
+  ) {
+    failures.push(`settings flow: auto-probe/replay not verified (${JSON.stringify(sflr)})`);
   }
   const settingsErrs = errorCount(sfl ? sfl.errors : {});
   if (settingsErrs > 0) failures.push(`settings flow: ${settingsErrs} console/network error(s)`);

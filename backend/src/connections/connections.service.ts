@@ -146,7 +146,7 @@ export class ConnectionsService {
           status: response.status,
           latencyMs,
           model: modelName,
-          message: `Connected — ${modelName} responded in ${latencyMs} ms.`,
+          message: `Connected — ${modelName} responded.`,
         };
       }
 

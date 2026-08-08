@@ -37,11 +37,16 @@ and coordinate multi-agent teams in Slack-style channels.
   connections (display name, base URL, model, context length, concurrent
   connections, optional key). Every row has a **Test** button that probes the
   endpoint live (one-token `chat/completions` with the stored key) and shows a
-  graceful pass/fail result with latency; the create/edit form has its own
-  **Test Connection** button that probes the unsaved values before you commit;
-  editing never replays the masked key back over the stored secret, and an
-  explicit "Clear stored API key" checkbox lets you remove a secret (stored as
-  NULL, never an empty string).
+  graceful pass/fail result with structured HTTP status + latency; the
+  create/edit form has its own **Test Connection** button that probes the
+  unsaved values before you commit and shows the same metrics, and editing
+  replays the row's last-known probe result until a probed value changes.
+  Saving values that were never probed auto-runs a probe of the persisted row
+  (client-side, best-effort — the save is never blocked by a slow endpoint)
+  and reports the result in the success banner. Editing never replays the
+  masked key back over the stored secret, and an explicit "Clear stored API
+  key" checkbox lets you remove a secret (stored as NULL, never an empty
+  string).
 - **Agent chat (`/agent`)** — stateless turns plus a persistent Sessions tab
   (sidebar, continue, delete) backed by Postgres; model picker (`ds4-flash`
   default, `qwen3.6-35b`) plus a **connection picker**: sessions and
@@ -240,8 +245,14 @@ cd e2e && node browser-e2e.mjs
   PATCH (`Network.requestWillBeSent`) to prove `apiKey` is never replayed on a
   plain edit, checks "Clear stored API key" and asserts the wire PATCH sends
   `apiKey:""` with a NULL server-side result, clicks the row Test against a
-  dead endpoint to assert the graceful inline failure result, then cleans the
-  fixture up server-side. The sessions step waits for the CDP navigation
+  dead endpoint to assert the graceful inline failure result, then creates a
+  second fixture through the form against a hermetic fake upstream and proves
+  saving untested values auto-probes the persisted row: the row shows
+  `Connected · HTTP 200 · <n> ms`, the success banner reports `Probe:`, the
+  fake upstream receives the one-token `chat/completions` with the stored
+  bearer key, and reopening Edit replays that probe result into the form until
+  a value changes — then both fixtures are deleted and cleanup is verified
+  server-side. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
   failures. The channel-delete step also proves the channel project folder is
@@ -353,6 +364,28 @@ cd e2e && node browser-e2e.mjs
   clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
   (`e2e/report.json` + screenshots refreshed, including
   `agent-sessions-picker.png` / `agent-sessions-connection.png`).
+
+### Round 21 — probe metrics + auto-probe after save
+- Probe results now carry the full picture in one glance: the backend message
+  stays short (`Connected — <model> responded.`) and the settings UI composes
+  the structured `HTTP <status> · <latency> ms` line beneath it — in both the
+  row test result and the edit form's test result, so latency/status are never
+  duplicated in the message text.
+- Edit replays the row's last-known probe: opening Edit shows the connection's
+  known health until a probed field changes (any change clears it again).
+- Saving a connection whose values were never probed auto-probes the persisted
+  row client-side after the save lands — the save is never blocked by a slow or
+  unreachable endpoint, and the success banner reports `Probe: <summary>` (or a
+  graceful `Probe unavailable: <message>`).
+- Browser E2E: the settings journey now proves the whole auto-probe path
+  against a hermetic fake upstream — form create → saved row shows
+  `Connected · HTTP 200 · <n> ms` → banner shows `Probe:` → the upstream
+  receives `/chat/completions` with `max_tokens: 1` and the stored bearer key →
+  Edit replays the probe → both fixtures are deleted and cleanup is verified.
+- Unit stays 80 / 11, API E2E stays 56 / 7; backend `nest build` + `tsc
+  --noEmit` clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all
+  green (`e2e/report.json` + screenshots refreshed, including
+  `settings-auto-probe.png`).
 
 ### Round 20 — catalog model overrides through saved connections
 - The agent chat model picker stays usable with a connection selected: its

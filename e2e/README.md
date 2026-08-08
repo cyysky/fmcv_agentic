@@ -86,8 +86,16 @@ Environment overrides:
    captures the wire PATCH body to prove `apiKey` is never replayed on a plain
    edit, then checks **Clear stored API key**, asserts the clear PATCH sends
    `apiKey:""`, and verifies via the API that the stored secret became NULL.
-   Finally it clicks the row Test against the dead endpoint for a graceful
-   inline result, then deletes the fixture and confirms the row disappears.
+   Then it clicks the row Test against the dead endpoint for a graceful inline
+   result. Finally it starts the hermetic fake OpenAI-compatible upstream,
+   creates a second connection through the **form** (name, upstream base URL,
+   model, stored key) and proves the auto-probe-on-save path: the saved row
+   renders `Connected · HTTP 200 · <n> ms`, the success banner reports
+   `Probe:`, the upstream receives a single `POST /chat/completions` with
+   `max_tokens: 1` and the stored bearer key, and reopening Edit replays that
+   probe result (message + HTTP status + latency) into the form until a probed
+   value changes. Both fixtures are then deleted via the API and the script
+   asserts both rows disappear server-side (cleanup).
 7. **Screenshots**: key screens (home, settings, agent, channel running,
    channel done, sessions picker/connection, files before/after) are captured
    to `e2e/screenshots/`.

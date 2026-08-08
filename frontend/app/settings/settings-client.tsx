@@ -26,6 +26,22 @@ interface Connection {
   updatedAt: string;
 }
 
+/** Compact probe metrics, e.g. "HTTP 200 · 42 ms". */
+function probeMetrics(result: ConnectionTest): string {
+  const parts: string[] = [];
+  if (result.status !== undefined) parts.push(`HTTP ${result.status}`);
+  parts.push(`${result.latencyMs} ms`);
+  return parts.join(" · ");
+}
+
+/** Human-readable probe summary; latency/status come from structured fields
+ *  (the upstream message no longer embeds latency, so metrics never repeat). */
+function probeSummary(result: ConnectionTest): string {
+  return result.ok
+    ? `${result.message} (${probeMetrics(result)})`
+    : result.message;
+}
+
 const EMPTY_FORM = {
   displayName: "",
   baseUrl: "",
@@ -164,11 +180,35 @@ export default function SettingsPage() {
         throw new Error(msg);
       }
 
+      // Auto-probe on save: when the saved values were never probed in the
+      // form, probe the persisted row client-side so latency/status show up
+      // without the save ever being blocked by a slow endpoint. The result
+      // renders in the row + success banner and is always graceful.
+      const probeDraft = formTestResult;
+      const savedLabel = editingId ? "Connection updated." : "Connection added.";
+      const savedId =
+        editingId ??
+        (data && typeof data === "object" && "id" in data
+          ? String(data.id)
+          : null);
       resetForm();
       // resetForm clears the banner state; set it AFTER so the success
       // notice actually renders (state updates are batched into one paint).
-      setMessage(editingId ? "Connection updated." : "Connection added.");
+      setMessage(savedLabel);
       await load();
+      // Re-enable the form while the (best-effort) probe still runs.
+      setSaving(false);
+      if (savedId && probeDraft === null) {
+        setMessage(`${savedLabel} Probing connection…`);
+        const probe = await handleTest(savedId);
+        if (probe) {
+          setMessage(
+            probe.ok
+              ? `${savedLabel} Probe: ${probeSummary(probe)}`
+              : `${savedLabel} Probe unavailable: ${probe.message}`,
+          );
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -192,7 +232,9 @@ export default function SettingsPage() {
     setError(null);
     setMessage(null);
     setClearKey(false);
-    setFormTestResult(null);
+    // Replay the last probe for this row (if any) so the edit form shows the
+    // connection's known health until a probed value changes.
+    setFormTestResult(testStates[conn.id]?.result ?? null);
   };
 
   const handleFormTest = async () => {
@@ -248,7 +290,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleTest = async (id: string) => {
+  const handleTest = async (id: string): Promise<ConnectionTest | null> => {
     setTestStates((prev) => ({ ...prev, [id]: { busy: true, result: null } }));
     setError(null);
     try {
@@ -262,19 +304,19 @@ export default function SettingsPage() {
         );
       }
       setTestStates((prev) => ({ ...prev, [id]: { busy: false, result: data } }));
+      return data;
     } catch (err) {
+      const failed: ConnectionTest = {
+        ok: false,
+        model: "",
+        latencyMs: 0,
+        message: err instanceof Error ? err.message : "Test failed",
+      };
       setTestStates((prev) => ({
         ...prev,
-        [id]: {
-          busy: false,
-          result: {
-            ok: false,
-            model: "",
-            latencyMs: 0,
-            message: err instanceof Error ? err.message : "Test failed",
-          },
-        },
+        [id]: { busy: false, result: failed },
       }));
+      return failed;
     }
   };
 
@@ -443,7 +485,12 @@ export default function SettingsPage() {
             }`}
             aria-live="polite"
           >
-            {formTestResult.message}
+            <div>{formTestResult.message}</div>
+            {formTestResult.ok && (
+              <div className={styles.testDetail}>
+                {probeMetrics(formTestResult)}
+              </div>
+            )}
           </div>
         )}
       </form>
@@ -476,7 +523,12 @@ export default function SettingsPage() {
                       }`}
                       aria-live="polite"
                     >
-                      {testStates[c.id]!.result!.message}
+                      <div>{testStates[c.id]!.result!.message}</div>
+                      {testStates[c.id]!.result!.ok && (
+                        <div className={styles.testDetail}>
+                          {probeMetrics(testStates[c.id]!.result!)}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
