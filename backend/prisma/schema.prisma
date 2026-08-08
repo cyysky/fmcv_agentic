@@ -199,6 +199,30 @@ model CronJob {
 }
 
 /**
+ * Distributed scheduler lease (Round 65).
+ *
+ * A single singleton row (`"singleton"`) backs the cron scheduler election:
+ * each backend replica periodically claims/renews the lease in one atomic
+ * statement, and only the replica that holds a fresh lease runs the ticker.
+ * If the holder dies without renewing, the lease expires (expireAt) and the
+ * next replica's claim succeeds — so scheduling no longer depends on a
+ * single NestJS instance. Job firing is additionally guarded by an atomic
+ * row claim on CronJob.lastRunStatus, so even a split-brain lease can never
+ * run the same due job twice.
+ */
+model CronSchedulerLease {
+  id             String   @id
+  schedulerGroup String   @default("default")
+  owner          String
+  expireAt       DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([schedulerGroup])
+  @@map("cron_scheduler_leases")
+}
+
+/**
  * An agent skill (DIRECTION.md item 3). A skill is a named, uniquely
  * identified capability: a description plus markdown instructions (the skill
  * body, e.g. a SKILL.md) that agents can load and follow. Skills are

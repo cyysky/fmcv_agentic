@@ -12,13 +12,24 @@ import { CronExpressionParser } from 'cron-parser';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCronJobDto, UpdateCronJobDto } from './cron.dto';
+import { randomUUID } from 'node:crypto';
 
 /** Scheduler tick granularity; cron firing lands within this window. */
 export const CRON_TICK_MS = 1000;
+/**
+ * Distributed scheduler lease (Round 65): the ticker runs only on the
+ * replica that holds a fresh lease. A dead holder fails over after
+ * LEASE_DURATION_MS; the lease is renewed atomically with each tick.
+ */
+export const CRON_LEASE_DURATION_MS = 5000;
+export const CRON_LEASE_GROUP = 'default';
+export const CRON_LEASE_ROW_ID = 'singleton';
 /** Truncation cap for the run result stored/displayed on the job row. */
 export const MAX_RUN_MESSAGE = 500;
 /** Agent-turn is the only supported task right now (DIRECTION item 2). */
 export const TASK_TYPE_AGENT_TURN = 'agent-turn';
+/** Terminal status written by this service when a run ends. */
+export const STATUS_RUNNING = 'running';
 
 /** Parse `schedule` as a 5-field cron expression and return its next
  *  occurrence strictly after `from`. Throws a BadRequestException with a
@@ -60,6 +71,10 @@ function truncate(text: string | undefined | null, max: number): string | null {
 export class CronService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CronService.name);
   private ticker: NodeJS.Timeout | null = null;
+  /** Unique owner id for the distributed scheduler lease. */
+  private readonly leaseOwner = randomUUID();
+  /** True while this instance holds a fresh scheduler lease. */
+  private leaseHeld = false;
   /** In-memory mirror of cron rows so the per-second tick never hammers the DB. */
   private readonly jobs = new Map<string, CronJob>();
   /** Per-job concurrency guard (one in-flight execution per job). */
@@ -73,7 +88,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     await this.prisma.cronJob
       .updateMany({
-        where: { lastRunStatus: 'running' },
+        where: { lastRunStatus: STATUS_RUNNING },
         data: {
           lastRunStatus: 'error',
           lastRunMessage: 'Interrupted by backend restart',
@@ -106,11 +121,12 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       }
     }
     this.ticker = setInterval(() => {
-      this.tick();
+      void this.tick();
     }, CRON_TICK_MS);
     this.ticker.unref();
+    this.leaseHeld = await this.acquireLease();
     this.logger.log(
-      `Cron scheduler started: ${rows.length} job(s), ${[...this.jobs.values()].filter((j) => j.enabled).length} enabled, tick ${CRON_TICK_MS}ms`,
+      `Cron scheduler started: ${rows.length} job(s), ${[...this.jobs.values()].filter((j) => j.enabled).length} enabled, tick ${CRON_TICK_MS}ms, scheduler lease ${this.leaseHeld ? 'held' : 'standby'}`,
     );
   }
 
@@ -205,7 +221,10 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
 
   async delete(id: string): Promise<{ deleted: boolean }> {
     const row = await this.get(id);
-    if (this.running.has(id)) {
+    const dbRow = await this.prisma.cronJob.findUnique({ where: { id } });
+    const activeElsewhere =
+      dbRow?.lastRunStatus === STATUS_RUNNING && !this.running.has(id);
+    if (this.running.has(id) || activeElsewhere) {
       throw new ConflictException(
         `Cron job "${row.name}" is running; wait for it to finish before deleting`,
       );
@@ -222,43 +241,89 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
 
   /* ---------------------------- scheduler ---------------------------- */
 
-  private tick(): void {
+  /**
+   * Atomically claim/renew the distributed scheduler lease. Only one
+   * replica (per schedulerGroup) gets a success per statement, so after a
+   * holder dies and its lease expires a standby takes over within one tick.
+   */
+  private async acquireLease(): Promise<boolean> {
     const now = Date.now();
-    for (const row of this.jobs.values()) {
-      if (!row.enabled || this.running.has(row.id)) continue;
-      if (row.nextRunAt && row.nextRunAt.getTime() <= now) {
-        void this.executeJob(row.id);
-      }
+    const expireAt = new Date(now + CRON_LEASE_DURATION_MS);
+    // Single atomic INSERT ... ON CONFLICT: insert the singleton row when
+    // missing; otherwise renew only when we already own it or its lease has
+    // expired. A replica that loses the race simply stays in standby.
+    const count =
+      await this.prisma.$executeRaw`
+        INSERT INTO cron_scheduler_leases (id, "schedulerGroup", owner, "expireAt", "createdAt", "updatedAt")
+        VALUES (${CRON_LEASE_ROW_ID}, ${CRON_LEASE_GROUP}, ${this.leaseOwner}, ${expireAt}, now(), now())
+        ON CONFLICT (id) DO UPDATE SET
+          owner = EXCLUDED.owner,
+          "expireAt" = EXCLUDED."expireAt",
+          "updatedAt" = now()
+        WHERE cron_scheduler_leases.owner = EXCLUDED.owner
+           OR cron_scheduler_leases."expireAt" <= now()
+      `;
+    return count === 1;
+  }
+
+  private async tick(): Promise<void> {
+    // Only the replica holding a fresh lease fires due jobs. Standby
+    // replicas keep serving CRUD/run-now and reclaim the lease on failover.
+    const held = await this.acquireLease();
+    if (this.leaseHeld !== held) {
+      this.logger.log(
+        held
+          ? 'Cron scheduler lease acquired; taking over scheduled firing'
+          : 'Cron scheduler lease lost; standing by',
+      );
+    }
+    this.leaseHeld = held;
+    if (!held) return;
+    const now = Date.now();
+    // Read the scheduler's view from the DB (multi-replica safe): the map is
+    // only a cache; the DB is the source of truth for enabled/due/running.
+    const due: Pick<CronJob, 'id'>[] = await this.prisma.cronJob.findMany({
+      where: {
+        enabled: true,
+        nextRunAt: { lte: new Date(now) },
+        lastRunStatus: { not: STATUS_RUNNING },
+      },
+      select: { id: true },
+    });
+    for (const { id } of due) {
+      void this.executeJob(id);
     }
   }
 
   private async executeJob(id: string): Promise<CronJob> {
-    const row =
-      this.jobs.get(id) ??
-      (await this.prisma.cronJob.findUnique({ where: { id } }));
-    if (!row) throw new NotFoundException(`Cron job ${id} not found`);
+    // Same-instance guard first (no await): a second runNow/delete on this
+    // replica must not even reach the DB claim while this instance runs it.
     if (this.running.has(id)) {
+      throw new ConflictException('Cron job is already running');
+    }
+    const row = await this.prisma.cronJob.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException(`Cron job ${id} not found`);
+    const claimed = await this.prisma.cronJob.updateMany({
+      where: {
+        id,
+        lastRunStatus: { not: STATUS_RUNNING },
+      },
+      data: {
+        lastRunAt: new Date(),
+        lastRunStatus: STATUS_RUNNING,
+        lastRunMessage: null,
+        lastRunModel: null,
+        lastRunMs: null,
+      },
+    });
+    if (claimed.count === 0) {
+      // Another replica claimed this firing (run-now or a due tick with
+      // split-brain leases); never run it twice in the cluster.
       throw new ConflictException(`Cron job "${row.name}" is already running`);
     }
     this.running.add(id);
     const startedAt = Date.now();
     try {
-      await this.prisma.cronJob
-        .update({
-          where: { id },
-          data: {
-            lastRunAt: new Date(),
-            lastRunStatus: 'running',
-            lastRunMessage: null,
-            lastRunModel: null,
-            lastRunMs: null,
-          },
-        })
-        .catch((err) => {
-          this.logger.warn(
-            `Could not mark cron job ${id} running: ${(err as Error).message}`,
-          );
-        });
       let result: { answer: string; model: string };
       try {
         result = await this.agent.runTurn({
@@ -299,27 +364,29 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
     ms: number,
   ): Promise<void> {
     const current = this.jobs.get(id);
-    const updated = await this.prisma.cronJob
-      .update({
-        where: { id },
-        data: {
-          lastRunStatus: status,
-          lastRunMessage: truncate(message, MAX_RUN_MESSAGE),
-          ...(model ? { lastRunModel: model } : { lastRunModel: null }),
-          lastRunMs: ms,
-          nextRunAt:
-            current?.enabled && current.schedule
-              ? nextCronRun(current.schedule)
-              : null,
-        },
-      })
-      .catch((err) => {
-        this.logger.warn(
-          `Could not persist cron run result for ${id}: ${(err as Error).message}`,
-        );
-        return null;
-      });
-    if (updated) this.jobs.set(id, updated);
+    const updated = await this.prisma.cronJob.updateMany({
+      where: {
+        id,
+        lastRunStatus: STATUS_RUNNING,
+      },
+      data: {
+        lastRunStatus: status,
+        lastRunMessage: truncate(message, MAX_RUN_MESSAGE),
+        ...(model ? { lastRunModel: model } : { lastRunModel: null }),
+        lastRunMs: ms,
+        nextRunAt:
+          current?.enabled && current.schedule
+            ? nextCronRun(current.schedule)
+            : null,
+      },
+    });
+    if (updated.count === 1) {
+      this.jobs.set(
+        id,
+        (await this.prisma.cronJob.findUnique({ where: { id } })) ??
+          (current as CronJob),
+      );
+    }
   }
 
   private async refreshed(id: string): Promise<CronJob> {

@@ -100,10 +100,14 @@ and coordinate multi-agent teams in Slack-style channels.
 - **Cron jobs (`/cron`)** — human-facing page over the cron API: create a
   recurring agent-turn job (five-field cron expression, prompt, optional
   model/max-steps, enabled toggle), edit, pause/resume, run it now, and
-  delete it with a two-click confirm. The backend scheduler ticks in-process
-  every second, validates expressions up front, refuses deletes while a job
-  is running, restores next-run timing on boot, and persists every run's
+  delete it with a two-click confirm. The backend scheduler ticks every
+  second, validates expressions up front, refuses deletes while a job is
+  running, restores next-run timing on boot, and persists every run's
   terminal result (done/error, message, model, duration) on the row.
+  Scheduling is multi-instance safe: a distributed Postgres lease elects one
+  replica as the ticker (a dead holder fails over in ~5 s), and each firing
+  is an atomic row claim, so the same due job never runs twice even under a
+  split-brain lease or an overlapping `run now` request.
 - **Agent skills (`/skills`)** — human-facing page over the skills API:
   authors create uniquely named, slug-form skills (name, description, and a
   markdown instructions body) and install/uninstall them; installed skills
