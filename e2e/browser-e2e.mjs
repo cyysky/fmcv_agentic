@@ -4273,7 +4273,7 @@ async function main() {
       url: `${APP}/buckets`,
       title: "Buckets - FMCV Agentic",
       waitText: "New bucket",
-      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Read-only" },
+      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Documents are read-only" },
       jsChecks: {
         navPresent: navChecks.present,
         navLinks: navChecks.links,
@@ -4287,7 +4287,7 @@ async function main() {
       emulate: "dark",
       title: "Buckets - FMCV Agentic",
       waitText: "New bucket",
-      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Read-only" },
+      bodyText: { title: "Buckets", newBucket: "New bucket", readOnly: "Documents are read-only" },
       darkChecks: {
         bodyDark: bodyBgDark,
         badgeDark: `getComputedStyle(document.querySelector('[class*="badge"]')).backgroundColor === "rgb(66, 32, 6)"`,
