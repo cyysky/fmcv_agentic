@@ -156,7 +156,9 @@ and coordinate multi-agent teams in Slack-style channels.
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error). Feed, session,
   and member-status timestamps use one shared local-time formatter, so a
-  channel feed shows `8/9/2026, 1:34:38 AM` instead of raw UTC ISO.
+  channel feed shows `8/9/2026, 1:34:38 AM` instead of raw UTC ISO. The Channels view polls the feed on an 8s tick only while the tab is
+  visible, and a `visibilitychange` listener refreshes immediately when the
+  tab returns to view, so a reopened tab never waits for the next tick.
 - **Settings UI (`/settings`)** — full CRUD for connections plus per-row
   live connectivity testing.
 
@@ -486,9 +488,10 @@ node scripts/api-e2e.mjs
   and fails when `/agent`'s uncompressed first-load bytes exceed the
   smallest shared-baseline route by more than a budgeted delta
   (default 45,000 B, override `FMCV_AGENT_HEADROOM_BUDGET_BYTES`).
-  Measured baseline Round 99: `/agent` 495,803 B (484 KB / 8 chunks) vs
-  `/` 461,553 B (451 KB / 6 chunks) — a 34,250 B (33.4 KB) agent-specific
-  delta from one 33,934 B page chunk + a 316 B utility chunk. The absolute
+  Measured baseline Round 100 (post-`visibilitychange` feature): `/agent`
+  495,956 B (484 KB / 8 chunks) vs `/` 461,553 B (451 KB / 6 chunks) — a
+  34,403 B (33.6 KB) agent-specific delta from one 34,087 B page chunk + a
+  316 B utility chunk. The absolute
   bundle-size guard alone can hide agent-page creep inside the shared
   framework floor, so this guard polices the per-route delta directly.
   No split was made: the remaining first-load code is the composer, trace
@@ -525,7 +528,9 @@ node scripts/api-e2e.mjs
   horizontal overflow) with the member debug panel reachable,
   and drives a nav journey that clicks through every route
   verifying URL, title and active state, then runs live journeys: a channel create → post →
-  agent answer → delete, a sessions create → live converse → auto-title in the
+  agent answer → delete (the channel flow also proves feed polling is
+  visibility-gated and resumes within 2s of the tab returning),
+  a sessions create → live converse → auto-title in the
   sidebar → rename via the UI → page reload → reopen →
   history-and-new-title-survive → delete, then a saved-connection journey
   that starts a hermetic fake OpenAI-compatible upstream (ephemeral port),
