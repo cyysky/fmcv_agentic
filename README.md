@@ -324,3 +324,16 @@ e2e/
   README.md              # how to run the browser E2E
 docker-compose.yml       # frontend + backend + db services
 ```
+
+## References
+
+The `reference/` directory holds local clones of open-source agent projects
+kept for study/reference. It is gitignored, so these folders exist only in
+local checkouts:
+
+| Name | Folder | Upstream | What it demonstrates |
+|------|--------|----------|----------------------|
+| Hermes Agent | [reference/hermes-agent](reference/hermes-agent) | [NousResearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | Self-improving agent with a built-in learning loop, autonomous skill creation, and a multi-platform gateway (CLI/TUI, Telegram, Slack, ...). |
+| jcode | [reference/jcode](reference/jcode) | [1jehuang/jcode](https://github.com/1jehuang/jcode) | RAM-efficient agent harness (Rust) with an SDK and benchmarks. |
+| Pi | [reference/pi](reference/pi) | [earendil-works/pi](https://github.com/earendil-works/pi) | Self-extensible coding agent harness with a unified multi-provider LLM API and agent runtime. |
+| Prime Agent | [reference/prime-agent](reference/prime-agent) | [PrimeIntellect-ai/prime-agent](https://github.com/PrimeIntellect-ai/prime-agent) | Self-improving RLM agent: persistent Python control environment, recursive subagents, and refinement of durable harness state. |
