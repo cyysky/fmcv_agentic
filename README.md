@@ -347,7 +347,7 @@ node scripts/verify.mjs --build --api-e2e
 node scripts/api-e2e.mjs
 ```
 
-- **Unit: 14 suites** — model catalog, workspace service + tools,
+- **Unit: 15 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -394,7 +394,8 @@ node scripts/api-e2e.mjs
   chars) plus the base-agent skills integration (read_skill tool body /
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
-  from persisted transcripts).
+  from persisted transcripts), and the prisma service (pg-adapter
+  constructor wiring + `$connect`/`$disconnect` lifecycle).
 - **API E2E: 12 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health, connections CRUD + live
