@@ -63,6 +63,30 @@ interface CronOverviewEvent {
   createdAt: string;
 }
 
+/** One page of the overview's paginated transition events (Round 78): the
+ *  "load all for this group" pass walks `offset` pages of 100 until the
+ *  group's `total` is exhausted or the safety cap is hit. */
+interface CronOverviewEventPage {
+  group: string | null;
+  events: CronOverviewEvent[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** The in-memory result of a load-all pass (Round 78): every fetched event,
+ *  the group total at fetch time, whether the whole history was loaded
+ *  (false when the page cap cut the pass short), and the filter/depth the
+ *  snapshot was captured under so a later filter/window change can ignore it
+ *  during render instead of resetting state inside an effect. */
+interface CronOverviewEventLoadAll {
+  events: CronOverviewEvent[];
+  total: number;
+  complete: boolean;
+  group: string | null;
+  depth: number;
+}
+
 interface CronOverview {
   now: string;
   leases: CronOverviewLease[];
@@ -127,6 +151,13 @@ const RUNS_ALL_PAGE_CAP = 10;
  *  selectable window. */
 const OVERVIEW_EVENT_LIMITS = [10, 25, 50, 100] as const;
 const OVERVIEW_EVENT_LIMIT_DEFAULT = OVERVIEW_EVENT_LIMITS[0];
+/** Load-all page size (Round 78): each /overview/events page requests the
+ *  backend's 100-event maximum. */
+const OVERVIEW_EVENT_PAGE_SIZE = 100;
+/** Load-all page cap (Round 78): "Load all for this group" fetches at most
+ *  this many pages so a pathologically deep failover history stays bounded;
+ *  when the cap is hit the label says "first N of M" instead of "all M". */
+const OVERVIEW_EVENT_ALL_PAGE_CAP = 5;
 
 /* ------------------------------- helpers -------------------------------- */
 
@@ -166,6 +197,25 @@ export default function CronPanel() {
   const [eventWindowDepth, setEventWindowDepth] = useState<number>(
     OVERVIEW_EVENT_LIMIT_DEFAULT,
   );
+  // Round 78: full-history "load all for this group" pass. While non-null,
+  // the Transitions line renders this paginated snapshot instead of the
+  // depth-limited window.
+  const [eventLoadAll, setEventLoadAll] =
+    useState<CronOverviewEventLoadAll | null>(null);
+  const [eventLoadAllBusy, setEventLoadAllBusy] = useState(false);
+  const [eventLoadAllError, setEventLoadAllError] = useState<string | null>(
+    null,
+  );
+  // Round 78: a full-history snapshot is only rendered while its captured
+  // filter/depth match the current selection; a stale one is treated as
+  // absent so the depth-limited window (and its load-all button) come back
+  // without resetting state inside an effect.
+  const eventLoadAllActive =
+    eventLoadAll &&
+    eventLoadAll.group === eventGroupFilter &&
+    eventLoadAll.depth === eventWindowDepth
+      ? eventLoadAll
+      : null;
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<CronJobRow | null>(null);
@@ -302,6 +352,46 @@ export default function CronPanel() {
     },
     [],
   );
+
+  // Load-all transitions (Round 78): page through every event for the
+  // selected filter (or all groups) and swap the Transitions line to the
+  // full-history view. Mirrors the run-history load-all — pages of 100
+  // inside the API's clamp, bounded by OVERVIEW_EVENT_ALL_PAGE_CAP — so
+  // deep failover histories can be scanned without unbounded payloads.
+  const loadAllEvents = useCallback(async () => {
+    if (eventLoadAllBusy) return;
+    setEventLoadAllBusy(true);
+    setEventLoadAllError(null);
+    try {
+      const group = eventGroupFilter;
+      const depth = eventWindowDepth;
+      const collected: CronOverviewEvent[] = [];
+      let total = 0;
+      for (let page = 0; page < OVERVIEW_EVENT_ALL_PAGE_CAP; page++) {
+        const res = await apiFetch(
+          `/cron/overview/events?limit=${OVERVIEW_EVENT_PAGE_SIZE}&offset=${
+            page * OVERVIEW_EVENT_PAGE_SIZE
+          }${group ? `&group=${encodeURIComponent(group)}` : ""}`,
+        );
+        if (!res.ok) throw new Error(await apiError(res));
+        const body = (await res.json()) as CronOverviewEventPage;
+        total = body.total;
+        collected.push(...body.events);
+        if (body.events.length < OVERVIEW_EVENT_PAGE_SIZE) break;
+      }
+      setEventLoadAll({
+        events: collected,
+        total,
+        complete: collected.length === total,
+        group,
+        depth,
+      });
+    } catch (e) {
+      setEventLoadAllError(errText(e));
+    } finally {
+      setEventLoadAllBusy(false);
+    }
+  }, [eventGroupFilter, eventWindowDepth, eventLoadAllBusy]);
 
   // Auto-refresh expanded run histories (Round 70, page-aware in Round 72):
   // while a history list is open, re-fetch its current page every 5 s and
@@ -672,7 +762,33 @@ export default function CronPanel() {
                 ))}
               </select>
             )}
-            {overview.events.length === 0 ? (
+            {eventLoadAllActive ? (
+              <span
+                className={styles.overviewStat}
+                data-testid="overview-events-all"
+                data-shown={eventLoadAllActive.events.length}
+                data-total={eventLoadAllActive.total}
+                data-complete={eventLoadAllActive.complete}
+              >
+                {eventLoadAllActive.events.map((evt, index) => (
+                  <span
+                    key={evt.id}
+                    title={`${evt.group} · ${evt.event} · owner ${evt.owner}${
+                      evt.previousOwner
+                        ? ` · previous ${evt.previousOwner}`
+                        : ""
+                    } at ${formatTime(evt.createdAt)}`}
+                  >
+                    {index > 0 ? " · " : ""}
+                    {evt.group} · {evt.event} · {evt.owner.slice(0, 8)}…
+                    {evt.previousOwner
+                      ? ` (was ${evt.previousOwner.slice(0, 8)}…)`
+                      : ""}{" "}
+                    · {formatTime(evt.createdAt)}
+                  </span>
+                ))}
+              </span>
+            ) : overview.events.length === 0 ? (
               <span className={styles.schedulerMeta}>
                 none recorded yet
               </span>
@@ -700,19 +816,72 @@ export default function CronPanel() {
             {overview.events.length > 0 && (
               <span
                 className={styles.schedulerMeta}
-                data-event-window={`${overview.events.length}:${
-                  eventGroupFilter
-                    ? eventTotals.get(eventGroupFilter) ?? 0
-                    : eventTotalAll
+                data-event-window={`${
+                  eventLoadAllActive
+                    ? eventLoadAllActive.events.length
+                    : overview.events.length
+                }:${
+                  eventLoadAllActive
+                    ? eventLoadAllActive.total
+                    : eventGroupFilter
+                      ? eventTotals.get(eventGroupFilter) ?? 0
+                      : eventTotalAll
                 }`}
               >
-                {" "}· newest {overview.events.length} of{" "}
-                {eventGroupFilter
-                  ? eventTotals.get(eventGroupFilter) ?? 0
-                  : eventTotalAll}{" "}
-                transitions
+                {" "}·{" "}
+                {eventLoadAllActive
+                  ? eventLoadAllActive.complete
+                    ? `all ${eventLoadAllActive.total} transitions`
+                    : `first ${eventLoadAllActive.events.length} of ${eventLoadAllActive.total} transitions`
+                  : `newest ${overview.events.length} of ${
+                      eventGroupFilter
+                        ? eventTotals.get(eventGroupFilter) ?? 0
+                        : eventTotalAll
+                    } transitions`}
                 {eventGroupFilter ? ` for ${eventGroupFilter}` : ""}
               </span>
+            )}
+            {overview.events.length > 0 &&
+              (eventLoadAllActive ? (
+                <button
+                  type="button"
+                  className={styles.btnGhost}
+                  data-testid="overview-events-all-back"
+                  onClick={() => {
+                    setEventLoadAll(null);
+                    setEventLoadAllError(null);
+                  }}
+                >
+                  {" "}· back to newest {eventWindowDepth}
+                </button>
+              ) : eventLoadAllBusy ? (
+                <span className={styles.schedulerMeta}>loading all…</span>
+              ) : overview.events.length <
+                (eventGroupFilter
+                  ? eventTotals.get(eventGroupFilter) ?? 0
+                  : eventTotalAll) ? (
+                <button
+                  type="button"
+                  className={styles.btnGhost}
+                  data-testid="overview-events-load-all"
+                  data-group={eventGroupFilter ?? "all"}
+                  data-shown={overview.events.length}
+                  data-total={
+                    eventGroupFilter
+                      ? eventTotals.get(eventGroupFilter) ?? 0
+                      : eventTotalAll
+                  }
+                  onClick={() => void loadAllEvents()}
+                  disabled={eventLoadAllBusy}
+                >
+                  {" "}·{" "}
+                  {eventGroupFilter
+                    ? "Load all for this group"
+                    : "Load all transitions"}
+                </button>
+              ) : null)}
+            {eventLoadAllError && (
+              <span className={styles.schedulerMeta}>{eventLoadAllError}</span>
             )}
           </div>
           <div className={styles.overviewRow}>
