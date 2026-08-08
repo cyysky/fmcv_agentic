@@ -1,33 +1,41 @@
-# Round 106 — workspace-tools coverage to 100% (2026-08-09)
+# Round 107 — channel-job service coverage to 100% lines (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 105's next-focus item 1: lifted `workspace-tools.ts` from
-67.08% stmts to 100% across statements, branches, functions, and lines.
+executed Round 106's next-focus item 1: lifted `channel-job.service.ts`
+from 76.27% to 100% lines (98.43% stmts / 80.48% branch / 100% funcs).
 
 ## What changed this round
 
-- **Self-scoped tools now unit-tested** — `buildSelfTools` had zero direct
-  coverage. Added the full `write_own_file` → `read_own_file` →
-  `list_own_workspace` round-trip (nested dirs, default empty content, byte
-  counts, explicit path + default `.` + leading-slash path).
-- **Self-tool validation edges** — missing `path` raises the argString
-  error, directory reads raise `read_own_file expects a file`, and reads
-  over the 100 KB cap raise `file too large`.
-- **Workspace-tool validation edges** — bad `kind`, missing `name`,
-  directory reads, over-cap reads, missing `agent`, empty-path fallbacks,
-  and default empty write content are now covered.
-- **Public-project listing branches** — the exact `projects` root and the
-  trailing-slash `projects/` form both normalize to the root tree without an
-  agent arg.
+- **`statusFor` coverage** — returns the latest in-memory job per
+  channel+agent (including after it finishes) and null for never-run members.
+- **`getRunning` validation edges** — wrong-channel jobs raise 404, finished
+  jobs raise 400 (`is not running`) for both `interject` and `stop`, and an
+  unknown job id raises 404 from `get()`.
+- **Aborted-run failure path** — when a run is stopped and later rejects,
+  the terminal `stopped` status is preserved: no `error` event, no
+  downgrade, single `finishedAt`.
+- **Debug-trace routing** — per-tool `toolStatusPost` lands in the created
+  sub-channel; when `ensureSubChannel` fails, the run degrades gracefully
+  and posts trace updates to the main channel.
+- **`stopForChannel` lifecycle** — running jobs are stopped with exactly one
+  `stopped` event and finished jobs are untouched; persisted run history is
+  pruned via `channelRun.deleteMany`, and a prune failure is logged, not
+  thrown. Unrelated channels verify a zero count.
+- **Failure tolerance** — a `channelRun.upsert` rejection never fails the
+  in-memory job; `onModuleInit` recovery, `snapshot`, and `latestFor` all
+  return null/undefined cleanly on DB errors and on missing rows.
 
 ## Test status
 
 - Fast verify `verify.mjs`: green on the final tree — REST docs guard
-  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 195
-  tests passed**, backend lint + types, frontend types + lint.
-- Coverage run green: `workspace-tools.ts` **67.08% → 100% stmts / 100%
-  branch / 100% funcs / 100% lines**. `channel.service.ts` stays at 99.04%
-  lines (only the dead `SLUG_RE` guard uncovered).
+  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 203
+  tests passed** (+8 this round), backend lint + types, frontend types +
+  lint.
+- Coverage run green: `channel-job.service.ts` **76.27% → 100% lines**;
+  remaining branch gaps are nullish-fallback sides over persisted-row
+  fields (answer/error/events/finishedAt), mostly impossible with real DB
+  rows. `channel.service.ts` stays 99.04% (dead `SLUG_RE` guard),
+  `workspace-tools.ts` stays 100%.
 - Full build gate not re-run (test-only change, no runtime code touched):
   Round 100's `verify --build --api-e2e` remains green — API E2E 12/123,
   bundle `/agent` 484 KB / 8 chunks, headroom 33.6 KB within 44 KB.
@@ -44,14 +52,15 @@ executed Round 105's next-focus item 1: lifted `workspace-tools.ts` from
 - **Open** — `channel.service.ts` line 67 (`SLUG_RE` guard) is dead by
   construction; decide in a runtime round whether to delete it or keep it
   as defense-in-depth.
-- **Open** — `channel-job.service.ts` is now the lowest service at 76.27%
-  lines (LLM failure/retry/recovery paths).
+- **Open** — `buckets.service.ts` is now the lowest service at 79.45% lines
+  (uncovered: 65-66, 115, 133-134, 159-160, 203, 218-224, 242, 258, 292,
+  313-318, 328-344, 361, 371-372, 411).
 
 ## Next round focus
 
-1. **Cover `channel-job.service.ts`** — extend `channel-job.service.spec.ts`
-  toward the 90%+ service bar, targeting the uncovered run/failure/retry and
-  recovery branches; re-run fast verify + coverage after.
+1. **Cover `buckets.service.ts`** — extend `buckets.service.spec.ts` toward
+  the 90%+ service bar, targeting the listed bucket lifecycle/validation
+  paths; re-run fast verify + coverage after.
 2. **Decide the dead `SLUG_RE` guard** — a small runtime cleanup
   (remove the unreachable branch) needs the full build + API E2E + browser
   gates; only worth doing bundled with a real frontend/backend change.

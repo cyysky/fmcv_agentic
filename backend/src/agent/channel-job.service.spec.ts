@@ -284,4 +284,205 @@ describe('ChannelJobService', () => {
     expect(capturedInterject!()).toEqual(['do it differently']);
     expect((job as unknown as { mailbox: string[] }).mailbox).toEqual([]);
   });
+
+  it('statusFor returns the most recent job per channel+agent or null', async () => {
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockResolvedValue(streamingResult());
+    const svc = makeSvc(channelsDouble(), agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    expect(svc.statusFor('ch1', 'coder')).toBe(job);
+    expect(svc.statusFor('ch1', 'researcher')).toBeNull();
+    await job.process;
+    // The finished job is still the "latest" for the member.
+    expect(svc.statusFor('ch1', 'coder')).toBe(job);
+  });
+
+  it('getRunning rejects wrong channels and non-running jobs', async () => {
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockResolvedValue(streamingResult());
+    const svc = makeSvc(channelsDouble(), agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await job.process;
+
+    expect(() => svc.interject(job.id, 'ch2', 'hi')).toThrow(
+      'not found in channel ch2',
+    );
+    expect(() => svc.interject(job.id, 'ch1', 'hi')).toThrow('is not running');
+    expect(() => svc.stop(job.id, 'ch1')).toThrow('is not running');
+    // Unknown job id is a 404 from get().
+    expect(() => svc.stop('ghost', 'ch1')).toThrow(/Job ghost not found/);
+  });
+
+  it('an aborted run that later fails stays stopped, never error', async () => {
+    const agent = agentDouble();
+    let release: () => void = () => {};
+    const gate = new Promise<never>((_, reject) => {
+      release = () => reject(new Error('channel deleted under the run'));
+    });
+    agent.runChannelTurnStreaming.mockImplementation(() => gate);
+    const svc = makeSvc(channelsDouble(), agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await new Promise((r) => setImmediate(r));
+    svc.stop(job.id, 'ch1');
+    expect(job.finishedAt).toBeDefined();
+
+    release();
+    await job.process;
+    expect(job.status).toBe('stopped');
+    expect(job.error).toBeUndefined();
+    expect(job.events.some((e) => e.type === 'error')).toBe(false);
+  });
+
+  it('routes debug-trace posts to the created sub-channel', async () => {
+    const channels = channelsDouble();
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockImplementation(
+      (opts: { toolStatusPost: (t: string) => Promise<unknown> }) =>
+        opts.toolStatusPost('per-tool trace').then(() => streamingResult()),
+    );
+    const svc = makeSvc(channels, agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await job.process;
+    expect(channels.postMessage).toHaveBeenCalledWith(
+      'sub-coder',
+      'agent',
+      'coder',
+      'per-tool trace',
+      undefined,
+    );
+  });
+
+  it('falls back to the main channel when the sub-channel cannot be created', async () => {
+    const channels = channelsDouble();
+    channels.ensureSubChannel.mockRejectedValue(new Error('disk full'));
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockImplementation(
+      (opts: { toolStatusPost: (t: string) => Promise<unknown> }) =>
+        opts.toolStatusPost('tracing...').then(() => streamingResult()),
+    );
+    const svc = makeSvc(channels, agent);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await job.process;
+    expect(job.status).toBe('done');
+    expect(channels.postMessage).toHaveBeenCalledWith(
+      'ch1',
+      'agent',
+      'coder',
+      'tracing...',
+      undefined,
+    );
+  });
+
+  it('stopForChannel stops running jobs and prunes persisted history', async () => {
+    const prisma = prismaDouble();
+    const agent = agentDouble();
+    let release: () => void = () => {};
+    const gate = new Promise<{
+      answer: string;
+      steps: number;
+      trace: unknown[];
+    }>((resolve) => {
+      release = () => resolve({ answer: 'x', steps: 0, trace: [] });
+    });
+    agent.runChannelTurnStreaming.mockImplementationOnce(() => gate);
+    agent.runChannelTurnStreaming.mockResolvedValueOnce({
+      answer: 'done',
+      steps: 0,
+      trace: [],
+    });
+    const svc = makeSvc(channelsDouble(), agent, prisma);
+
+    const running = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    const done = svc.create({
+      channelId: 'ch2',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await done.process;
+
+    // Unrelated channels are untouched.
+    expect(svc.stopForChannel(['ghost']).stopped).toBe(0);
+
+    const stopped = svc.stopForChannel(['ch1', 'ch2']);
+    expect(stopped.stopped).toBe(1);
+    expect(running.status).toBe('stopped');
+    expect(done.status).toBe('done');
+    expect(running.events.filter((e) => e.type === 'stopped')).toHaveLength(1);
+    expect(prisma._deleteMany).toHaveBeenLastCalledWith({
+      where: { channelId: { in: ['ch1', 'ch2'] } },
+    });
+
+    // A history-prune failure is logged, never thrown to callers.
+    (prisma._deleteMany as jest.Mock).mockRejectedValueOnce(
+      new Error('prune failed'),
+    );
+    expect(svc.stopForChannel(['ghost']).stopped).toBe(0);
+
+    release();
+    await running.process;
+    // Terminal `stopped` from stopForChannel survives the run finishing.
+    expect(running.status).toBe('stopped');
+    expect(running.events.filter((e) => e.type === 'stopped')).toHaveLength(1);
+  });
+
+  it('a persistence failure does not fail the in-memory job', async () => {
+    const prisma = prismaDouble();
+    (prisma._upsert as jest.Mock).mockRejectedValue(new Error('db down'));
+    const agent = agentDouble();
+    agent.runChannelTurnStreaming.mockResolvedValue(streamingResult());
+    const svc = makeSvc(channelsDouble(), agent, prisma);
+
+    const job = svc.create({
+      channelId: 'ch1',
+      agentName: 'coder',
+      message: 'x',
+    });
+    await job.process;
+    expect(job.status).toBe('done');
+    expect(job.answer).toBe('done');
+  });
+
+  it('recovery and history lookups degrade gracefully on DB errors', async () => {
+    const prisma = prismaDouble();
+    (prisma._findMany as jest.Mock).mockRejectedValue(new Error('db down'));
+    const svc = makeSvc(channelsDouble(), agentDouble(), prisma);
+    await expect(svc.onModuleInit()).resolves.toBeUndefined();
+
+    (prisma._findUnique as jest.Mock).mockRejectedValue(new Error('db down'));
+    await expect(svc.snapshot('nope')).resolves.toBeNull();
+    (prisma._findUnique as jest.Mock).mockResolvedValue(null);
+    await expect(svc.snapshot('missing-row')).resolves.toBeNull();
+
+    (prisma._findFirst as jest.Mock).mockRejectedValue(new Error('db down'));
+    await expect(svc.latestFor('ch1', 'coder')).resolves.toBeNull();
+  });
 });
