@@ -1,11 +1,11 @@
-# ROUND 36 — 2026-08-08 (autonomous iteration round 36)
+# ROUND 37 — 2026-08-08 (autonomous iteration round 37)
 
 User instruction: generic loop prompt ("read on loop.md and do works") with no
 new human direction; `DIRECTION.md` items 1-4 (managed document buckets, cron
-jobs, agent skills, HTML view by link / new tab) were already completed in
-Rounds 24-34 and remain in effect. Round 35's handoff set "Next round focus:
-None"; this round re-ran the full verification gate against the live stack to
-confirm the four directed features still work end-to-end.
+jobs, agent skills, HTML view by link / new tab) remain completed and in
+effect. Round 36's handoff set "Next round focus: None"; this round re-ran the
+full verification gate against the live stack to confirm the four directed
+features still work end-to-end.
 
 ## What changed this round
 
@@ -22,12 +22,12 @@ confirm the four directed features still work end-to-end.
 - Backend `nest build` + `npx tsc --noEmit` + eslint clean; frontend
   `npm run lint` + `npx tsc --noEmit` + `npm run build` clean.
 - Browser E2E **exit 0** — 21 route probes (incl. dark/mobile variants), all
-  9 journeys (nav, channel, sessions+connection, files, html-view, buckets,
-  cron, skills, settings), zero console/network/HTTP errors; cleanup reported
-  `clean` everywhere.
-- Live fixtures back to baseline after the run: sessions 0, connections 0,
-  buckets 0, cron 0, skills 0; channels `FMCV`/`coder` only (spot-checked via
-  GET after the run).
+  8 flows (nav, sessions+connection, files, html-view, buckets, cron, skills,
+  settings), zero console/network/HTTP errors; cleanup reported `clean` at
+  every stage.
+- Live fixtures back to baseline after the run: buckets 0, cron 0, skills 0,
+  sessions 0, channels `FMCV`/`coder` only (spot-checked via GET after the
+  run).
 
 ## Known issues / open tickets
 
@@ -37,13 +37,17 @@ confirm the four directed features still work end-to-end.
   instance (single-instance deployment assumed); buckets are read-only by
   design (no delete/rename endpoints); `AGENT_API_KEY` is not committed (fresh
   stacks must supply it or use `AGENT_LLM_STUB=1`).
-- Recoverable leftovers: `/data/.trash-round34` (backend container) still
-  holds the retired dev folders until a human asks for it to be pruned.
+- Recoverable leftovers (untouched, outside loop fixture scope): the retired
+  dev folders under `/data/.trash-round34` (backend container) and old dev
+  scratch files in the `coder` agent workspace (`debug_msg*.md`,
+  `restart-probe-*.md`, `hello world.md`, `live_check.txt`, etc.) remain until
+  a human asks for them to be pruned.
 
 ## Next round focus
 
-- **None.** Exit condition C reached: ROUND.md "Next round focus" is empty, no
-  open tickets remain, and no improvement is obviously valuable (rounds 35-36
-  are pure verification, so the loop also has no remaining work to propose).
-  Continue only if the human updates `DIRECTION.md`, reports new real-use
-  friction, or asks for the trash folder to be pruned.
+- **None.** Exit conditions C and D reached: ROUND.md "Next round focus" is
+  empty, no open tickets remain, and no improvement is obviously valuable.
+  Rounds 35-37 are pure verification rounds with no net user-visible change,
+  so the degenerate-loop guard also stops the loop here. Continue only if the
+  human updates `DIRECTION.md`, reports new real-use friction, or asks for the
+  trash folders/scratch files to be pruned.

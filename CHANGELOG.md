@@ -1,3 +1,25 @@
+## Round 2026-08-08 — autonomous iteration round 37 (tag `round-37`)
+
+### Added
+- **Verification sweep (no production changes)** — re-ran every gate against
+  the live compose stack: backend unit 146/14, API E2E 105/10,
+  build/type-check/eslint clean on both sides, frontend production build
+  clean, and the CDP browser E2E refreshed `e2e/report.json` + screenshots
+  (exit 0, 21 route probes, all 8 flows, zero console/network/HTTP errors;
+  fixtures cleaned down to baseline: buckets 0, cron 0, skills 0, sessions 0,
+  channels `FMCV`/`coder` only).
+
+### Changed
+- **Browser E2E artifacts refreshed** (`e2e/report.json`, `e2e/screenshots/`)
+  against the current live stack; no source or test changes this round.
+
+### Known issues / accepted limitations
+- None open. Unchanged from round 36: CSP `sandbox` inline-preview limits,
+  in-process scheduler / in-memory skills install state, read-only buckets,
+  and the recoverable pre-existing dev leftovers (`/data/.trash-round34` in
+  the backend container plus old scratch files in the `coder` workspace),
+  which are left untouched until a human asks for them to be pruned.
+
 ## Round 2026-08-08 — autonomous iteration round 35 (tag `round-35`)
 
 ### Added
