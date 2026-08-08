@@ -22,7 +22,7 @@ import type {
   TurnResponse,
   WorkspaceInfo,
 } from "./agent-types";
-import type { AgentChannelsViewProps, AgentSessionsViewProps } from "./agent-views";
+import { ChannelsPanelContext, SessionsPanelContext } from "./agent-context";
 
 // Round 93: the sessions/channels tab panels live in agent-views.tsx and are
 // loaded on demand, so the /agent first load no longer includes their JSX.
@@ -941,9 +941,9 @@ export default function AgentPage() {
   const toggleCollapse = (path: string) =>
     setCollapsed((prev) => ({ ...prev, [path]: !prev[path] }));
 
-  /* --------------- lazy panels: controlled props (Round 93) --------------- */
+  /* --------------- lazy panels: context values (Round 96) --------------- */
 
-  const sessionsPanelProps: AgentSessionsViewProps = {
+  const sessionsPanelValue = {
     sessions,
     sessionsError,
     setSessionsError,
@@ -969,7 +969,7 @@ export default function AgentPage() {
     sendSession,
   };
 
-  const channelsPanelProps: AgentChannelsViewProps = {
+  const channelsPanelValue = {
     channelsError,
     setChannelsError,
     channels,
@@ -1293,7 +1293,16 @@ export default function AgentPage() {
         </>
       )}
 
-      {view === "sessions" && <AgentSessionsView {...sessionsPanelProps} />}      {view === "channels" && <AgentChannelsView {...channelsPanelProps} />}
+      {view === "sessions" && (
+        <SessionsPanelContext.Provider value={sessionsPanelValue}>
+          <AgentSessionsView />
+        </SessionsPanelContext.Provider>
+      )}
+      {view === "channels" && (
+        <ChannelsPanelContext.Provider value={channelsPanelValue}>
+          <AgentChannelsView />
+        </ChannelsPanelContext.Provider>
+      )}
     </div>
   );
 }

@@ -1,28 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type { Dispatch, RefObject, SetStateAction } from "react";
 import styles from "./agent.module.css";
 import { formatTime, formatTimeShort } from "../../lib/time";
 import type {
-  AgentEntry,
-  AgentSessionSummary,
-  ChannelDetail,
   ChannelJobEvent,
   ChannelSummary,
-  ChatMsg,
-  ConnectionOption,
   MemberStatus,
-  ModelOption,
 } from "./agent-types";
+import { useChannelsPanel, useSessionsPanel } from "./agent-context";
 
 /**
  * agent-views.tsx — sessions + channels tab panels for the agent page.
  *
  * Extracted in Round 93: AgentPage keeps all state/handlers and renders these
  * two controlled panels through `next/dynamic({ ssr: false })`, so the chat
- * first load no longer carries the sessions/channels JSX. Prop names mirror
- * the original local names to keep the moved JSX byte-identical.
+ * first load stays lean. Round 96: the panels now read their state from
+ * agent-context instead of controlled props; JSX is unchanged from the move.
  */
 
 function isProjDir(v: unknown): boolean {
@@ -31,57 +25,33 @@ function isProjDir(v: unknown): boolean {
 
 /* ----------------------------- sessions panel ---------------------------- */
 
-export interface AgentSessionsViewProps {
-  sessions: AgentSessionSummary[];
-  sessionsError: string | null;
-  setSessionsError: (v: string | null) => void;
-  creatingSession: boolean;
-  createSession: () => void;
-  selSessionId: string | null;
-  openSession: (id: string) => Promise<void>;
-  editingSessionId: string | null;
-  setEditingSessionId: (v: string | null) => void;
-  draftSessionTitle: string;
-  setDraftSessionTitle: (v: string) => void;
-  commitSessionRename: (id: string) => Promise<void>;
-  connLabel: (id: string | undefined) => string | null;
-  startSessionRename: (s: AgentSessionSummary) => void;
-  deleteSession: (id: string) => Promise<void>;
-  selectedConn: ConnectionOption | null;
-  sessionLoading: boolean;
-  sessionMsgs: ChatMsg[];
-  sessionBusy: boolean;
-  endRef: RefObject<HTMLDivElement | null>;
-  sessionInput: string;
-  setSessionInput: (v: string) => void;
-  sendSession: () => void;
-}
 
-export function AgentSessionsPanel({
-  sessions,
-  sessionsError,
-  setSessionsError,
-  creatingSession,
-  createSession,
-  selSessionId,
-  openSession,
-  editingSessionId,
-  setEditingSessionId,
-  draftSessionTitle,
-  setDraftSessionTitle,
-  commitSessionRename,
-  connLabel,
-  startSessionRename,
-  deleteSession,
-  selectedConn,
-  sessionLoading,
-  sessionMsgs,
-  sessionBusy,
-  endRef,
-  sessionInput,
-  setSessionInput,
-  sendSession,
-}: AgentSessionsViewProps) {
+export function AgentSessionsPanel() {
+  const {
+    sessions,
+    sessionsError,
+    setSessionsError,
+    creatingSession,
+    createSession,
+    selSessionId,
+    openSession,
+    editingSessionId,
+    setEditingSessionId,
+    draftSessionTitle,
+    setDraftSessionTitle,
+    commitSessionRename,
+    connLabel,
+    startSessionRename,
+    deleteSession,
+    selectedConn,
+    sessionLoading,
+    sessionMsgs,
+    sessionBusy,
+    endRef,
+    sessionInput,
+    setSessionInput,
+    sendSession,
+  } = useSessionsPanel();
   return (
         <>
           {sessionsError && (
@@ -277,123 +247,66 @@ export function AgentSessionsPanel({
 
 /* ----------------------------- channels panel ---------------------------- */
 
-export interface AgentChannelsViewProps {
-  channelsError: string | null;
-  setChannelsError: (v: string | null) => void;
-  channels: ChannelSummary[];
-  selChannelId: string | null;
-  openChannel: (id: string) => Promise<void>;
-  deleteChannel: (id: string) => Promise<void>;
-  setShowNew: (v: boolean) => void;
-  dmOpen: boolean;
-  setDmOpen: Dispatch<SetStateAction<boolean>>;
-  dmBusy: boolean;
-  loadAvailableAgents: () => void;
-  availableAgents: AgentEntry[];
-  openDirectMessage: (agentName: string) => Promise<void>;
-  detail: ChannelDetail | null;
-  liveAgent: string | null;
-  runAgent: string;
-  setRunAgent: (v: string) => void;
-  selectMember: (agentName: string) => void;
-  removeMember: (agentName: string) => Promise<void>;
-  memberInput: string;
-  setMemberInput: (v: string) => void;
-  addMember: () => void;
-  memberBusy: boolean;
-  chFeedRef: RefObject<HTMLDivElement | null>;
-  detailLoading: boolean;
-  chBusy: boolean;
-  chMode: "post" | "run";
-  setChMode: (v: "post" | "run") => void;
-  jobEvents: ChannelJobEvent[];
-  jobSeen: number;
-  jobStatus: "running" | "done" | "error" | "stopped" | null;
-  jobError: string | null;
-  activeJob: { jobId: string; channelId: string; agentName: string } | null;
-  interject: () => void;
-  postToChannel: () => void;
-  startJob: () => void;
-  stopJob: () => void;
-  runModel: string;
-  setRunModel: (v: string) => void;
-  models: ModelOption[];
-  chInput: string;
-  setChInput: (v: string) => void;
-  memberStatusLoading: boolean;
-  memberStatus: MemberStatus[];
-  selMember: string | null;
-  setSelMember: Dispatch<SetStateAction<string | null>>;
-  collapsed: Record<string, boolean>;
-  toggleCollapse: (path: string) => void;
-  newName: string;
-  setNewName: (v: string) => void;
-  newProject: string;
-  setNewProject: (v: string) => void;
-  newCreator: string;
-  setNewCreator: (v: string) => void;
-  creating: boolean;
-  createChannel: () => void;
-}
 
-export function AgentChannelsPanel({
-  channelsError,
-  setChannelsError,
-  channels,
-  selChannelId,
-  openChannel,
-  deleteChannel,
-  setShowNew,
-  dmOpen,
-  setDmOpen,
-  dmBusy,
-  loadAvailableAgents,
-  availableAgents,
-  openDirectMessage,
-  detail,
-  liveAgent,
-  runAgent,
-  setRunAgent,
-  selectMember,
-  removeMember,
-  memberInput,
-  setMemberInput,
-  addMember,
-  memberBusy,
-  chFeedRef,
-  detailLoading,
-  chBusy,
-  chMode,
-  setChMode,
-  jobEvents,
-  jobSeen,
-  jobStatus,
-  jobError,
-  activeJob,
-  interject,
-  postToChannel,
-  startJob,
-  stopJob,
-  runModel,
-  setRunModel,
-  models,
-  chInput,
-  setChInput,
-  memberStatusLoading,
-  memberStatus,
-  selMember,
-  setSelMember,
-  collapsed,
-  toggleCollapse,
-  newName,
-  setNewName,
-  newProject,
-  setNewProject,
-  newCreator,
-  setNewCreator,
-  creating,
-  createChannel,
-}: AgentChannelsViewProps) {
+export function AgentChannelsPanel() {
+  const {
+    channelsError,
+    setChannelsError,
+    channels,
+    selChannelId,
+    openChannel,
+    deleteChannel,
+    setShowNew,
+    dmOpen,
+    setDmOpen,
+    dmBusy,
+    loadAvailableAgents,
+    availableAgents,
+    openDirectMessage,
+    detail,
+    liveAgent,
+    runAgent,
+    setRunAgent,
+    selectMember,
+    removeMember,
+    memberInput,
+    setMemberInput,
+    addMember,
+    memberBusy,
+    chFeedRef,
+    detailLoading,
+    chBusy,
+    chMode,
+    setChMode,
+    jobEvents,
+    jobSeen,
+    jobStatus,
+    jobError,
+    activeJob,
+    interject,
+    postToChannel,
+    startJob,
+    stopJob,
+    runModel,
+    setRunModel,
+    models,
+    chInput,
+    setChInput,
+    memberStatusLoading,
+    memberStatus,
+    selMember,
+    setSelMember,
+    collapsed,
+    toggleCollapse,
+    newName,
+    setNewName,
+    newProject,
+    setNewProject,
+    newCreator,
+    setNewCreator,
+    creating,
+    createChannel,
+  } = useChannelsPanel();
   return (
     <>
         <>
