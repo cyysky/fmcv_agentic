@@ -11,7 +11,6 @@ import {
 import { BaseAgentService } from './base-agent.service';
 import { WorkspaceService } from './workspace.service';
 import {
-  AskAgentDto,
   ConverseDto,
   CreateSessionDto,
   CreateWorkspaceAgentDto,
@@ -73,11 +72,20 @@ export class AgentController {
 
   @Post('sessions/:id/converse')
   converse(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ConverseDto) {
-    return this.agent.converse(id, dto.message, dto.model, dto.maxSteps, dto.connectionId);
+    return this.agent.converse(
+      id,
+      dto.message,
+      dto.model,
+      dto.maxSteps,
+      dto.connectionId,
+    );
   }
 
   @Patch('sessions/:id')
-  renameSession(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RenameSessionDto) {
+  renameSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenameSessionDto,
+  ) {
     return this.agent.renameSession(id, dto.title);
   }
 

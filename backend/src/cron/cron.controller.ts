@@ -43,7 +43,10 @@ export class CronController {
   }
 
   @Patch(':id')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateCronJobDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateCronJobDto,
+  ) {
     return this.cron.update(id, dto);
   }
 

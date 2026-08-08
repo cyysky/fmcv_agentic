@@ -36,8 +36,7 @@ export class ConnectionsService {
   private readonly testTimeoutMs: number;
 
   constructor(private readonly prisma: PrismaService) {
-    this.testTimeoutMs =
-      Number(process.env.CONNECTION_TEST_TIMEOUT_MS) || 8000;
+    this.testTimeoutMs = Number(process.env.CONNECTION_TEST_TIMEOUT_MS) || 8000;
   }
 
   async create(dto: CreateConnectionDto): Promise<Connection> {
@@ -53,7 +52,9 @@ export class ConnectionsService {
       ...(dto.defaultParameters !== undefined && {
         defaultParameters: dto.defaultParameters as Prisma.InputJsonValue,
       }),
-      ...(dto.models !== undefined && { models: this.normalizeModels(dto.models) }),
+      ...(dto.models !== undefined && {
+        models: this.normalizeModels(dto.models),
+      }),
     };
     return this.mask(await this.prisma.connection.create({ data }));
   }
@@ -78,21 +79,27 @@ export class ConnectionsService {
 
     const data: Prisma.ConnectionUpdateInput = {};
     if (dto.displayName !== undefined) data.displayName = dto.displayName;
-    if (dto.baseUrl !== undefined) data.baseUrl = this.normalizeBaseUrl(dto.baseUrl);
+    if (dto.baseUrl !== undefined)
+      data.baseUrl = this.normalizeBaseUrl(dto.baseUrl);
     if (dto.modelName !== undefined) data.modelName = dto.modelName;
     if (dto.contextLength !== undefined) data.contextLength = dto.contextLength;
     if (dto.concurrentConnections !== undefined)
       data.concurrentConnections = dto.concurrentConnections;
-    if (dto.apiKey !== undefined) data.apiKey = this.normalizeApiKey(dto.apiKey);
+    if (dto.apiKey !== undefined)
+      data.apiKey = this.normalizeApiKey(dto.apiKey);
     if (dto.defaultParameters !== undefined)
       data.defaultParameters = dto.defaultParameters as Prisma.InputJsonValue;
-    if (dto.models !== undefined) data.models = this.normalizeModels(dto.models);
+    if (dto.models !== undefined)
+      data.models = this.normalizeModels(dto.models);
 
     if (Object.keys(data).length === 0) {
       throw new BadRequestException('No fields provided to update');
     }
 
-    const updated = await this.prisma.connection.update({ where: { id }, data });
+    const updated = await this.prisma.connection.update({
+      where: { id },
+      data,
+    });
     return this.mask(updated);
   }
 
@@ -164,7 +171,6 @@ export class ConnectionsService {
     return this.probe(dto.baseUrl, dto.modelName, dto.apiKey);
   }
 
-
   /** Shared model-list fetch: GET {baseUrl}/models with bounds + graceful errors. */
   private async fetchModelsFrom(
     baseUrl: string,
@@ -174,17 +180,14 @@ export class ConnectionsService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.testTimeoutMs);
     try {
-      const response = await fetch(
-        `${this.normalizeBaseUrl(baseUrl)}/models`,
-        {
-          method: 'GET',
-          headers: {
-            accept: 'application/json',
-            ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-          },
-          signal: controller.signal,
+      const response = await fetch(`${this.normalizeBaseUrl(baseUrl)}/models`, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
         },
-      );
+        signal: controller.signal,
+      });
       const latencyMs = Date.now() - started;
 
       if (!response.ok) {
@@ -365,7 +368,9 @@ export class ConnectionsService {
   /** Mask the API key so secrets are not returned to the client. */
   private mask(conn: Connection): Connection {
     if (conn.apiKey) {
-      conn.apiKey = conn.apiKey ? `${conn.apiKey.slice(0, 3)}***${conn.apiKey.slice(-3)}` : '';
+      conn.apiKey = conn.apiKey
+        ? `${conn.apiKey.slice(0, 3)}***${conn.apiKey.slice(-3)}`
+        : '';
     }
     return conn;
   }

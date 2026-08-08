@@ -122,10 +122,7 @@ export class ChannelController {
   }
 
   @Post(':id/messages')
-  async postMessage(
-    @Param('id') id: string,
-    @Body() dto: ChannelMessageDto,
-  ) {
+  async postMessage(@Param('id') id: string, @Body() dto: ChannelMessageDto) {
     const msg = await this.channels.postMessage(
       id,
       'user',
@@ -154,10 +151,7 @@ export class ChannelController {
   }
 
   @Post(':id/turn')
-  runTurn(
-    @Param('id') id: string,
-    @Body() dto: ChannelTurnDto,
-  ) {
+  runTurn(@Param('id') id: string, @Body() dto: ChannelTurnDto) {
     return this.channels.runTurn(
       this.baseAgent,
       id,
@@ -206,10 +200,7 @@ export class ChannelController {
   }
 
   @Post(':id/jobs/:jobId/stop')
-  stop(
-    @Param('id') id: string,
-    @Param('jobId') jobId: string,
-  ) {
+  stop(@Param('id') id: string, @Param('jobId') jobId: string) {
     this.jobs.stop(jobId, id);
     return { ok: true, status: 'stopped' };
   }

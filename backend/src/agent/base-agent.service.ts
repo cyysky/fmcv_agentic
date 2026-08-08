@@ -1,7 +1,20 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import { MODEL_CATALOG, ModelSpec, fallbackFor, resolveModel, resolveWireModel } from './agent.models';
+import {
+  MODEL_CATALOG,
+  ModelSpec,
+  fallbackFor,
+  resolveModel,
+  resolveWireModel,
+} from './agent.models';
 import { WorkspaceService } from './workspace.service';
 import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
@@ -44,7 +57,7 @@ export interface BaseTool {
   /** JSON-schema parameters object. */
   parameters: Record<string, unknown>;
   /** Executor. `args` is the parsed JSON args map. */
-  run: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+  run: (args: Record<string, unknown>) => unknown;
 }
 
 export interface ToolCallRequest {
@@ -149,10 +162,14 @@ export class BaseAgentService implements OnModuleInit {
     prisma: PrismaService,
     @Optional() skills?: SkillsService,
   ) {
-    this.baseUrl = (config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? '').replace(/\/+$/, '');
+    this.baseUrl = (
+      config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? ''
+    ).replace(/\/+$/, '');
     this.envApiKey = config.get<string>('AGENT_API_KEY', '') ?? '';
-    this.defaultModelId = config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
-    this.llmTimeoutMs = Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
+    this.defaultModelId =
+      config.get<string>('AGENT_DEFAULT_MODEL', 'ds4-flash') ?? 'ds4-flash';
+    this.llmTimeoutMs =
+      Number(config.get<string>('AGENT_LLM_TIMEOUT_MS', '120000')) || 120000;
     this.llmStub = ['1', 'true', 'yes', 'on'].includes(
       (config.get<string>('AGENT_LLM_STUB', '') ?? '').toLowerCase(),
     );
@@ -210,7 +227,9 @@ export class BaseAgentService implements OnModuleInit {
       });
       if (row?.apiKey) return row.apiKey;
     } catch (err) {
-      this.logger.warn(`Could not read API key from DB: ${(err as Error).message}`);
+      this.logger.warn(
+        `Could not read API key from DB: ${(err as Error).message}`,
+      );
     }
     return '';
   }
@@ -239,7 +258,10 @@ export class BaseAgentService implements OnModuleInit {
       ...(row.apiKey ? { apiKey: row.apiKey } : {}),
       ...(row.defaultParameters
         ? {
-            defaultParameters: row.defaultParameters as unknown as Record<string, unknown>,
+            defaultParameters: row.defaultParameters as unknown as Record<
+              string,
+              unknown
+            >,
           }
         : {}),
     };
@@ -269,7 +291,11 @@ export class BaseAgentService implements OnModuleInit {
    * Sessions
    * ------------------------------------------------------------------ */
 
-  async createSession(title = DEFAULT_SESSION_TITLE, model?: string, connectionId?: string): Promise<Session> {
+  async createSession(
+    title = DEFAULT_SESSION_TITLE,
+    model?: string,
+    connectionId?: string,
+  ): Promise<Session> {
     const spec = resolveModel(model ?? this.defaultModelId);
     const session: Session = {
       id: randomUUID(),
@@ -321,7 +347,6 @@ export class BaseAgentService implements OnModuleInit {
     return { deleted: true };
   }
 
-
   /** Best-effort write of a session row to Postgres; a DB failure must never
    *  break the in-memory session flow, so it is logged and swallowed. */
   private safePersistSession(session: Session): void {
@@ -332,7 +357,9 @@ export class BaseAgentService implements OnModuleInit {
           id: session.id,
           title: session.title,
           model: session.model,
-          ...(session.connectionId ? { connectionId: session.connectionId } : {}),
+          ...(session.connectionId
+            ? { connectionId: session.connectionId }
+            : {}),
           messages: session.messages as unknown as Prisma.InputJsonValue,
           createdAt: new Date(session.createdAt),
         },
@@ -434,7 +461,10 @@ export class BaseAgentService implements OnModuleInit {
     const modelOverride = opts.model !== undefined;
     // An explicit connection is required to exist (bad id => 404); sessions
     // that lost their connection can self-heal, but a fresh turn cannot.
-    const endpoint = await this.resolveConnectionEndpoint(opts.connectionId, false);
+    const endpoint = await this.resolveConnectionEndpoint(
+      opts.connectionId,
+      false,
+    );
     const wireEndpoint =
       endpoint && modelOverride
         ? { ...endpoint, model: resolveWireModel(opts.model as string) }
@@ -445,7 +475,10 @@ export class BaseAgentService implements OnModuleInit {
       ...(skillsBlock
         ? [{ role: 'system' as const, content: skillsBlock }]
         : []),
-      ...(opts.history ?? []).map((h) => ({ role: 'user' as const, content: h })),
+      ...(opts.history ?? []).map((h) => ({
+        role: 'user' as const,
+        content: h,
+      })),
       { role: 'user', content: opts.message },
     ];
     const { answer, steps, trace } = await this.runLoop(
@@ -474,7 +507,10 @@ export class BaseAgentService implements OnModuleInit {
     const session = this.getSession(sessionId);
     const explicitConnection = connectionId !== undefined;
     if (explicitConnection) session.connectionId = connectionId;
-    const endpoint = await this.resolveConnectionEndpoint(session.connectionId, !explicitConnection);
+    const endpoint = await this.resolveConnectionEndpoint(
+      session.connectionId,
+      !explicitConnection,
+    );
     if (endpoint === null && !explicitConnection && session.connectionId) {
       this.logger.warn(
         `Session ${sessionId}: stored connection ${session.connectionId} no longer exists; using the default endpoint`,
@@ -488,13 +524,15 @@ export class BaseAgentService implements OnModuleInit {
     // connection's modelName is used).
     const wireEndpoint =
       endpoint && explicitModel
-        ? { ...endpoint, model: resolveWireModel(model as string) }
+        ? { ...endpoint, model: resolveWireModel(model) }
         : endpoint;
     // Store the explicit id verbatim (a catalog id or a raw provider model
     // from the connection's list) so reopening the session sees the same
     // model the user picked; without an explicit model keep the resolved id.
     session.model = model ?? spec.id;
-    const userMsgCount = session.messages.filter((m) => m.role === 'user').length;
+    const userMsgCount = session.messages.filter(
+      (m) => m.role === 'user',
+    ).length;
     session.messages.push({ role: 'user', content: message });
     // Auto-title: the first user message names a default-titled session, so
     // the sidebar is useful without a manual rename. Later messages and
@@ -546,19 +584,19 @@ export class BaseAgentService implements OnModuleInit {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
 
     const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
-    const systemPrompt = [
-      DEFAULT_SYSTEM_PROMPT,
-      '',
-      `You are working in team channel #${opts.channelSlug}.`,
-      `The channel owns a project folder named "${opts.channelProjectName}".`,
-      `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
-      `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
-      'You can work directly on this channel project folder with the',
-      'channel_list / channel_read / channel_write tools, and you can also work',
-      'in your own agent folder with the workspace tools. Use channel_post to',
-      'publish short updates to the channel feed so your teammates can see them.',
-    ].join('\n') +
-      (skillsBlock ? `\n\n${skillsBlock}` : '');
+    const systemPrompt =
+      [
+        DEFAULT_SYSTEM_PROMPT,
+        '',
+        `You are working in team channel #${opts.channelSlug}.`,
+        `The channel owns a project folder named "${opts.channelProjectName}".`,
+        `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
+        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
+        'You can work directly on this channel project folder with the',
+        'channel_list / channel_read / channel_write tools, and you can also work',
+        'in your own agent folder with the workspace tools. Use channel_post to',
+        'publish short updates to the channel feed so your teammates can see them.',
+      ].join('\n') + (skillsBlock ? `\n\n${skillsBlock}` : '');
 
     const threadBlock =
       opts.thread && opts.thread.trim().length > 0
@@ -571,9 +609,7 @@ export class BaseAgentService implements OnModuleInit {
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...(threadBlock
-        ? [{ role: 'user' as const, content: threadBlock }]
-        : []),
+      ...(threadBlock ? [{ role: 'user' as const, content: threadBlock }] : []),
       { role: 'user', content: opts.message },
     ];
 
@@ -586,7 +622,13 @@ export class BaseAgentService implements OnModuleInit {
     });
 
     const baseTools = this.listTools().filter(
-      (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
+      (t) =>
+        ![
+          'channel_list',
+          'channel_read',
+          'channel_write',
+          'channel_post',
+        ].includes(t.name),
     );
     // Self-scoped equivalents of the workspace tools, bound to THIS agent so
     // the model never has to pass its own agent name (no more guessing).
@@ -645,19 +687,19 @@ export class BaseAgentService implements OnModuleInit {
     const spec = resolveModel(opts.model ?? this.defaultModelId);
 
     const skillsBlock = this.skills ? await this.buildSkillsBlock() : null;
-    const systemPrompt = [
-      DEFAULT_SYSTEM_PROMPT,
-      '',
-      `You are working in team channel #${opts.channelSlug}.`,
-      `The channel owns a project folder named "${opts.channelProjectName}".`,
-      `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
-      `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
-      'You can work directly on this channel project folder with the',
-      'channel_list / channel_read / channel_write tools, and you can also work',
-      'in your own agent folder with the workspace tools. Use channel_post to',
-      'publish short updates to the channel feed so your teammates can see them.',
-    ].join('\n') +
-      (skillsBlock ? `\n\n${skillsBlock}` : '');
+    const systemPrompt =
+      [
+        DEFAULT_SYSTEM_PROMPT,
+        '',
+        `You are working in team channel #${opts.channelSlug}.`,
+        `The channel owns a project folder named "${opts.channelProjectName}".`,
+        `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
+        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
+        'You can work directly on this channel project folder with the',
+        'channel_list / channel_read / channel_write tools, and you can also work',
+        'in your own agent folder with the workspace tools. Use channel_post to',
+        'publish short updates to the channel feed so your teammates can see them.',
+      ].join('\n') + (skillsBlock ? `\n\n${skillsBlock}` : '');
 
     const threadBlock =
       opts.thread && opts.thread.trim().length > 0
@@ -685,7 +727,13 @@ export class BaseAgentService implements OnModuleInit {
     });
 
     const baseTools = this.listTools().filter(
-      (t) => !['channel_list', 'channel_read', 'channel_write', 'channel_post'].includes(t.name),
+      (t) =>
+        ![
+          'channel_list',
+          'channel_read',
+          'channel_write',
+          'channel_post',
+        ].includes(t.name),
     );
     // Self-scoped equivalents of the workspace tools, bound to THIS agent so
     // the model never has to pass its own agent name (no more guessing).
@@ -705,9 +753,14 @@ export class BaseAgentService implements OnModuleInit {
       // tool calls return errors, stop instead of burning the whole budget.
       const MAX_CONSECUTIVE_ERROR_ROUNDS = 3;
       let consecutiveErrorRounds = 0;
-      const maxIterations = opts.maxSteps && opts.maxSteps > 0 ? opts.maxSteps : 12;
+      const maxIterations =
+        opts.maxSteps && opts.maxSteps > 0 ? opts.maxSteps : 12;
 
-      for (let iter = 0; iter < maxIterations && !opts.signal?.aborted; iter++) {
+      for (
+        let iter = 0;
+        iter < maxIterations && !opts.signal?.aborted;
+        iter++
+      ) {
         // 0. Bail immediately if a stop was requested (e.g. the user pressed
         //    Stop or Divert while the previous step was running).
         if (opts.signal?.aborted) {
@@ -758,7 +811,7 @@ export class BaseAgentService implements OnModuleInit {
             // Count a round as "failed" if every call in it errored.
             let isError = false;
             try {
-              const parsed = JSON.parse(result);
+              const parsed = JSON.parse(result) as { error?: unknown };
               isError = !!parsed?.error;
             } catch {
               /* non-JSON result counts as success */
@@ -786,9 +839,7 @@ export class BaseAgentService implements OnModuleInit {
             });
             await (opts.toolStatusPost ?? opts.channelPost)(
               this.shortToolText(call.name, call.arguments),
-              [
-                { name: call.name, arguments: call.arguments, result },
-              ],
+              [{ name: call.name, arguments: call.arguments, result }],
             );
           }
           if (roundErrors === roundCalls && roundCalls > 0) {
@@ -828,7 +879,9 @@ export class BaseAgentService implements OnModuleInit {
   private shortToolText(name: string, rawArgs: string): string {
     let target: string | undefined;
     try {
-      const args = rawArgs ? JSON.parse(rawArgs) : {};
+      const args = rawArgs
+        ? (JSON.parse(rawArgs) as Record<string, unknown>)
+        : {};
       target =
         typeof args.path === 'string'
           ? args.path
@@ -856,7 +909,12 @@ export class BaseAgentService implements OnModuleInit {
     spec: ModelSpec,
     maxSteps: number,
     endpoint?: ModelEndpoint,
-  ): Promise<{ answer: string; steps: number; messages: ChatMessage[]; trace: ToolTraceStep[] }> {
+  ): Promise<{
+    answer: string;
+    steps: number;
+    messages: ChatMessage[];
+    trace: ToolTraceStep[];
+  }> {
     let steps = 0;
     let lastAnswer = '';
     const trace: ToolTraceStep[] = [];
@@ -1027,7 +1085,9 @@ export class BaseAgentService implements OnModuleInit {
    *  so the agent loop terminates after zero tool steps. */
   private stubCompletion(messages: ChatMessage[]): { content: string } {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    const text = String(lastUser?.content ?? 'ok').replace(/\s+/g, ' ').trim();
+    const text = String(lastUser?.content ?? 'ok')
+      .replace(/\s+/g, ' ')
+      .trim();
     return { content: `[stub] ${text.slice(0, 160)}` };
   }
 
@@ -1037,7 +1097,9 @@ export class BaseAgentService implements OnModuleInit {
 
     let args: Record<string, unknown> = {};
     try {
-      args = call.arguments ? JSON.parse(call.arguments) : {};
+      args = call.arguments
+        ? (JSON.parse(call.arguments) as Record<string, unknown>)
+        : {};
     } catch {
       return JSON.stringify({ error: `Invalid JSON args for ${call.name}` });
     }

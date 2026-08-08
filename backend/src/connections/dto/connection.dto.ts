@@ -1,4 +1,3 @@
-import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -125,4 +124,3 @@ export class UpdateConnectionDto {
   @IsOptional()
   models?: string[];
 }
-

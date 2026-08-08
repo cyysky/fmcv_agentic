@@ -12,7 +12,11 @@ export interface NamedAgent {
 
 /** Static registry of named agents. */
 export const NAMED_AGENTS: NamedAgent[] = [
-  { name: 'coder', label: 'Coder', description: 'Writes code in its own folder.' },
+  {
+    name: 'coder',
+    label: 'Coder',
+    description: 'Writes code in its own folder.',
+  },
   {
     name: 'researcher',
     label: 'Researcher',
@@ -45,7 +49,8 @@ export class WorkspaceService {
 
   constructor(config: ConfigService) {
     this.root = path.resolve(
-      config.get<string>('AGENT_WORKSPACE_ROOT', '/data/workspaces') ?? '/data/workspaces',
+      config.get<string>('AGENT_WORKSPACE_ROOT', '/data/workspaces') ??
+        '/data/workspaces',
     );
   }
 
@@ -95,7 +100,9 @@ export class WorkspaceService {
   }
 
   /** Create a public project folder (the only way public projects are made). */
-  async createPublicProject(name: string): Promise<{ name: string; path: string }> {
+  async createPublicProject(
+    name: string,
+  ): Promise<{ name: string; path: string }> {
     const safe = this.sanitizeName(name);
     const dir = path.join(this.getProjectRoot(), safe);
     await fs.mkdir(dir, { recursive: true });
@@ -210,7 +217,10 @@ export class WorkspaceService {
     const target = path.resolve(resolvedRoot, relPath);
 
     // 1. Lexical containment check.
-    if (target !== resolvedRoot && !target.startsWith(resolvedRoot + path.sep)) {
+    if (
+      target !== resolvedRoot &&
+      !target.startsWith(resolvedRoot + path.sep)
+    ) {
       throw new Error('path outside allowed root');
     }
 

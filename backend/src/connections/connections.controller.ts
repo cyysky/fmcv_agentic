@@ -42,9 +42,7 @@ export class ConnectionsController {
   }
 
   @Get(':id/models')
-  findModels(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<ModelListResult> {
+  findModels(@Param('id', ParseUUIDPipe) id: string): Promise<ModelListResult> {
     return this.connectionsService.fetchModels(id);
   }
 

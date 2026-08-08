@@ -11,7 +11,17 @@ import { SkillsModule } from '../skills/skills.module';
 @Module({
   imports: [ConfigModule, SkillsModule],
   controllers: [AgentController, ChannelController],
-  providers: [BaseAgentService, WorkspaceService, ChannelService, ChannelJobService],
-  exports: [BaseAgentService, WorkspaceService, ChannelService, ChannelJobService],
+  providers: [
+    BaseAgentService,
+    WorkspaceService,
+    ChannelService,
+    ChannelJobService,
+  ],
+  exports: [
+    BaseAgentService,
+    WorkspaceService,
+    ChannelService,
+    ChannelJobService,
+  ],
 })
 export class AgentModule {}

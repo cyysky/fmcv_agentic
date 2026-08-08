@@ -39,7 +39,10 @@ export function buildChannelTools(
   const channelList: BaseTool['run'] = async (args) => {
     const relPath = typeof args.path === 'string' ? args.path : '.';
     const root = path.join(ws.getProjectRoot(), ctx.channelProjectName);
-    const target = await ws.safeResolve(root, relPath.replace(/^\/+/, '') || '.');
+    const target = await ws.safeResolve(
+      root,
+      relPath.replace(/^\/+/, '') || '.',
+    );
     return ws.readTree(target);
   };
 
@@ -53,7 +56,9 @@ export function buildChannelTools(
       throw new Error('channel_read expects a file');
     }
     if (stat.size > MAX_FILE_BYTES) {
-      throw new Error(`file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`);
+      throw new Error(
+        `file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`,
+      );
     }
     const content = await fs.readFile(target, 'utf8');
     return { path: target, size: stat.size, content };
@@ -67,7 +72,11 @@ export function buildChannelTools(
     const target = await ws.safeResolve(root, relPath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf8');
-    return { written: true, path: target, bytes: Buffer.byteLength(content, 'utf8') };
+    return {
+      written: true,
+      path: target,
+      bytes: Buffer.byteLength(content, 'utf8'),
+    };
   };
 
   /** Post a message to the channel feed (the agent "speaks" in the thread). */
@@ -84,7 +93,10 @@ export function buildChannelTools(
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Relative path inside the channel project folder.' },
+          path: {
+            type: 'string',
+            description: 'Relative path inside the channel project folder.',
+          },
         },
         required: [],
       },
@@ -96,7 +108,11 @@ export function buildChannelTools(
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Relative file path inside the channel project folder.' },
+          path: {
+            type: 'string',
+            description:
+              'Relative file path inside the channel project folder.',
+          },
         },
         required: ['path'],
       },
@@ -108,7 +124,11 @@ export function buildChannelTools(
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Relative file path inside the channel project folder.' },
+          path: {
+            type: 'string',
+            description:
+              'Relative file path inside the channel project folder.',
+          },
           content: { type: 'string', description: 'File contents to write.' },
         },
         required: ['path', 'content'],
@@ -121,7 +141,10 @@ export function buildChannelTools(
       parameters: {
         type: 'object',
         properties: {
-          text: { type: 'string', description: 'The message text to post to the channel.' },
+          text: {
+            type: 'string',
+            description: 'The message text to post to the channel.',
+          },
         },
         required: ['text'],
       },

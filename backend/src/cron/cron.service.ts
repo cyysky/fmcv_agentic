@@ -23,7 +23,10 @@ export const TASK_TYPE_AGENT_TURN = 'agent-turn';
 /** Parse `schedule` as a 5-field cron expression and return its next
  *  occurrence strictly after `from`. Throws a BadRequestException with a
  *  clear message when the expression is invalid. */
-export function nextCronRun(schedule: string, from = new Date(Date.now() + CRON_TICK_MS)): Date {
+export function nextCronRun(
+  schedule: string,
+  from = new Date(Date.now() + CRON_TICK_MS),
+): Date {
   try {
     const parsed = CronExpressionParser.parse(schedule.trim(), {
       currentDate: from,
@@ -77,7 +80,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         },
       })
       .catch((err) => {
-        this.logger.warn(`Could not recover interrupted cron runs: ${(err as Error).message}`);
+        this.logger.warn(
+          `Could not recover interrupted cron runs: ${(err as Error).message}`,
+        );
       });
 
     let rows: CronJob[] = [];
@@ -86,7 +91,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         orderBy: { createdAt: 'desc' },
       });
     } catch (err) {
-      this.logger.warn(`Could not load cron jobs on startup: ${(err as Error).message}`);
+      this.logger.warn(
+        `Could not load cron jobs on startup: ${(err as Error).message}`,
+      );
     }
     for (const row of rows) {
       this.jobs.set(row.id, row);
@@ -99,7 +106,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
       }
     }
     this.ticker = setInterval(() => {
-      void this.tick();
+      this.tick();
     }, CRON_TICK_MS);
     this.ticker.unref();
     this.logger.log(
@@ -186,7 +193,8 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         model: dto.model === undefined ? undefined : dto.model.trim() || null,
         connectionId:
           dto.connectionId === undefined ? undefined : dto.connectionId || null,
-        maxSteps: dto.maxSteps === undefined ? undefined : dto.maxSteps ?? null,
+        maxSteps:
+          dto.maxSteps === undefined ? undefined : (dto.maxSteps ?? null),
         enabled: dto.enabled,
         nextRunAt,
       },
@@ -214,7 +222,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
 
   /* ---------------------------- scheduler ---------------------------- */
 
-  private async tick(): Promise<void> {
+  private tick(): void {
     const now = Date.now();
     for (const row of this.jobs.values()) {
       if (!row.enabled || this.running.has(row.id)) continue;
@@ -225,7 +233,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async executeJob(id: string): Promise<CronJob> {
-    const row = this.jobs.get(id) ?? (await this.prisma.cronJob.findUnique({ where: { id } }));
+    const row =
+      this.jobs.get(id) ??
+      (await this.prisma.cronJob.findUnique({ where: { id } }));
     if (!row) throw new NotFoundException(`Cron job ${id} not found`);
     if (this.running.has(id)) {
       throw new ConflictException(`Cron job "${row.name}" is already running`);
@@ -258,10 +268,22 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
           maxSteps: row.maxSteps ?? 10,
         });
       } catch (err) {
-        await this.recordResult(id, 'error', (err as Error).message, undefined, Date.now() - startedAt);
+        await this.recordResult(
+          id,
+          'error',
+          (err as Error).message,
+          undefined,
+          Date.now() - startedAt,
+        );
         return this.refreshed(id);
       }
-      await this.recordResult(id, 'done', result.answer, result.model, Date.now() - startedAt);
+      await this.recordResult(
+        id,
+        'done',
+        result.answer,
+        result.model,
+        Date.now() - startedAt,
+      );
       return this.refreshed(id);
     } finally {
       this.running.delete(id);
@@ -308,7 +330,9 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async recomputeNextRun(id: string): Promise<void> {
-    const row = this.jobs.get(id) ?? (await this.prisma.cronJob.findUnique({ where: { id } }));
+    const row =
+      this.jobs.get(id) ??
+      (await this.prisma.cronJob.findUnique({ where: { id } }));
     if (!row) return;
     const nextRunAt = row.enabled ? nextCronRun(row.schedule) : null;
     const updated = await this.prisma.cronJob.update({
@@ -320,9 +344,13 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
 
   /* ---------------------------- internals ---------------------------- */
 
-  private async assertConnection(connectionId: string | undefined): Promise<void> {
+  private async assertConnection(
+    connectionId: string | undefined,
+  ): Promise<void> {
     if (!connectionId) return;
-    const row = await this.prisma.connection.findUnique({ where: { id: connectionId } });
+    const row = await this.prisma.connection.findUnique({
+      where: { id: connectionId },
+    });
     if (!row) {
       throw new BadRequestException(`Connection ${connectionId} not found`);
     }

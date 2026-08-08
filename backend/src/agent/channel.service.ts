@@ -82,8 +82,7 @@ export class ChannelService {
     creatorAgent?: string;
   }): Promise<ChannelDetail> {
     const slug = this.slugify(input.name);
-    const projectName =
-      input.projectName?.trim() || slug;
+    const projectName = input.projectName?.trim() || slug;
 
     // Persist the channel row first.
     const existing = await this.prisma.channel.findUnique({ where: { slug } });
@@ -106,7 +105,12 @@ export class ChannelService {
       }
     }
 
-    await this.postMessage(channel.id, 'system', 'system', `Channel #${slug} created.`);
+    await this.postMessage(
+      channel.id,
+      'system',
+      'system',
+      `Channel #${slug} created.`,
+    );
     return this.get(channel.id);
   }
 
@@ -119,7 +123,9 @@ export class ChannelService {
     parentId: string,
     agentName: string,
   ): Promise<ChannelDetail> {
-    const parent = await this.prisma.channel.findUnique({ where: { id: parentId } });
+    const parent = await this.prisma.channel.findUnique({
+      where: { id: parentId },
+    });
     if (!parent) throw new NotFoundException(`Channel ${parentId} not found`);
 
     // If this channel is already a sub-channel (has a parent), it IS the debug
@@ -248,8 +254,13 @@ export class ChannelService {
   }
 
   /** Add a named agent to a channel (idempotent). */
-  async addMember(channelId: string, agentName: string): Promise<ChannelDetail> {
-    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+  async addMember(
+    channelId: string,
+    agentName: string,
+  ): Promise<ChannelDetail> {
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+    });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
 
     this.workspaces.assertAgentName(agentName);
@@ -275,7 +286,9 @@ export class ChannelService {
     channelId: string,
     agentName: string,
   ): Promise<ChannelDetail> {
-    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+    });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
 
     this.workspaces.assertAgentName(agentName);
@@ -302,7 +315,9 @@ export class ChannelService {
   }
 
   async listMessages(channelId: string): Promise<ChannelMessageDto[]> {
-    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+    });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
     const messages = await this.prisma.channelMessage.findMany({
       where: { channelId },
@@ -326,7 +341,9 @@ export class ChannelService {
     text: string,
     toolCalls?: unknown[],
   ): Promise<ChannelMessageDto> {
-    const channel = await this.prisma.channel.findUnique({ where: { id: channelId } });
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: channelId },
+    });
     if (!channel) throw new NotFoundException(`Channel ${channelId} not found`);
 
     const msg = await this.prisma.channelMessage.create({
@@ -335,7 +352,8 @@ export class ChannelService {
         role,
         author,
         text,
-        toolCalls: (toolCalls as Prisma.InputJsonValue | undefined) ?? undefined,
+        toolCalls:
+          (toolCalls as Prisma.InputJsonValue | undefined) ?? undefined,
       },
     });
     return {
@@ -379,7 +397,13 @@ export class ChannelService {
     });
 
     // Persist the agent's final answer into the feed.
-    await this.postMessage(channelId, 'agent', agentName, result.answer, result.trace);
+    await this.postMessage(
+      channelId,
+      'agent',
+      agentName,
+      result.answer,
+      result.trace,
+    );
     return { answer: result.answer, steps: result.steps, trace: result.trace };
   }
 
@@ -388,7 +412,10 @@ export class ChannelService {
    * member if any, else the first member. Returns null when the channel has
    * no agent members, so callers can skip auto-reply.
    */
-  async resolveReplyAgent(channelId: string, text: string): Promise<string | null> {
+  async resolveReplyAgent(
+    channelId: string,
+    text: string,
+  ): Promise<string | null> {
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
       include: { members: true },
@@ -429,7 +456,9 @@ export class ChannelService {
     }
 
     this.workspaces.assertAgentName(input.agentName);
-    const isMember = channel.members.some((m) => m.agentName === input.agentName);
+    const isMember = channel.members.some(
+      (m) => m.agentName === input.agentName,
+    );
     if (!isMember) {
       throw new BadRequestException(
         `Agent ${input.agentName} is not a member of #${channel.slug}`,
@@ -438,7 +467,12 @@ export class ChannelService {
 
     // Persist the human request unless the caller already did.
     if (input.persistHuman !== false) {
-      await this.postMessage(input.channelId, 'user', input.agentName, input.message);
+      await this.postMessage(
+        input.channelId,
+        'user',
+        input.agentName,
+        input.message,
+      );
     }
 
     const recent = await this.prisma.channelMessage.findMany({

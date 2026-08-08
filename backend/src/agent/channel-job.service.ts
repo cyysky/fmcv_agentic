@@ -7,21 +7,13 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { BaseAgentService } from './base-agent.service';
-import type {
-  ChatMessage,
-  ChannelTurnStreamEvent,
-} from './base-agent.service';
+import type { ChatMessage, ChannelTurnStreamEvent } from './base-agent.service';
 import { ChannelService } from './channel.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 
 export type ChannelJobEventType =
-  | 'status'
-  | 'tool_call'
-  | 'interject'
-  | 'answer'
-  | 'error'
-  | 'stopped';
+  'status' | 'tool_call' | 'interject' | 'answer' | 'error' | 'stopped';
 
 export interface ChannelJobEvent {
   type: ChannelJobEventType;
@@ -132,10 +124,7 @@ export class ChannelJobService implements OnModuleInit {
     });
 
     this.jobs.set(job.id, job);
-    this.recentByAgent.set(
-      `${input.channelId}::${input.agentName}`,
-      job,
-    );
+    this.recentByAgent.set(`${input.channelId}::${input.agentName}`, job);
     this.logger.log(
       `Channel job ${job.id} started for channel ${input.channelId} (${input.agentName})`,
     );
@@ -161,7 +150,9 @@ export class ChannelJobService implements OnModuleInit {
   private getRunning(jobId: string, channelId: string): ChannelJob {
     const job = this.get(jobId);
     if (job.channelId !== channelId) {
-      throw new NotFoundException(`Job ${jobId} not found in channel ${channelId}`);
+      throw new NotFoundException(
+        `Job ${jobId} not found in channel ${channelId}`,
+      );
     }
     if (job.status !== 'running') {
       throw new BadRequestException(`Job ${jobId} is not running`);
@@ -249,8 +240,7 @@ export class ChannelJobService implements OnModuleInit {
       channelPost,
       toolStatusPost,
       messages: job.messages,
-      onEvent: (event: ChannelTurnStreamEvent) =>
-        this.emit(job, event as Omit<ChannelJobEvent, 'ts'>),
+      onEvent: (event: ChannelTurnStreamEvent) => this.emit(job, event),
       interject: () => job.mailbox.splice(0),
       signal: job.abort.signal,
     });
@@ -304,7 +294,10 @@ export class ChannelJobService implements OnModuleInit {
       job.abort.abort();
       job.status = 'stopped';
       job.finishedAt = new Date().toISOString();
-      this.emit(job, { type: 'stopped', text: 'Channel deleted; run stopped.' });
+      this.emit(job, {
+        type: 'stopped',
+        text: 'Channel deleted; run stopped.',
+      });
       this.safePersist(job);
       stopped += 1;
     }
@@ -320,7 +313,6 @@ export class ChannelJobService implements OnModuleInit {
     return { stopped };
   }
 
-
   /**
    * Terminal/current snapshot serialized to Postgres (channel_runs) so job
    * statuses survive backend restarts. `events` is stored as a JSON array;
@@ -332,8 +324,8 @@ export class ChannelJobService implements OnModuleInit {
       ? this.prisma.channelRun
           .upsert({
             where: { id: job.id },
-            create: record as Prisma.ChannelRunUncheckedCreateInput,
-            update: record as Prisma.ChannelRunUncheckedUpdateInput,
+            create: record,
+            update: record,
           })
           .catch((err) => {
             this.logger.warn(
@@ -406,10 +398,7 @@ export class ChannelJobService implements OnModuleInit {
         maxSteps: row.maxSteps ?? undefined,
       };
       this.jobs.set(job.id, job);
-      this.recentByAgent.set(
-        `${job.channelId}::${job.agentName}`,
-        job,
-      );
+      this.recentByAgent.set(`${job.channelId}::${job.agentName}`, job);
       this.safePersist(job);
       this.logger.warn(
         `Recovered interrupted run ${job.id} (${job.channelId}/${job.agentName}) as stopped`,
@@ -449,7 +438,10 @@ export class ChannelJobService implements OnModuleInit {
   }
 
   /** Most recent persisted run for a channel+agent (restart recovery path). */
-  async latestFor(channelId: string, agentName: string): Promise<ChannelJob | null> {
+  async latestFor(
+    channelId: string,
+    agentName: string,
+  ): Promise<ChannelJob | null> {
     try {
       const row = await this.prisma.channelRun.findFirst({
         where: { channelId, agentName },

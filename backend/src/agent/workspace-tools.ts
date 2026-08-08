@@ -34,7 +34,10 @@ export function buildSelfTools(
   const listOwn: BaseTool['run'] = async (args) => {
     const root = ws.getAgentRoot(agentName);
     const relPath = typeof args.path === 'string' ? args.path : '.';
-    const target = await ws.safeResolve(root, relPath.replace(/^\/+/, '') || '.');
+    const target = await ws.safeResolve(
+      root,
+      relPath.replace(/^\/+/, '') || '.',
+    );
     return ws.readTree(target);
   };
 
@@ -48,7 +51,9 @@ export function buildSelfTools(
       throw new Error('read_own_file expects a file');
     }
     if (stat.size > MAX_FILE_BYTES) {
-      throw new Error(`file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`);
+      throw new Error(
+        `file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`,
+      );
     }
     const content = await fs.readFile(target, 'utf8');
     return { path: target, size: stat.size, content };
@@ -62,7 +67,11 @@ export function buildSelfTools(
     const target = await ws.safeResolve(root, relPath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf8');
-    return { written: true, path: target, bytes: Buffer.byteLength(content, 'utf8') };
+    return {
+      written: true,
+      path: target,
+      bytes: Buffer.byteLength(content, 'utf8'),
+    };
   };
 
   return [
@@ -136,13 +145,14 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
     // `agent` is only needed for agent-folder listings; public-project
     // listings (path "projects/...") work without it.
     const agent = typeof args.agent === 'string' ? args.agent : '';
-    let relPath = argOptionalString(args, 'path');
+    const relPath = argOptionalString(args, 'path');
     const normalized = relPath.replace(/^\/+/, '');
 
     // A `path` prefixed with `projects/` lists a shared public project.
     if (normalized === 'projects' || normalized.startsWith('projects/')) {
       const root = ws.getProjectRoot();
-      const sub = normalized === 'projects' ? '.' : normalized.slice('projects/'.length);
+      const sub =
+        normalized === 'projects' ? '.' : normalized.slice('projects/'.length);
       const target = await ws.safeResolve(root, sub || '.');
       return ws.readTree(target);
     }
@@ -176,7 +186,9 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
       throw new Error('read_workspace_file expects a file');
     }
     if (stat.size > MAX_FILE_BYTES) {
-      throw new Error(`file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`);
+      throw new Error(
+        `file too large (${stat.size} bytes, max ${MAX_FILE_BYTES})`,
+      );
     }
     const content = await fs.readFile(target, 'utf8');
     return { path: target, size: stat.size, content };
@@ -193,14 +205,18 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
     const target = await ws.safeResolve(root, relPath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content, 'utf8');
-    return { written: true, path: target, bytes: Buffer.byteLength(content, 'utf8') };
+    return {
+      written: true,
+      path: target,
+      bytes: Buffer.byteLength(content, 'utf8'),
+    };
   };
 
   return [
     {
       name: 'list_workspace',
       description:
-        'List a recursive JSON tree of a named agent\'s own folder ' +
+        "List a recursive JSON tree of a named agent's own folder " +
         '(agents/<agent>/...) or a shared public project (path starting with ' +
         '"projects/"). args: { agent: string, path: string }.',
       parameters: {
@@ -226,14 +242,17 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
       name: 'read_workspace_file',
       description:
         'Read the contents of a file from a public project (kind="project") or ' +
-        "a named agent's own folder (kind=\"agent\"). Size-capped at 100KB. " +
+        'a named agent\'s own folder (kind="agent"). Size-capped at 100KB. ' +
         'args: { kind, name, path }.',
       parameters: {
         type: 'object',
         properties: {
           kind: { type: 'string', enum: ['project', 'agent'] },
           name: { type: 'string', description: 'Project or named agent id.' },
-          path: { type: 'string', description: 'Relative file path within the selected root.' },
+          path: {
+            type: 'string',
+            description: 'Relative file path within the selected root.',
+          },
         },
         required: ['kind', 'name', 'path'],
       },
@@ -242,14 +261,20 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
     {
       name: 'write_workspace_file',
       description:
-        'Write content into a named agent\'s own folder. Cannot write into ' +
+        "Write content into a named agent's own folder. Cannot write into " +
         'public projects. Creates parent directories as needed. ' +
         'args: { name, path, content }.',
       parameters: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Named agent id (the caller\'s own folder).' },
-          path: { type: 'string', description: 'Relative file path within the agent folder.' },
+          name: {
+            type: 'string',
+            description: "Named agent id (the caller's own folder).",
+          },
+          path: {
+            type: 'string',
+            description: 'Relative file path within the agent folder.',
+          },
           content: { type: 'string', description: 'File contents to write.' },
         },
         required: ['name', 'path', 'content'],
