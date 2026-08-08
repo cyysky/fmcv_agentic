@@ -190,4 +190,129 @@ describe('FilesService', () => {
       BadRequestException,
     );
   });
+
+  it('rejects NUL bytes in paths', async () => {
+    await expect(
+      files.write('agent:coder', 'bad\0name.txt', 'x'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('404s when listing a missing subpath instead of the root', async () => {
+    await expect(files.list('agent:coder', 'missing')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('refuses to list a plain file as a directory', async () => {
+    await files.write('agent:coder', 'note.txt', 'x');
+    await expect(files.list('agent:coder', 'note.txt')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('lists an unreadable directory as empty instead of failing', async () => {
+    await files.mkdir('agent:coder', 'hidden');
+    const dir = path.join(root, 'agents', 'coder', 'hidden');
+    try {
+      await fsp.chmod(dir, 0o000);
+      const list = await files.list('agent:coder', 'hidden');
+      expect(list.entries).toEqual([]);
+    } finally {
+      await fsp.chmod(dir, 0o755);
+    }
+  });
+
+  it('skips entries whose metadata cannot be read', async () => {
+    await files.write('agent:coder', 'ok.txt', 'x');
+    await files.write('agent:coder', 'skip.txt', 'y');
+    const spy = jest
+      .spyOn(fsp, 'lstat')
+      .mockRejectedValueOnce(new Error('boom'));
+    try {
+      const list = await files.list('agent:coder');
+      expect(list.entries).toHaveLength(1);
+      expect(['ok.txt', 'skip.txt']).toContain(list.entries[0].name);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('refuses to write over an existing directory (EISDIR)', async () => {
+    await files.mkdir('agent:coder', 'occupied');
+    await expect(files.write('agent:coder', 'occupied', 'x')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('wraps other write failures as BadRequest', async () => {
+    await files.mkdir('agent:coder', 'locked');
+    const dir = path.join(root, 'agents', 'coder', 'locked');
+    try {
+      await fsp.chmod(dir, 0o555);
+      await expect(
+        files.write('agent:coder', 'locked/x.txt', 'x'),
+      ).rejects.toThrow('Cannot write file');
+    } finally {
+      await fsp.chmod(dir, 0o755);
+    }
+  });
+
+  it('refuses to delete the scope root', async () => {
+    await expect(files.remove('agent:coder', '')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rethrows non-emptiness rmdir failures', async () => {
+    await files.mkdir('agent:coder', 'sticky');
+    const parent = path.join(root, 'agents', 'coder');
+    try {
+      await fsp.chmod(parent, 0o555);
+      await expect(files.remove('agent:coder', 'sticky')).rejects.toMatchObject(
+        { code: 'EACCES' },
+      );
+    } finally {
+      await fsp.chmod(parent, 0o755);
+    }
+  });
+
+  it('wraps non-escape resolution errors as BadRequest', async () => {
+    await files.mkdir('agent:coder', 'locked');
+    const dir = path.join(root, 'agents', 'coder', 'locked');
+    try {
+      await fsp.chmod(dir, 0o000);
+      await expect(files.read('agent:coder', 'locked/x.txt')).rejects.toThrow(
+        'Invalid path',
+      );
+    } finally {
+      await fsp.chmod(dir, 0o755);
+    }
+  });
+
+  it('rethrows stat failures other than missing paths', async () => {
+    await files.write('agent:coder', 'block.txt', 'x');
+    const spy = jest
+      .spyOn(fsp, 'stat')
+      .mockRejectedValueOnce(new Error('stat denied'));
+    try {
+      await expect(files.read('agent:coder', 'block.txt')).rejects.toThrow(
+        'stat denied',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('rethrows list-time stat failures other than missing paths', async () => {
+    const spy = jest
+      .spyOn(fsp, 'stat')
+      .mockRejectedValueOnce(new Error('list stat denied'));
+    try {
+      await expect(files.list('agent:coder')).rejects.toThrow(
+        'list stat denied',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
