@@ -37,6 +37,7 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     dup: `e2e-cron-dup-${stamp}`,
     invalid: `e2e-cron-invalid-${stamp}`,
     disabled: `e2e-cron-disabled-${stamp}`,
+    restart: `e2e-cron-restart-${stamp}`,
   };
   let jobId = '';
   const http = () => request(app.getHttpServer());
@@ -131,6 +132,43 @@ describe('Cron API (e2e, real Postgres, stub agent)', () => {
     await http()
       .get('/api/cron/00000000-0000-4000-8000-000000000000')
       .expect(404);
+  });
+
+  it('restores cron jobs and next-run timing on a backend restart', async () => {
+    const created = json<CronJobRow>(
+      await http()
+        .post('/api/cron')
+        .send({
+          name: names.restart,
+          schedule: '0 8 * * *',
+          prompt: 'Morning digest',
+          enabled: true,
+        })
+        .expect(201),
+    );
+    expect(new Date(created.nextRunAt as string).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+
+    const restarted = await bootstrapApp();
+    try {
+      const row = json<CronJobRow>(
+        await request(restarted.getHttpServer())
+          .get(`/api/cron/${created.id}`)
+          .expect(200),
+      );
+      expect(row).toMatchObject({
+        name: names.restart,
+        schedule: '0 8 * * *',
+        prompt: 'Morning digest',
+        enabled: true,
+      });
+      expect(new Date(row.nextRunAt as string).getTime()).toBeGreaterThan(
+        Date.now(),
+      );
+    } finally {
+      await restarted.close();
+    }
   });
 
   it('updates the schedule and slides the next run forward', async () => {

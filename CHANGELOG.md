@@ -1,3 +1,40 @@
+## Round 2026-08-08 — autonomous iteration round 42 (tag `round-42`)
+
+### Added
+- **Restart-persistence E2E tests** — the cron and skills suites now boot a
+  second app instance against the same Postgres and prove the contract the
+  docs promise: an installed skill (name/description/content/installed flag)
+  and a cron job (schedule/prompt/enabled + recomputed `nextRunAt`) both
+  survive a backend restart. API E2E 105 -> 107 tests.
+
+### Fixed
+- **Stale persistence claims in handoff docs** — CHANGELOG "accepted
+  limitations" entries (rounds 25-41) claimed skills install state was
+  in-memory per backend instance; skills have been Postgres-backed since
+  their introduction (Prisma `skills` table with an `installed` column, read
+  live from the DB on every agent turn). Corrected to: cron/skills rows
+  persist across restarts; only the cron scheduler ticker runs in-process
+  (single-instance deployment assumed). The behavior is now pinned by the
+  new restart E2E tests.
+
+### Changed
+- README test matrix updated: API E2E 105 -> 107 tests (cron 12 -> 13,
+  skills 10 -> 11); browser E2E report + screenshots refreshed against the
+  clean green gate.
+
+### Test status
+- Backend unit 146/14 passed; API E2E 107/10 passed; backend
+  lint/build/tsc clean; frontend lint/tsc/build clean; browser E2E exit 0
+  (21 route probes, all flows, zero console/network/HTTP errors);
+  live-stack smoke probes (frontend, buckets, cron, skills) all 200.
+
+### Known issues / accepted limitations
+- Unchanged from round 41: CSP `sandbox` inline-preview limits, in-process
+  cron scheduler over DB-persisted rows (single-instance deployment
+  assumed), read-only buckets, and the recoverable pre-existing dev
+  leftovers (`/data/.trash-round34` + `coder` scratch files) left untouched
+  until a human asks for them to be pruned.
+
 ## Round 2026-08-08 — autonomous iteration round 41 (tag `round-41`)
 
 ### Added
@@ -13,7 +50,7 @@
 
 ### Known issues / accepted limitations
 - None open. Unchanged from round 40: CSP `sandbox` inline-preview limits,
-  in-process scheduler / in-memory skills install state, read-only buckets,
+  in-process scheduler over DB-persisted cron/skills rows, read-only buckets,
   and the recoverable pre-existing dev leftovers (`/data/.trash-round34` in
   the backend container plus old scratch files in the `coder` workspace),
   which are left untouched until a human asks for them to be pruned.
@@ -35,7 +72,7 @@
 
 ### Known issues / accepted limitations
 - None open. Unchanged from round 36: CSP `sandbox` inline-preview limits,
-  in-process scheduler / in-memory skills install state, read-only buckets,
+  in-process scheduler over DB-persisted cron/skills rows, read-only buckets,
   and the recoverable pre-existing dev leftovers (`/data/.trash-round34` in
   the backend container plus old scratch files in the `coder` workspace),
   which are left untouched until a human asks for them to be pruned.
@@ -61,7 +98,7 @@
 
 ### Known issues / accepted limitations
 - Unchanged from round 34: CSP `sandbox` inline-preview limits, in-process
-  scheduler / in-memory skills install state, read-only buckets, and the
+  scheduler over DB-persisted cron/skills rows, read-only buckets, and the
   recoverable `/data/.trash-round34` folder inside the backend container.
 
 ## Round 2026-08-08 — autonomous iteration round 34 (tag `round-34`)
@@ -102,9 +139,10 @@
 - `/data/.trash-round34` (backend container) holds the retired dev folders
   until pruned; the pre-cleanup DB backup lives in gitignored `logs/`.
 - Unchanged, by design: CSP `sandbox` disables scripts/forms/external
-  navigation inside the inline HTML preview; scheduler runs in-process and
-  skills install state is in-memory per backend instance (single-instance
-  deployment assumed); buckets have no delete/rename endpoints.
+  navigation inside the inline HTML preview; scheduler runs in-process
+  (cron/skills rows, incl. installed state, are DB-persisted and survive
+  restarts; single-instance deployment assumed); buckets have no
+  delete/rename endpoints.
 - `AGENT_API_KEY` is not committed (by design); stacks started fresh must
   supply it (or use `AGENT_LLM_STUB=1`) or live LLM calls will 401.
 
@@ -127,7 +165,7 @@
 
 ### Known issues / accepted limitations
 - Unchanged from round 32: CSP `sandbox` inline-preview limits, in-process
-  scheduler / in-memory skills install state, read-only buckets, and the
+  scheduler over DB-persisted cron/skills rows, read-only buckets, and the
   parallel-session fixture-name collision hazard.
 
 ## Round 2026-08-08 — autonomous iteration round 32 (tag `round-32`)
@@ -153,7 +191,8 @@
   fixture names and interfere; use unique per-session suffixes. Leftover
   read-only bucket rows must be cleared with SQL (no API delete by design).
 - Unchanged from round 31: CSP `sandbox` preview limits, in-process scheduler /
-  in-memory skills install state, read-only buckets, test-file lint exemptions.
+  DB-persisted cron/skills rows with an in-process scheduler, read-only
+  buckets, test-file lint exemptions.
 
 ## Round 2026-08-08 — autonomous iteration round 31 (tag `round-31`)
 
@@ -172,7 +211,8 @@
 
 ### Known issues / accepted limitations
 - Unchanged from round 30: CSP `sandbox` preview limits, in-process scheduler /
-  in-memory skills install state, read-only buckets, test-file lint exemptions.
+  DB-persisted cron/skills rows with an in-process scheduler, read-only
+  buckets, test-file lint exemptions.
 
 ## Round 2026-08-08 — autonomous iteration round 30 (tag `round-30`)
 
@@ -207,8 +247,9 @@
 - `Content-Security-Policy: sandbox` intentionally disables scripts/forms and
   external navigation inside the preview iframe (safe viewing; interactive
   pages open in a new tab, where the same CSP header still applies).
-- Scheduler + skills installed state are in-memory per backend instance
-  (single-instance deployment assumed).
+- Scheduler runs in-process (single-instance deployment assumed); cron jobs
+  and skills — including installed state — are DB-persisted and survive
+  restarts.
 - Buckets are read-only by design (no delete/rename endpoints).
 - Test files are intentionally exempt from `no-unsafe-*` / `require-await`
   (supertest `res.body` / Prisma test doubles are `any` by nature);
@@ -285,8 +326,9 @@
 - `Content-Security-Policy: sandbox` intentionally disables scripts/forms and
   external navigation inside the preview iframe (viewing is safe, interactive
   pages should be opened in a new tab).
-- Scheduler + skills installed state are in-memory per backend instance
-  (single-instance deployment assumed).
+- Scheduler runs in-process (single-instance deployment assumed); cron jobs
+  and skills — including installed state — are DB-persisted and survive
+  restarts.
 - Full-repo backend eslint backlog predates this round (legacy files).
 - DIRECTION items 1 (buckets), 2 (cron jobs), 3 (agent skills), and 4
   (**view HTML by link / new tab-window**) are all complete.
@@ -342,8 +384,8 @@
   a backend restart re-derives next-run timing from the persisted row.
 - Buckets still have no delete/rename endpoints (read-only by design).
 - Skills are authored in-app and surfaced through the `read_skill` tool +
-  system-prompt registry; install state is in-memory per backend instance
-  (single-instance deployment assumed, same as the scheduler).
+  system-prompt registry; skills rows (incl. installed state) are
+  DB-persisted and survive restarts.
 - Full-repo backend eslint backlog predates this round (legacy files).
 - DIRECTION items 1 (buckets), 2 (cron jobs), and 3 (**agent skills**) are
   done; item 4 (**view HTML by link / new tab-window**) remains open.

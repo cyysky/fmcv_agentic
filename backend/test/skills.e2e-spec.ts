@@ -28,6 +28,7 @@ describe('Skills API (e2e, real Postgres)', () => {
     badName: `e2e-skill-bad-${stamp}`,
     empty: `e2e-skill-empty-${stamp}`,
     installed: `e2e-skill-installed-${stamp}`,
+    restart: `e2e-skill-restart-${stamp}`,
   };
   let skillId = '';
   const http = () => request(app.getHttpServer());
@@ -156,6 +157,37 @@ describe('Skills API (e2e, real Postgres)', () => {
       await http().post(`/api/skills/${skillId}/install`).expect(201),
     );
     expect(on.installed).toBe(true);
+  });
+
+  it('installed skills survive a backend restart', async () => {
+    const created = json<SkillRow>(
+      await http()
+        .post('/api/skills')
+        .send({
+          name: names.restart,
+          description: 'Persists across instances',
+          content: '# Restart\nStill installed after a backend restart.',
+          installed: true,
+        })
+        .expect(201),
+    );
+
+    const restarted = await bootstrapApp();
+    try {
+      const row = json<SkillRow>(
+        await request(restarted.getHttpServer())
+          .get(`/api/skills/${created.id}`)
+          .expect(200),
+      );
+      expect(row).toMatchObject({
+        name: names.restart,
+        description: 'Persists across instances',
+        installed: true,
+      });
+      expect(row.content).toContain('# Restart');
+    } finally {
+      await restarted.close();
+    }
   });
 
   it('agent turns still run with installed skills present', async () => {

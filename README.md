@@ -286,7 +286,7 @@ cd e2e && node browser-e2e.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 105 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 107 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (22:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -314,11 +314,12 @@ cd e2e && node browser-e2e.mjs
   schedule 400, list/get/404, PATCH name/schedule/enabled + nextRunAt
   semantics, empty PATCH 400, run-now drives a stubbed agent turn and
   persists done/error/message/model/duration, delete, delete-while-running
-  409 — the agent service is stubbed so the suite stays hermetic), skills
-  (10: create, duplicate-name 409, invalid-name 400, install-content gate,
+  409, a restart restores the job and recomputes nextRunAt — the agent
+  service is stubbed so the suite stays hermetic), skills
+  (11: create, duplicate-name 409, invalid-name 400, install-content gate,
   create-installed, list/get/404, patch, clear-content 400, uninstall keeps
   the record + reinstall, agent-turn with installed skills exposes
-  read_skill, delete), the API
+  read_skill, delete, installed skill survives a backend restart), the API
   token gate (3), and throttling
   (2: over-limit 429 then window recovery). Deleting a channel stops its running
   jobs, job history persists to `channel_runs`, and channel delete
