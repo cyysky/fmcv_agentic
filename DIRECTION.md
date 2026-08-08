@@ -13,6 +13,8 @@ updates or clears this file). Record progress and next steps in ROUND.md.
 2. **Cron jobs.** Add the ability to create and manage cron jobs (schedule and
    run recurring tasks).
 3. **Agent skills.** Agents must be able to create, install, and use skills.
+4. **View HTML.** Add the ability to view HTML by link, or open it in a new tab
+   or window.
 
 For each item: plan first, keep changes small and committable, extend tests and
 docs, and verify the user journeys before moving on.
