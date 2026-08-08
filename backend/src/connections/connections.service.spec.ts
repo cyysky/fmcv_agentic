@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   ConnectionsService,
   ConnectionTestResult,
@@ -570,5 +570,92 @@ describe('ConnectionsService models normalization', () => {
 
     const data = prisma.connection.update.mock.calls[0][0].data;
     expect(data).not.toHaveProperty('models');
+  });
+});
+
+describe('ConnectionsService CRUD', () => {
+  function crudDouble() {
+    return {
+      connection: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(1),
+        delete: jest.fn(),
+        update: jest.fn(),
+      },
+    } as never;
+  }
+
+  it('findAll returns masked rows ordered by creation', async () => {
+    const prisma = crudDouble() as unknown as {
+      connection: { findMany: jest.Mock };
+    };
+    prisma.connection.findMany.mockResolvedValue([ROW]);
+    const service = new ConnectionsService(prisma as never);
+
+    const rows = await service.findAll();
+
+    expect(prisma.connection.findMany).toHaveBeenCalledWith({
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].apiKey).toBe('sk-***ret');
+  });
+
+  it('findOne returns the masked row and 404s for unknown ids', async () => {
+    const prisma = crudDouble() as unknown as {
+      connection: { findUnique: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+
+    prisma.connection.findUnique.mockResolvedValue(ROW);
+    const found = await service.findOne('conn-1');
+    expect(found.apiKey).toBe('sk-***ret');
+    expect(prisma.connection.findUnique).toHaveBeenCalledWith({
+      where: { id: 'conn-1' },
+    });
+
+    prisma.connection.findUnique.mockResolvedValue(null);
+    await expect(service.findOne('conn-1')).rejects.toThrow(NotFoundException);
+  });
+
+  it('update normalizes present fields and rejects empty payloads', async () => {
+    const prisma = crudDouble() as unknown as {
+      connection: { update: jest.Mock };
+    };
+    prisma.connection.update.mockResolvedValue(ROW);
+    const service = new ConnectionsService(prisma as never);
+
+    await expect(service.update('conn-1', {})).rejects.toThrow(
+      BadRequestException,
+    );
+
+    await service.update('conn-1', {
+      baseUrl: 'http://127.0.0.1:9876/v1///',
+      concurrentConnections: 4,
+      defaultParameters: { temperature: 0.2 },
+    });
+    const data = prisma.connection.update.mock.calls[0][0].data;
+    expect(data.baseUrl).toBe('http://127.0.0.1:9876/v1');
+    expect(data.concurrentConnections).toBe(4);
+    expect(data.defaultParameters).toEqual({ temperature: 0.2 });
+  });
+
+  it('remove deletes existing connections and 404s otherwise', async () => {
+    const prisma = crudDouble() as unknown as {
+      connection: { delete: jest.Mock; count: jest.Mock };
+    };
+    const service = new ConnectionsService(prisma as never);
+
+    prisma.connection.delete.mockResolvedValue(ROW);
+    await expect(service.remove('conn-1')).resolves.toEqual({ deleted: true });
+    expect(prisma.connection.delete).toHaveBeenCalledWith({
+      where: { id: 'conn-1' },
+    });
+
+    prisma.connection.count.mockResolvedValue(0);
+    await expect(service.remove('conn-1')).rejects.toThrow(NotFoundException);
+    expect(prisma.connection.delete).toHaveBeenCalledTimes(1);
   });
 });

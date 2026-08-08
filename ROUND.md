@@ -1,39 +1,35 @@
-# Round 110 — workspace service coverage to 100% lines (2026-08-09)
+# Round 111 — connections service coverage to 100% lines (2026-08-09)
 
 Human direction (DIRECTION.md): none — DIRECTION.md is empty. This round
-executed Round 109's next-focus item 1: lifted `workspace.service.ts` from
-80.48% to 100% lines (98.88% stmts / 93.93% branch / 100% funcs).
+executed Round 110's next-focus item 1: lifted `connections.service.ts`
+from 87.27% to 100% lines (96.66% stmts / 83.33% branch / 90.9% funcs).
 
 ## What changed this round
 
-- **`removeProjectIfEmpty` coverage** — missing folders count as cleanly
-  absent; non-empty folders are kept both when a file artifact exists and
-  when rmdir reports ENOTEMPTY/EEXIST; invalid names are rejected up front;
-  other rmdir failures (EACCES) are rethrown untouched.
-- **`getWorkspaceInfo` coverage** — snapshots root/projectsDir, all public
-  project folder paths, and every named agent's label, description, root
-  and workDir.
-- **`readTree`/content-list helpers** — an unreadable folder degrades to an
-  empty tree; `listProjectContent` and `listAgentContent` return the real
-  tree; unknown agents 404 via `assertAgentName`; recursion stops with `{}`
-  at `maxDepth` 0.
-- **`readDirNames` fallback** — an unreadable `projects/` dir lists as
-  empty instead of failing.
-- **Constructor default** — when `AGENT_WORKSPACE_ROOT` config is absent,
-  the service falls back to `/data/workspaces` exactly as documented.
+- **`findAll` coverage** — returns every stored row (masked) ordered by
+  `createdAt` asc.
+- **`findOne` coverage** — returns the masked row for a known id and 404s
+  for unknown ids.
+- **`update` coverage** — all present fields are normalized into the update
+  payload (`baseUrl` trailing-slash trim, `concurrentConnections`,
+  `defaultParameters` passthrough), an empty payload is rejected as
+  BadRequest, and `ensureExists` is exercised on both count sides.
+- **`remove` coverage** — deletes an existing connection via id and 404s
+  for unknown ids after the count pre-check (line 338 `ensureExists`
+  NotFound path).
 
 ## Test status
 
 - Fast verify `verify.mjs`: green on the final tree — REST docs guard
-  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 239
-  tests passed** (+8 this round), backend lint + types, frontend types +
+  (70 routes / 69 rows), test-count guard, backend unit **14 suites / 243
+  tests passed** (+4 this round), backend lint + types, frontend types +
   lint.
-- Coverage run green: `workspace.service.ts` **80.48% → 100% lines**
-  (98.88% stmts / 93.93% branch / 100% funcs); the two remaining uncovered
-  statements are the nullish-fallback side of the constructor default and
-  the `unable to resolve path` guard, which is unreachable whenever a root
-  realpath exists (the only path into it loops at the filesystem root).
-  `buckets.service.ts`, `files.service.ts`, `channel-job.service.ts` and
+- Coverage run green: `connections.service.ts` **87.27% → 100% lines**
+  (96.66% stmts / 83.33% branch / 90.9% funcs); remaining uncovered
+  statements are nullish-spread sides on optional create/update fields,
+  the `mask` non-key side, and constructor statements that real rows
+  always exercise on the taken branch. `buckets.service.ts`,
+  `files.service.ts`, `workspace.service.ts`, `channel-job.service.ts` and
   `workspace-tools.ts` stay at 100% lines; `channel.service.ts` stays
   99.04% (dead `SLUG_RE` guard).
 - Full build gate not re-run (test-only change, no runtime code touched):
@@ -51,20 +47,19 @@ executed Round 109's next-focus item 1: lifted `workspace.service.ts` from
   archives live in git history (by design).
 - **Open** — `channel.service.ts` line 67 (`SLUG_RE` guard) is dead by
   construction; decide in a runtime round whether to delete it or keep it
-  as defense-in-depth.
-- **Open** — the `unable to resolve path` safeResolve guard (line 248) is
-  unreachable by construction; keep it as the loop-termination proof in
-  code or delete it in the same runtime cleanup round as the `SLUG_RE`
-  guard.
+  as defense-in-depth (bundle with the unreachable safeResolve probe
+  guard).
 - **Open** — remaining service coverage: `base-agent.service.ts` 74.92%
-  lines (larger surface, runtime-critical), `connections.service.ts`
-  87.27%, `cron.service.ts` 93.27%, `skills.service.ts` 95.45%.
+  lines (larger surface, runtime-critical), `cron.service.ts` 93.27%,
+  `skills.service.ts` 95.45%, `prisma.service.ts` 50% (trivial
+  constructor-only file), `app.service.ts` 100%.
 
 ## Next round focus
 
-1. **Cover `connections.service.ts`** — smallest practical next target at
-  87.27% lines (uncovered: 63-74, 83, 87, 91, 96, 107-109, 338); extend
-  `connections.service.spec.ts` and re-run fast verify + coverage.
+1. **Cover `cron.service.ts`** — smallest practical target at 93.27% lines
+  (uncovered: 252, 266, 278, 286, 293, 338, 538, 562, 582-583, 594, 665,
+  699-702, 706); extend `cron.service.spec.ts` and re-run fast verify +
+  coverage. (`skills.service.ts` 95.45% is the follow-up.)
 2. **Decide the dead-guard cleanup bundle** — remove/keep `SLUG_RE` and the
   unreachable safeResolve probe guard together; needs the full build + API
   E2E + browser gates, best bundled with a real frontend/backend change.
