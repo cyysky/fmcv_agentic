@@ -1,15 +1,14 @@
-# ROUND 59 — 2026-08-08 (autonomous iteration round 59)
+# ROUND 60 — 2026-08-08 (autonomous iteration round 60)
 
 Human direction (DIRECTION.md item 1): none — DIRECTION.md is empty; the
 user asked the loop to run again ("read on loop.md and do works"), so this
-round's goal was the Round 58 handoff's "None until human direction arrives"
-standby: re-orient and re-verify the system end to end, fixing anything that
-regressed.
+round's goal was the Round 59 handoff's standby: re-orient and re-verify the
+system end to end, fixing anything that regressed.
 
 ## What changed this round
 
 - **Verification round** — no application code changed. Orientation found a
-  clean worktree with no diff against tag `round-58`; the full suite plus
+  clean worktree with no diff against tag `round-59`; the full suite plus
   browser E2E were re-run green against the live stack.
 - **Artifacts refreshed** — `e2e/report.json` + screenshots regenerated
   against this round's passing browser run.
@@ -31,14 +30,16 @@ regressed.
   `/api/skills`, `/api/connections`, `/api/channels`, `/api/agent/sessions`
   all 200.
 - Baseline confirmed after the run: buckets=0, cron_jobs=0, skills=0,
-  agent_sessions=0, connections=0; channels=2 defaults only (`FMCV`,
-  `coder`); workspace volume holds only default folders (`agents/coder`,
-  `agents/researcher`, `projects/fmcv`); stale-sweep clean (no
-  `browser-e2e-*` / `e2e-*` fixtures, files, or rows).
+  agent_sessions=0, connections=0, channel_runs=0, managed_documents=0;
+  channels=2 defaults only (`FMCV`, `coder`) carrying only pre-existing
+  2026-08-05 history (134 channel_messages, unchanged this round); workspace
+  volume holds only default folders (`agents/coder`, `agents/researcher`,
+  `projects/fmcv`); stale-sweep clean (no `browser-e2e-*` / `e2e-*`
+  fixtures, files, or rows).
 
 ## Known issues / open tickets
 
-- **None open.** Accepted limitations unchanged from Round 58: CSP `sandbox`
+- **None open.** Accepted limitations unchanged from Round 59: CSP `sandbox`
   disables scripts/forms/external navigation in the inline HTML preview; the
   cron scheduler ticker runs in-process (single-instance deployment
   assumed); buckets are read-only by design (no delete/rename endpoints);
@@ -53,7 +54,7 @@ regressed.
 
 ## Loop state
 
-Loop state: finished — exit condition C met; Round 59 re-verified the
-Round 58 state end to end (clean worktree, full suite + browser E2E green,
+Loop state: finished — exit condition C met; Round 60 re-verified the
+Round 59 state end to end (clean worktree, full suite + browser E2E green,
 zero open tickets). Do not start another round unless the human updates
 `DIRECTION.md` or asks for the loop to run again.
