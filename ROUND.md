@@ -1,17 +1,16 @@
-# ROUND 45 — 2026-08-08 (autonomous iteration round 45)
+# ROUND 46 — 2026-08-08 (autonomous iteration round 46)
 
 User instruction: generic loop prompt ("read on loop.md and do works").
 DIRECTION.md is unchanged since Round 42 (items 1-4 completed and in
-effect). This round re-verified every one of the four feature items
-(buckets, cron, skills, HTML view) end-to-end once more with the full
-suite + live browser E2E; no code changes were needed.
+effect). This round re-verified the full green gate plus live browser E2E
+once more; no application code changes were needed.
 
 ## What changed this round
 
-- **Full-suite verification** — backend unit 146/146, API E2E 107/107,
-  backend lint + `nest build` + `npx tsc --noEmit` clean; frontend lint +
-  `npx tsc --noEmit` clean; live smoke (`/`, `/api/buckets`, `/api/cron`,
-  `/api/skills`) all 200.
+- **Full-suite verification** — backend unit 146/146 (14 suites), API E2E
+  107/107 (10 suites), backend lint + `nest build` + `npx tsc --noEmit`
+  clean; frontend lint + `npx tsc --noEmit` clean; live smoke (`/`,
+  `/api/buckets`, `/api/cron`, `/api/skills`) all 200.
 - **Browser E2E re-run, exit 0** — 21 route probes plus every main journey
   (channel, sessions, files, HTML view/new-tab, buckets, cron, skills,
   settings) with zero console/network errors; bucket duplicate-name and
