@@ -804,6 +804,13 @@ node scripts/api-e2e.mjs
   clean, frontend `tsc --noEmit` + `eslint` clean, browser E2E all green
   (`e2e/report.json` + screenshots refreshed).
 
+Rounds 23+ are tracked in `ROUND.md` (current handoff) and in git
+tags `round-N` with conventional commits; the README feature docs stay
+current for shipped behavior, with the measured bundle baselines in the
+Testing section (Rounds 93–102 covered lazy splits, visibility-gated
+polling, the `/agent` headroom guard, and immediate channel refresh on
+tab return).
+
 ## Local development
 
 ```bash
