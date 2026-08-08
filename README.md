@@ -333,7 +333,7 @@ node scripts/verify-test-counts.mjs
 # One-command fast verify: both guards + backend unit/lint/types +
 # frontend lint/types (backend must already be running for nothing; the
 # API E2E and browser E2E need docker mode flips and stay explicit).
-#   --build    also runs `nest build` + `next build`
+#   --build    also runs `nest build` + `next build` + the bundle-size guard
 #   --api-e2e  also runs the API E2E via scripts/api-e2e.mjs below
 node scripts/verify.mjs
 node scripts/verify.mjs --build --api-e2e
@@ -446,11 +446,12 @@ node scripts/api-e2e.mjs
   cascade-prunes run history. Suite counts are enforced by
   `scripts/verify-test-counts.mjs` (see the drift guard below).
 - **One-command verify** (`scripts/verify.mjs`) — zero-dependency;
-  runs the REST docs guard, the test-count guard, backend unit tests,
-  backend eslint + `tsc --noEmit`, and frontend eslint + `tsc
-  --noEmit` in one pass, failing fast with the step name. Flags:
-  `--build` adds `nest build` + `next build`; `--api-e2e` adds the API
-  E2E step. The browser E2E stays explicit (Chrome + per-mode runs).
+  runs the REST docs guard, the test-count guard, the bundle-size guard
+  (with `--build`), backend unit tests, backend eslint + `tsc --noEmit`,
+  and frontend eslint + `tsc --noEmit` in one pass, failing fast with the
+  step name. Flags: `--build` adds `nest build` + `next build` + the
+  bundle-size guard; `--api-e2e` adds the API E2E step. The browser E2E
+  stays explicit (Chrome + per-mode runs).
 - **API E2E helper** (`scripts/api-e2e.mjs`) — zero-dependency; flips the
   backend to `CRON_SCHEDULER_ENABLED=false` + recreate, waits until
   `/api/cron/scheduler` reports `enabled:false`, runs
@@ -463,6 +464,14 @@ node scripts/api-e2e.mjs
   API E2E spec files under `backend/test`, then verifies the README
   Testing section reports exactly those suite counts and carries no
   exact per-test numbers to drift when a suite grows.
+- **Bundle-size guard** (`scripts/verify-bundle-size.mjs`) — zero
+  dependencies; reads Next's `route-bundle-stats.json` after `next build`
+  and fails the gate when any route's uncompressed first-load JS exceeds
+  the budget (default 600 KB, override `FMCV_BUNDLE_BUDGET_BYTES`).
+  Measured baseline Round 91: largest first load is `/agent` at ~513 KB
+  — the Next/React framework baseline (~460 KB shared, ~156 KB gzipped)
+  dominates while per-route app chunks stay 13-50 KB and are not
+  duplicated across routes.
 - **Lint & types (backend)** — `npx eslint .` exits 0 across the whole
   backend: production `src/**/*.ts` runs the strict
   `recommendedTypeChecked` rule set, while test files

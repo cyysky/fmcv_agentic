@@ -11,6 +11,7 @@
  *
  * Flags:
  *   --build    also run backend `nest build` + frontend `next build`
+ *              + the frontend bundle-size guard
  *   --api-e2e  also run the API E2E suite via scripts/api-e2e.mjs (it flips
  *              the backend to API-only mode and restores it to enabled)
  * Not included by default (need external state / longer runs): browser E2E.
@@ -36,6 +37,7 @@ const steps = [
 if (process.argv.includes("--build")) {
   steps.push({ label: "backend build (nest)", cmd: "npm", args: ["run", "build"], cwd: join(root, "backend") });
   steps.push({ label: "frontend build (next)", cmd: "npm", args: ["run", "build"], cwd: join(root, "frontend") });
+  steps.push({ label: "frontend bundle-size guard", cmd: "node", args: ["scripts/verify-bundle-size.mjs"], cwd: root });
 }
 if (process.argv.includes("--api-e2e")) {
   steps.push({ label: "backend API E2E (flip + restore)", cmd: "node", args: ["scripts/api-e2e.mjs"], cwd: root });
