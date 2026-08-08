@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   PayloadTooLargeException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { promises as fs, Stats } from 'fs';
 import * as path from 'path';
@@ -32,6 +33,13 @@ export interface FileReadResult {
   content: string;
 }
 
+export interface FileViewResult {
+  target: string;
+  fileName: string;
+  size: number;
+  contentType: string;
+}
+
 export interface FileWriteResult {
   scope: string;
   path: string;
@@ -51,6 +59,9 @@ type Scope =
   | { kind: 'agent'; name: string; root: string; writable: true };
 
 const SCOPE_RE = /^(project|agent):([A-Za-z0-9_-]+)$/;
+
+/** Files that may be served to a browser as inline HTML (case-insensitive). */
+const HTML_EXT_RE = /\.html?$/i;
 
 /** Normalize a user-supplied relative path (leading slashes stripped, NULs
  *  rejected, empty meaning the scope root). Traversal is handled later by
@@ -119,7 +130,12 @@ export class FilesService {
       if (st.isDirectory()) {
         entries.push({ name, type: 'directory', size: 0, mtimeMs: st.mtimeMs });
       } else if (st.isFile()) {
-        entries.push({ name, type: 'file', size: st.size, mtimeMs: st.mtimeMs });
+        entries.push({
+          name,
+          type: 'file',
+          size: st.size,
+          mtimeMs: st.mtimeMs,
+        });
       }
     }
     entries.sort((a, b) =>
@@ -150,7 +166,10 @@ export class FilesService {
 
   /** Resolve a file for a binary-safe download stream (no size cap — the
    *  whole file is streamed to the client, unlike the capped JSON viewer). */
-  async download(scopeStr: string, relPath?: string): Promise<{
+  async download(
+    scopeStr: string,
+    relPath?: string,
+  ): Promise<{
     target: string;
     fileName: string;
     size: number;
@@ -162,6 +181,29 @@ export class FilesService {
     const stat = await this.statOrThrow(target);
     if (!stat.isFile()) throw new BadRequestException('Path is not a file');
     return { target, fileName: path.basename(target), size: stat.size };
+  }
+
+  /** Resolve an HTML file for an inline browser view. Like downloads this is
+   *  streamed uncapped; only `.html`/`.htm` files are served as `text/html`
+   *  so arbitrary binaries are never interpreted by the browser. */
+  async view(scopeStr: string, relPath?: string): Promise<FileViewResult> {
+    const scope = this.resolveScope(scopeStr);
+    const rel = normalizeRel(relPath);
+    if (rel === '') throw new BadRequestException('Path must name a file');
+    const target = await this.resolveOrThrow(scope, rel);
+    const stat = await this.statOrThrow(target);
+    if (!stat.isFile()) throw new BadRequestException('Path is not a file');
+    if (!HTML_EXT_RE.test(rel)) {
+      throw new UnsupportedMediaTypeException(
+        'Only .html and .htm files can be viewed inline',
+      );
+    }
+    return {
+      target,
+      fileName: path.basename(target),
+      size: stat.size,
+      contentType: 'text/html; charset=utf-8',
+    };
   }
 
   /** Create or overwrite a text file inside a writable scope. */
@@ -183,7 +225,9 @@ export class FilesService {
       if (code === 'EISDIR') {
         throw new BadRequestException('Path is an existing directory');
       }
-      throw new BadRequestException(`Cannot write file: ${(err as Error).message}`);
+      throw new BadRequestException(
+        `Cannot write file: ${(err as Error).message}`,
+      );
     }
     return {
       scope: scopeStr,
@@ -193,7 +237,10 @@ export class FilesService {
   }
 
   /** Create a folder tree in a writable scope. */
-  async mkdir(scopeStr: string, relPath: string | undefined): Promise<{
+  async mkdir(
+    scopeStr: string,
+    relPath: string | undefined,
+  ): Promise<{
     scope: string;
     path: string;
     created: boolean;

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
   PayloadTooLargeException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { mkdtempSync, promises as fsp, rmSync } from 'fs';
 import { tmpdir } from 'os';
@@ -62,16 +63,20 @@ describe('FilesService', () => {
     await files.write('agent:coder', 'a.txt', 'a');
     await files.mkdir('agent:coder', 'b-dir');
     const list = await files.list('agent:coder');
-    expect(list.entries.map((e) => e.name)).toEqual(['b-dir', 'a.txt', 'z.txt']);
+    expect(list.entries.map((e) => e.name)).toEqual([
+      'b-dir',
+      'a.txt',
+      'z.txt',
+    ]);
     expect(list.entries[0].type).toBe('directory');
   });
 
   it('deletes files and empty directories but refuses non-empty ones', async () => {
     await files.write('agent:coder', 'keep.txt', 'x');
     await files.write('agent:coder', 'dir/child.txt', 'x');
-    await expect(
-      files.remove('agent:coder', 'dir'),
-    ).rejects.toThrow(BadRequestException);
+    await expect(files.remove('agent:coder', 'dir')).rejects.toThrow(
+      BadRequestException,
+    );
 
     await files.remove('agent:coder', 'dir/child.txt');
     await files.remove('agent:coder', 'dir');
@@ -97,9 +102,9 @@ describe('FilesService', () => {
     await expect(files.list('agent:coder', '../..')).rejects.toThrow(
       BadRequestException,
     );
-    await expect(files.read('agent:coder', 'notes/../../lib/passwd')).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      files.read('agent:coder', 'notes/../../lib/passwd'),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('keeps public projects read-only', async () => {
@@ -137,6 +142,40 @@ describe('FilesService', () => {
     );
   });
 
+  it('resolves an HTML file for an inline view with text/html metadata', async () => {
+    const html = '<!doctype html><h1>view me</h1>';
+    await files.write('agent:coder', 'notes/page.html', html);
+    const result = await files.view('agent:coder', 'notes/page.html');
+    expect(result.fileName).toBe('page.html');
+    expect(result.size).toBe(html.length);
+    expect(result.contentType).toContain('text/html');
+    await expect(fsp.readFile(result.target, 'utf8')).resolves.toBe(html);
+  });
+
+  it('refuses to view non-HTML files (415)', async () => {
+    await files.write('agent:coder', 'notes/page.txt', 'plain');
+    await expect(files.view('agent:coder', 'notes/page.txt')).rejects.toThrow(
+      UnsupportedMediaTypeException,
+    );
+    await files.write('agent:coder', 'notes/app-xhtml', 'x');
+    await expect(files.view('agent:coder', 'notes/app-xhtml')).rejects.toThrow(
+      UnsupportedMediaTypeException,
+    );
+  });
+
+  it('refuses to view directories, empty paths or missing files', async () => {
+    await files.mkdir('agent:coder', 'folder');
+    await expect(files.view('agent:coder', 'folder')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(files.view('agent:coder', '')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(files.view('agent:coder', 'missing.html')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
   it('throws NotFound when the download target is missing', async () => {
     await expect(files.download('agent:coder', 'missing.txt')).rejects.toThrow(
       NotFoundException,
@@ -144,7 +183,9 @@ describe('FilesService', () => {
   });
 
   it('rejects invalid scopes', async () => {
-    await expect(files.list('bogus:coder')).rejects.toThrow(BadRequestException);
+    await expect(files.list('bogus:coder')).rejects.toThrow(
+      BadRequestException,
+    );
     await expect(files.write('agent:unknown', 'x.txt', 'x')).rejects.toThrow(
       BadRequestException,
     );

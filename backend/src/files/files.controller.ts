@@ -17,6 +17,7 @@ import { FilesService } from './files.service';
  *
  *   GET    /api/files/list?scope=agent:coder&path=notes
  *   GET    /api/files/read?scope=agent:coder&path=notes/hello.txt
+ *   GET    /api/files/view?scope=agent:coder&path=notes/page.html
  *   GET    /api/files/download?scope=agent:coder&path=notes/hello.txt
  *   PUT    /api/files/write?scope=agent:coder&path=notes/hello.txt
  *   POST   /api/files/mkdir?scope=agent:coder&path=notes/newdir
@@ -37,6 +38,27 @@ export class FilesController {
   @Get('read')
   read(@Query() query: FileScopeQueryDto) {
     return this.files.read(query.scope, query.path);
+  }
+
+  @Get('view')
+  async view(@Query() query: FileScopeQueryDto, @Res() res: Response) {
+    const { target, fileName, size, contentType } = await this.files.view(
+      query.scope,
+      query.path,
+    );
+    res.setHeader('Content-Type', contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${fileName.replace(/["\r\n]/g, '_')}"`,
+    );
+    res.setHeader('Content-Length', String(size));
+    // Serve the document sandboxed (opaque origin, no scripts/forms), so a
+    // hostile HTML file cannot touch the app's own origin when it is opened
+    // by link or in a new tab/window.
+    res.setHeader('Content-Security-Policy', 'sandbox');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+    res.sendFile(target);
   }
 
   @Get('download')

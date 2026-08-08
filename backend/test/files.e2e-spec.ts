@@ -10,6 +10,7 @@ describe('Files API (e2e)', () => {
   const scope = 'agent:coder';
   const base = 'fm-e2e';
   const filePath = `${base}/hello.txt`;
+  const htmlPath = `${base}/view.html`;
 
   beforeAll(async () => {
     app = await bootstrapApp();
@@ -17,7 +18,13 @@ describe('Files API (e2e)', () => {
 
   afterAll(async () => {
     // Best-effort cleanup of everything this suite created.
-    for (const path of [filePath, `${base}/blob.bin`, `${base}/sub`, base]) {
+    for (const path of [
+      filePath,
+      htmlPath,
+      `${base}/blob.bin`,
+      `${base}/sub`,
+      base,
+    ]) {
       try {
         await request(app.getHttpServer())
           .delete('/api/files/delete')
@@ -43,7 +50,9 @@ describe('Files API (e2e)', () => {
       .get('/api/files/list')
       .query({ scope, path: base })
       .expect(200);
-    const entry = list.body.entries.find((e: { name: string }) => e.name === 'hello.txt');
+    const entry = list.body.entries.find(
+      (e: { name: string }) => e.name === 'hello.txt',
+    );
     expect(entry).toMatchObject({ type: 'file' });
     expect(entry.size).toBe('hello file manager'.length);
     expect(typeof entry.mtimeMs).toBe('number');
@@ -127,7 +136,12 @@ describe('Files API (e2e)', () => {
     const binPath = `${base}/blob.bin`;
     const bytes = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd, 0x0a, 0x0d]);
     const wsRoot = (process.env.AGENT_WORKSPACE_ROOT ?? '').replace(/\/$/, '');
-    const target = require('node:path').join(wsRoot, 'agents', 'coder', binPath);
+    const target = require('node:path').join(
+      wsRoot,
+      'agents',
+      'coder',
+      binPath,
+    );
     const { mkdir, writeFile } = require('node:fs/promises');
     await mkdir(require('node:path').dirname(target), { recursive: true });
     await writeFile(target, bytes);
@@ -156,6 +170,58 @@ describe('Files API (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/files/download')
       .query({ scope, path: '../../etc/passwd' })
+      .expect(400);
+  });
+
+  it('serves an HTML file inline with sandboxed text/html headers', async () => {
+    const html = '<!doctype html><html><body><h1>html e2e</h1></body></html>';
+    await request(app.getHttpServer())
+      .put('/api/files/write')
+      .query({ scope, path: htmlPath })
+      .send({ content: html })
+      .expect(200);
+
+    const view = await request(app.getHttpServer())
+      .get('/api/files/view')
+      .query({ scope, path: htmlPath })
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks: Buffer[] = [];
+        r.on('data', (c: Buffer) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    expect(view.headers['content-type']).toContain('text/html');
+    expect(view.headers['content-disposition']).toContain(
+      'inline; filename="view.html"',
+    );
+    expect(view.headers['content-security-policy']).toBe('sandbox');
+    expect(view.headers['x-content-type-options']).toBe('nosniff');
+    expect(view.headers['cache-control']).toContain('no-store');
+    expect((view.body as Buffer).toString('utf8')).toBe(html);
+  });
+
+  it('refuses to view non-HTML files inline (415)', async () => {
+    const plainPath = `${base}/plain.txt`;
+    await request(app.getHttpServer())
+      .put('/api/files/write')
+      .query({ scope, path: plainPath })
+      .send({ content: 'plain text' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/api/files/view')
+      .query({ scope, path: plainPath })
+      .expect(415);
+  });
+
+  it('refuses to view directories or empty paths inline (400)', async () => {
+    await request(app.getHttpServer())
+      .get('/api/files/view')
+      .query({ scope, path: base })
+      .expect(400);
+    await request(app.getHttpServer())
+      .get('/api/files/view')
+      .query({ scope, path: '' })
       .expect(400);
   });
 
