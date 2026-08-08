@@ -26,3 +26,5 @@ skills-lock.json
 
 # Generated Vision test snapshot (not part of the project)
 vision_test.png
+# E2E screenshots (generated at runtime, not part of the project)
+e2e/screenshots/
