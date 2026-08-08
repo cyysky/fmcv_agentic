@@ -837,14 +837,22 @@ async function mobileChannelFlow() {
       "channel list",
     );
     if (!listSeen) throw new Error("mobile channel flow: channel list never rendered");
-    const rowOpened = await evalJs(c, `(() => {
-      const rows = [...document.querySelectorAll('[class*="channelList"] [class*="channelRow"]')];
-      const row = rows.find((r) => r.innerText.includes(${JSON.stringify(channelName)}));
-      const b = row && row.querySelector("button");
-      if (!b) return false;
-      b.click();
-      return true;
-    })()`);
+    // The list container can render while the async /channels fetch is still
+    // in flight, so poll for the fixture row instead of checking once.
+    const rowOpened = await waitFor(
+      c,
+      `(() => {
+        const rows = [...document.querySelectorAll('[class*="channelList"] [class*="channelRow"]')];
+        const row = rows.find((r) => r.innerText.includes(${JSON.stringify(channelName)}));
+        const b = row && row.querySelector("button");
+        if (!b) return false;
+        b.click();
+        return true;
+      })()`,
+      15000,
+      500,
+      "mobile fixture channel row",
+    );
     if (!rowOpened) throw new Error(`mobile channel flow: fixture row #${channelName} not found`);
 
     // 2. Wait for the member list, then assert the stacked layout.

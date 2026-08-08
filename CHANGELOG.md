@@ -1,3 +1,25 @@
+## Round 2026-08-08 — autonomous iteration round 51 (tag `round-51`)
+
+### Fixed
+- Browser E2E mobile channel-dashboard journey: the API-created fixture
+  channel row is now polled for (up to 15s) instead of checked once right
+  after the Channels list container renders. That one-shot check raced the
+  async `GET /channels` fetch and failed consistently in repeated runs
+  ("fixture row not found"); the flow passed on every run after the fix
+  (two consecutive green runs post-change, plus the first run that landed
+  the change).
+
+### Changed
+- `e2e/report.json` + mobile channel screenshots refreshed against the
+  passing runs; verified the post-run DB/workspace baseline is clean (only
+  the two default channels; zero `browser-e2e-*` fixtures).
+
+### Verified
+- Backend unit 146/146, API E2E 107/107, backend lint + `nest build` +
+  `npx tsc --noEmit` clean; frontend lint + `npx tsc --noEmit` +
+  `next build` clean; browser E2E exit 0 twice consecutively post-fix; live
+  smoke `/`, `/api`, buckets, cron, skills all 200.
+
 ## Round 2026-08-08 — autonomous iteration round 50 (tag `round-50`)
 
 ### Fixed
