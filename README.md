@@ -76,10 +76,13 @@ and coordinate multi-agent teams in Slack-style channels.
   workspace: pick an agent (read/write) or public project (read-only) scope,
   navigate one level at a time with a breadcrumb, view or download file
   contents (downloads are binary-safe and bypass the viewer cap), create
-  files/folders, edit, and delete files or empty folders. Dotfiles are shown,
-  path escapes are rejected by the API, the create/edit panel submits from the
-  name field (Enter), and every create/save/download/delete action shows a
-  dismissible success notice.
+  files/folders, edit, and delete files or empty folders. HTML files open in
+  a sandboxed inline preview (served by `GET /api/files/view` with CSP
+  `sandbox`, `inline` disposition and `nosniff`) and a dedicated **Open in
+  new tab** link opens the same URL in a fresh tab/window. Dotfiles are
+  shown, path escapes are rejected by the API, the create/edit panel submits
+  from the name field (Enter), and every create/save/download/delete action
+  shows a dismissible success notice.
 - **Managed document buckets (`/buckets`)** — human-facing page over the
   read-only buckets API: pick an agent or project folder, create a uniquely
   named bucket, upload documents (PDF/text/video/audio/other, 100 MB cap),
@@ -163,6 +166,7 @@ check):
 | GET    | `/api/files/list?scope=&path=`        | one-level directory listing (dirs first) |
 | GET    | `/api/files/read?scope=&path=`        | read a text file (100 KB viewer cap)  |
 | GET    | `/api/files/download?scope=&path=`    | stream a file as an attachment (binary-safe, no cap) |
+| GET    | `/api/files/view?scope=&path=`       | stream an HTML file inline (sandboxed `text/html`, `inline` + CSP `sandbox`; 415 for non-HTML) |
 | PUT    | `/api/files/write?scope=&path=`       | write a file (parents created)        |
 | POST   | `/api/files/mkdir?scope=&path=`       | create a directory                    |
 | DELETE | `/api/files/delete?scope=&path=`      | delete a file or empty directory      |
@@ -240,14 +244,16 @@ cd backend && npm run test:e2e
 cd e2e && node browser-e2e.mjs
 ```
 
-- **Unit: 142 tests / 14 suites** — model catalog, workspace service + tools,
+- **Unit: 145 tests / 14 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
   (list/read/download/write/mkdir/delete, directory-first ordering,
   `..`/absolute/symlink escapes rejected, project scopes read-only, 100 KB
   read cap, download resolver rejects directories / empty paths / missing
-  files), and the connection-test probes (reachable 200, upstream 401,
+  files, view resolver returns inline text/html metadata (415 for non-HTML,
+  400 for directories/empty paths, 404 for missing), and streams HTML bytes
+  unchanged), and the connection-test probes (reachable 200, upstream 401,
   network failure, abort/timeout, unknown id 404; draft values tested without
   touching the DB, trailing-slash normalization, no-auth-header omission) plus
   apiKey normalization (empty-string clears to NULL on create and update),
@@ -277,7 +283,7 @@ cd e2e && node browser-e2e.mjs
   missing-name error, installed registry block present only when the
   registry is wired, runTurn/converse inject the registry and strip it
   from persisted transcripts).
-- **API E2E: 101 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
+- **API E2E: 104 tests / 10 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health (5), connections CRUD + live probes (15:
   CRUD round-trip, masked key, validation 400s, explicit empty-string clears
@@ -291,10 +297,11 @@ cd e2e && node browser-e2e.mjs
   connection, explicit catalog-model override via turn/converse, a raw
   provider model id used verbatim and reported back, unknown connection 404
   on create/turn/converse, malformed id 400), channel lifecycle + streaming
-  jobs (12), files manager (9: CRUD round-trip, directory-first ordering,
+  jobs (12), files manager (12: CRUD round-trip, directory-first ordering,
   empty-dir delete + file delete, path-escape 400, project-scope 403, scope
   validation, text download headers/body, binary download byte-for-byte,
-  directory/escape download 400), managed document buckets (14: create a
+  directory/escape download 400, HTML view served inline with sandboxed
+  text/html headers, non-HTML view 415, directory/empty-path view 400), managed document buckets (14: create a
   unique bucket mapped to a project folder, duplicate bucket and invalid
   folder-type / missing-project / unknown-agent 400s, list with document
   counts, get-one with empty documents, unknown bucket 404, PDF upload with
@@ -349,6 +356,13 @@ cd e2e && node browser-e2e.mjs
   saves it to disk via CDP `Browser.setDownloadBehavior`, comparing the bytes),
   deletes both through the UI, confirms the removal server-side via the
   files API, and asserts the success notice after each create/download/delete,
+  an html-view journey that creates a `view.html` fixture through the `/files`
+  UI, clicks **View** and asserts the sandboxed inline preview renders in the
+  in-app iframe with `/files/view` wire headers (`text/html`, `inline`,
+  CSP `sandbox`, `nosniff`), opens **Open in new tab** with a trusted CDP
+  mouse click and proves the new page target renders the fixture's marker +
+  document title, then deletes the file and folder through the UI and
+  verifies server-side cleanup,
   a buckets journey that creates a bucket through the UI (agent folder),
   proves a duplicate bucket name 409s in-page, uploads a text document,
   proves a duplicate upload 409s (immutable documents), downloads the file and
@@ -386,7 +400,9 @@ cd e2e && node browser-e2e.mjs
   server-side. The sessions step waits for the CDP navigation
   event and React hydration before clicking so it cannot race the dev server;
   hard gates are stuck runs, missing persisted history, and console/network
-  failures. The channel-delete step also proves the channel project folder is
+  failures. The pre-run stale sweep also removes leftover `browser-e2e-files-*`
+  / `browser-e2e-html-*` fixture folders (emptied first because the API
+  refuses non-empty directory deletes) and `.dot-*` fixture files. The channel-delete step also proves the channel project folder is
   pruned server-side via the workspace API (no docker dependency), and tab
   cleanup no longer logs the non-fatal CDP `Target is closing` text as a
   warning. Per-step timeouts + a global watchdog bound the run and all created

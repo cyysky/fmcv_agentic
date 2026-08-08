@@ -1,3 +1,54 @@
+## Round 2026-08-08 — autonomous iteration round 28 (tag `round-28`)
+
+### Added
+- **View HTML by link / new tab-window** (DIRECTION.md item 4) — new
+  `GET /api/files/view?scope=&path=` endpoint that resolves a file exactly
+  like download but serves only `.html`/`.htm` inline: `Content-Type:
+  text/html; charset=utf-8`, `Content-Disposition: inline`, `Content-Length`,
+  `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff`, and
+  `Cache-Control: no-store` (400 empty path/directory, 404 missing files,
+  415 non-HTML content). The file manager's viewer renders HTML files in a
+  sandboxed `iframe` (no scripts/forms/external navigation) and adds an
+  **Open in new tab** link that opens the same `view` URL in a fresh
+  tab/window; the 100 KB read cap no longer blocks previewing larger HTML
+  files.
+- **Tests** — unit +3 (view metadata/resolution: HTML inline with bytes
+  unchanged, 415 for `.txt`/no extension, 400 for directory/empty path, 404
+  missing), API E2E +3 (inline `text/html` headers + body, 415 non-HTML,
+  directory/empty-path 400).
+- **Browser E2E html-view journey** — creates a `view.html` fixture through
+  the `/files` UI, asserts the sandboxed in-app iframe preview and the
+  `/files/view` wire headers, opens the link in a new tab with a trusted
+  CDP mouse click (popup blocker proof), verifies the new page target
+  renders the fixture marker + title, then deletes file + folder through the
+  UI. The stale sweep now also removes leftover `browser-e2e-files-*` /
+  `browser-e2e-html-*` fixture folders (emptied first) and `.dot-*` files.
+
+### Test status
+- Unit **145 passed / 14 suites** (142 → +3 files-service view tests).
+- API E2E **104 passed / 10 suites** (101 → +3 files endpoint tests against
+  real Postgres).
+- Backend `nest build` + `tsc --noEmit` clean; scoped eslint clean for the
+  new backend files (remaining e2e-spec strict-TS `any` errors are legacy).
+- Frontend `npm run lint`, `npx tsc --noEmit`, `npm run build` all clean.
+- Browser E2E **exit 0**: 21 route probes, nav, agent-channel,
+  sessions/saved-connection, files, **html-view**, buckets, cron, skills,
+  and settings journeys — zero console/network errors; screenshots +
+  `e2e/report.json` refreshed.
+
+### Known issues / open tickets
+- The direct `view` link uses the browser-visible API URL without a token;
+  fine in the compose deploy (`API_TOKEN` unset), but token-protected
+  deployments need the link authenticated or proxied.
+- `Content-Security-Policy: sandbox` intentionally disables scripts/forms and
+  external navigation inside the preview iframe (viewing is safe, interactive
+  pages should be opened in a new tab).
+- Scheduler + skills installed state are in-memory per backend instance
+  (single-instance deployment assumed).
+- Full-repo backend eslint backlog predates this round (legacy files).
+- DIRECTION items 1 (buckets), 2 (cron jobs), 3 (agent skills), and 4
+  (**view HTML by link / new tab-window**) are all complete.
+
 ## Round 2026-08-08 — autonomous iteration round 27 (tag `round-27`)
 
 ### Added

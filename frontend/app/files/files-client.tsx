@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import styles from "./files.module.css";
-import { apiFetch } from "../../lib/api";
+import { API_URL, apiFetch } from "../../lib/api";
 
 /* ------------------------------- types ---------------------------------- */
 
@@ -89,6 +89,8 @@ function formatSize(bytes: number): string {
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleString();
 }
+
+const isHtmlName = (name: string): boolean => /\.html?$/i.test(name);
 
 const errText = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
@@ -193,7 +195,13 @@ export default function FilesPanel() {
     } catch (e) {
       setViewer((v) =>
         v && v.target === target
-          ? { ...v, loading: false, error: errText(e) }
+          ? {
+              ...v,
+              loading: false,
+              // HTML previews stream inline even when the (capped) text read
+              // fails, e.g. for pages larger than the viewer cap.
+              error: isHtmlName(entry.name) ? undefined : errText(e),
+            }
           : v,
       );
     }
@@ -311,6 +319,11 @@ export default function FilesPanel() {
       setError(errText(e));
     }
   };
+
+  const htmlViewUrl =
+    viewer && !viewer.loading && !viewer.error && isHtmlName(viewer.entry.name)
+      ? `${API_URL}/files/view?${query({ scope, path: viewer.target })}`
+      : null;
 
   return (
     <div className={styles.container}>
@@ -572,6 +585,17 @@ export default function FilesPanel() {
           <div className={styles.panelTitle}>
             <span className={styles.viewerName}>{viewer.entry.name}</span>
             <span className={styles.panelActions}>
+              {htmlViewUrl && (
+                <a
+                  className={styles.btnLink}
+                  href={htmlViewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open HTML in new tab"
+                >
+                  Open in new tab
+                </a>
+              )}
               {viewer.entry.type === "file" && (
                 <button
                   className={styles.btnGhost}
@@ -599,6 +623,14 @@ export default function FilesPanel() {
             <pre className={`${styles.viewer} ${styles.viewerError}`}>
               {viewer.error}
             </pre>
+          ) : htmlViewUrl ? (
+            <iframe
+              aria-label="HTML preview"
+              className={styles.htmlFrame}
+              src={htmlViewUrl}
+              sandbox=""
+              title={`Preview of ${viewer.entry.name}`}
+            />
           ) : (
             <pre className={styles.viewer}>{viewer.content}</pre>
           )}

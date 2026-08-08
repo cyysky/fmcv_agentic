@@ -46,7 +46,8 @@
 
 .btnPrimary,
 .btnGhost,
-.btnDanger {
+.btnDanger,
+.btnLink {
   padding: 0.5rem 1rem;
   border-radius: 8px;
   font-size: 0.85rem;
@@ -78,6 +79,20 @@
 
 .btnGhost:hover {
   background: #f3f4f6;
+}
+
+.btnLink {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #374151;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btnLink:hover {
+  background: #f3f4f6;
+  color: #374151;
 }
 
 .btnDanger {
@@ -336,6 +351,15 @@ span.rowName {
   overflow-y: auto;
 }
 
+.htmlFrame {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .viewerError {
   color: #b91c1c;
   background: #fde8e8;
@@ -363,6 +387,17 @@ span.rowName {
 
   .btnGhost:hover {
     background: #1f2937;
+  }
+
+  .btnLink {
+    background: #111827;
+    border-color: #374151;
+    color: #e5e7eb;
+  }
+
+  .btnLink:hover {
+    background: #1f2937;
+    color: #e5e7eb;
   }
 
   .errorBanner {
@@ -444,6 +479,11 @@ span.rowName {
     background: #111827;
     color: #e5e7eb;
     border-color: #374151;
+  }
+
+  .htmlFrame {
+    border-color: #374151;
+    background: #1f2937;
   }
 
   .viewerError {

@@ -83,7 +83,19 @@ Environment overrides:
    navigates into the folder, reads the file content back, deletes the file +
    folder + dotfile through the UI, and then confirms server-side removal via
    the files API (no leftovers).
-6. **Settings journey**: the script creates a throwaway connection via the
+6. **HTML-view journey**: on `/files`, the script creates an
+   `view.html` fixture through the UI (agent scope), clicks **View** and
+   proves the in-app sandboxed iframe preview renders the fixture, captures
+   the `/files/view` response headers over CDP to assert `text/html`,
+   `inline` disposition, `Content-Security-Policy: sandbox`, and `nosniff`,
+   then clicks **Open in new tab** with a trusted CDP mouse click (so the
+   popup blocker treats it as a user gesture), finds the new page target via
+   `/json/list`, and proves the new tab rendered the fixture's marker and
+   document title. The file + folder are then deleted through the UI and the
+   server-side state is verified clean. If the popup target is ever missed,
+   the script falls back to opening the direct `view` link in a fresh tab and
+   still verifies the rendered document.
+7. **Settings journey**: the script creates a throwaway connection via the
    API (with a stored key), clicks Edit and asserts the API-key field opens
    blank (so the masked preview cannot overwrite the stored secret), changes
    the URL to a dead endpoint and clicks the form's **Test Connection** button
@@ -102,7 +114,7 @@ Environment overrides:
    probe result (message + HTTP status + latency) into the form until a probed
    value changes. Both fixtures are then deleted via the API and the script
    asserts both rows disappear server-side (cleanup).
-6. **Buckets journey**: on `/buckets`, the script creates a document bucket
+8. **Buckets journey**: on `/buckets`, the script creates a document bucket
    through the UI (unique name, agent folder), proves a duplicate bucket name
    renders the in-page 409, opens the bucket, uploads a text document from a
    temp file, proves a duplicate upload 409s (documents are immutable),
@@ -112,7 +124,7 @@ Environment overrides:
    server-side afterwards: physical files through the files API and the DB
    rows through psql inside the compose `fmcv-db` container (buckets expose no
    delete endpoint by design — read-only).
-7. **Skills journey**: on `/skills`, the script creates a skill through
+9. **Skills journey**: on `/skills`, the script creates a skill through
    the UI (slug-form fixture name, description, markdown instructions) with
    the **Install now** box checked, verifies the row + Installed pill +
    success notice, reloads and proves the skill and its installed state
@@ -121,10 +133,11 @@ Environment overrides:
    stays listed), reinstalls from the row button, then deletes it with the
    two-click confirm. Fixtures are removed afterwards via the skills DELETE
    API (idempotent, verified 404).
-8. **Screenshots**: key screens (home, settings, agent, channel running,
-   channel done, sessions picker/connection, files before/after, buckets
-   created/uploaded/downloaded/reloaded, skills created/reload/edited/
-   deleted) are captured to `e2e/screenshots/`.
+10. **Screenshots**: key screens (home, settings, agent, channel running,
+    channel done, sessions picker/connection, files before/after,
+    html-view/iframe/new-tab/clean, buckets
+    created/uploaded/downloaded/reloaded, skills created/reload/edited/
+    deleted) are captured to `e2e/screenshots/`.
 
 ## Exit code / gate
 
@@ -159,3 +172,9 @@ Failures print the failing routes/checks and the collected errors in
   fixture is deleted via `DELETE /api/skills/:id` and verified gone; the
   pre-run stale sweep removes any `browser-e2e-skill-*` leftovers the same
   way.
+- The files and html-view journeys need no docker either: their fixtures are
+  deleted through the UI and double-checked with the files API. The pre-run
+  stale sweep also removes leftover `browser-e2e-files-*` /
+  `browser-e2e-html-*` fixture folders — emptying each folder first because
+  the files API refuses to delete non-empty directories — plus `.dot-*`
+  fixture files left by interrupted runs.

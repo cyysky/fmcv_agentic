@@ -48,6 +48,12 @@
 //      install it (Installed pill + registry notice), reload and verify it
 //      persists, edit description/content, uninstall and reinstall it, then
 //      delete it with the two-click confirm and verify server-side cleanup
+//   10e. HTML view: create an HTML file through the /files UI, prove the
+//      in-app preview renders it inside a sandboxed iframe served inline by
+//      /api/files/view (text/html + inline + CSP sandbox headers), click
+//      "Open in new tab" and prove the same link renders the document in a
+//      fresh tab, then delete the fixture through the UI and verify
+//      server-side cleanup
 //   11. Settings: editing a connection never sends `apiKey` back (the field
 //      starts blank on edit so the masked preview cannot clobber the stored
 //      secret), and the new Test button probes a connection and renders a
@@ -1871,6 +1877,290 @@ async function filesCleanup(flow) {
   }
 }
 
+/** End-to-end HTML-view journey: create an HTML file through the /files UI,
+ *  preview it in the sandboxed in-app iframe (served inline by
+ *  /api/files/view), open the same link in a new tab and prove the rendered
+ *  document, then delete the fixture through the UI. */
+async function htmlFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/files`;
+  log(`flow html-view -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null };
+  const extraTabs = [];
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "html-view files ready");
+    if (!ready) throw new Error("html-view flow: page never loaded");
+    const started = Date.now();
+
+    const scoped = await waitFor(
+      c,
+      `(() => { const s = document.querySelector('select[aria-label="Scope"]'); return !!s && !s.disabled && s.value.startsWith("agent:"); })()`,
+      30000,
+      600,
+      "html-view scope",
+    );
+    if (!scoped) throw new Error("html-view flow: no agent scope selected");
+    flow.scope = await evalJs(c, `document.querySelector('select[aria-label="Scope"]')?.value`);
+    await delay(400);
+
+    const stamp = Date.now().toString(36);
+    const folder = `browser-e2e-html-${stamp}`;
+    const file = `${folder}/view.html`;
+    const marker = `html-view-${stamp}`;
+    const content = `<!doctype html><html><head><meta charset="utf-8"><title>HTML view E2E ${stamp}</title></head><body><h1 id="marker">${marker}</h1><p>viewed-by-link</p></body></html>`;
+    flow.folder = folder;
+    flow.file = file;
+    flow.marker = marker;
+    flow.content = content;
+
+    // Create the HTML file through the UI (parents auto-created).
+    const opened = await evalJs(c, jsClick("New file", true));
+    if (!opened) throw new Error("html-view flow: New file button missing");
+    const panelReady = await waitFor(
+      c,
+      `!!document.querySelector('input[aria-label="File name"]')`,
+      10000,
+      400,
+      "html-view new-file panel",
+    );
+    if (!panelReady) throw new Error("html-view flow: new-file panel never appeared");
+    await evalJs(c, jsSetInput('input[aria-label="File name"]', file));
+    await evalJs(c, jsSetInput('textarea[aria-label="File content"]', content));
+    await delay(100);
+    const created = await evalJs(c, jsClick("Create", true));
+    if (!created) throw new Error("html-view flow: Create button missing");
+    const closed = await waitFor(
+      c,
+      `!document.querySelector('input[aria-label="File name"]')`,
+      15000,
+      400,
+      "html-view create finished",
+    );
+    if (!closed) throw new Error("html-view flow: create did not complete");
+    const createdNotice = await waitFor(
+      c,
+      `document.querySelector('button[class*="successBanner"]')?.innerText.includes(${JSON.stringify(`Created ${file}`)}) ?? false`,
+      5000,
+      300,
+      "html-view create notice",
+    );
+    if (!createdNotice) throw new Error(`html-view flow: success notice missing after ${file}`);
+    flow.steps.push("created-view.html");
+
+    const folderRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)})`,
+      15000,
+      500,
+      "html-view folder row",
+    );
+    if (!folderRow) throw new Error("html-view flow: fixture folder not listed");
+
+    const navInto = await evalJs(
+      c,
+      `(() => { const b = document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)}).querySelector("button"); if (!b) return false; b.click(); return true; })()`,
+    );
+    if (!navInto) throw new Error("html-view flow: folder row not clickable");
+    const fileRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="view.html"]`)})`,
+      15000,
+      500,
+      "html-view file row",
+    );
+    if (!fileRow) throw new Error("html-view flow: view.html not listed");
+
+    // Capture the /files/view wire response to assert inline headers.
+    const viewHits = [];
+    const onView = (p) => {
+      if (!p.response?.url?.includes("/files/view")) return;
+      const h = p.response.headers ?? {};
+      viewHits.push({
+        url: p.response.url,
+        status: p.response.status,
+        contentType: h["content-type"] ?? h["Content-Type"] ?? "",
+        disposition: h["content-disposition"] ?? h["Content-Disposition"] ?? "",
+        csp: h["content-security-policy"] ?? h["Content-Security-Policy"] ?? "",
+        nosniff: h["x-content-type-options"] ?? h["X-Content-Type-Options"] ?? "",
+      });
+    };
+    c.on("Network.responseReceived", onView);
+
+    const viewClicked = await evalJs(c, rowBtnExpr("view.html", "View"));
+    if (!viewClicked) throw new Error("html-view flow: View button missing");
+    const iframeSeen = await waitFor(
+      c,
+      `(() => { const f = document.querySelector('iframe[aria-label="HTML preview"]'); return !!f && f.src.includes("/files/view"); })()`,
+      15000,
+      400,
+      "html iframe",
+    );
+    if (!iframeSeen) throw new Error("html-view flow: HTML iframe never rendered");
+    flow.steps.push("iframes-in-app-preview");
+
+    let viewHit = null;
+    for (const deadline = Date.now() + 10000; Date.now() < deadline && !viewHit;) {
+      viewHit = viewHits.find((h) => h.status === 200);
+      if (!viewHit) await delay(250);
+    }
+    if (!viewHit) throw new Error("html-view flow: no successful /files/view response captured");
+    const ctOk = /text\/html/.test(viewHit.contentType);
+    const inlineOk = /inline/.test(viewHit.disposition);
+    const cspOk = /sandbox/.test(viewHit.csp);
+    const nosniffOk = /nosniff/i.test(viewHit.nosniff);
+    if (!ctOk || !inlineOk || !cspOk || !nosniffOk) {
+      throw new Error(`html-view flow: /files/view headers unexpected (type=${viewHit.contentType} disposition=${viewHit.disposition} csp=${viewHit.csp} nosniff=${viewHit.nosniff})`);
+    }
+    flow.viewHeaders = { contentType: viewHit.contentType, disposition: viewHit.disposition, csp: viewHit.csp };
+    await delay(500);
+    await screenshot(c, "files-html-view.png");
+
+    // "Open in new tab": click the real link with trusted input events (a
+    // scripted a.click() is not a user gesture and the popup blocker can eat
+    // the tab), then find the resulting page target.
+    const tabPt = await evalJs(
+      c,
+      `(() => { const a = document.querySelector('a[aria-label="Open HTML in new tab"]'); if (!a) return null; const r = a.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    );
+    if (!tabPt) throw new Error("html-view flow: Open HTML in new tab link missing");
+    await c.send("Input.dispatchMouseEvent", { type: "mousePressed", x: tabPt.x, y: tabPt.y, button: "left", clickCount: 1 });
+    await c.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: tabPt.x, y: tabPt.y, button: "left", clickCount: 1 });
+    let newTab = null;
+    for (const deadline = Date.now() + 10000; Date.now() < deadline && !newTab;) {
+      try {
+        const targets = await httpJson("/json/list");
+        newTab = targets.find(
+          (t) => t.type === "page" && (t.url ?? "").includes("/files/view") && t.id !== tab.id && !createdTabs.includes(t.id),
+        );
+        if (newTab) extraTabs.push(newTab.id);
+      } catch { /* CDP list may be briefly unavailable mid-open */ }
+      if (!newTab) await delay(300);
+    }
+    if (!newTab) {
+      log("  html-view flow: new tab from click not observed — verifying the direct link in a fresh tab instead");
+      newTab = await openTab(`${API}/files/view?scope=${encodeURIComponent(flow.scope)}&path=${encodeURIComponent(file)}`);
+    }
+    const t2 = new CDP(newTab.webSocketDebuggerUrl ?? newTab.wsUrl);
+    await t2.open();
+    try {
+      await t2.send("Page.enable");
+      await t2.send("Runtime.enable");
+      const bodySeen = await waitFor(
+        t2,
+        `document.body.innerText.includes(${JSON.stringify(marker)}) && document.body.innerText.includes("viewed-by-link")`,
+        20000,
+        400,
+        "new-tab html render",
+      );
+      if (!bodySeen) throw new Error("html-view flow: marker never rendered in the new tab");
+      const titleOk = await waitFor(
+        t2,
+        `document.title.includes(${JSON.stringify(`HTML view E2E ${stamp}`)})`,
+        10000,
+        400,
+        "new-tab html title",
+      );
+      if (!titleOk) throw new Error("html-view flow: new tab title not rendered");
+      await screenshot(t2, "files-html-tab.png");
+    } finally {
+      t2.close();
+    }
+    flow.newTabVerified = true;
+    flow.steps.push("opened-html-in-new-tab");
+
+    // Back in the app: close the in-app viewer, then delete via the UI.
+    const viewerClosed = await evalJs(c, jsClick("Close", true));
+    if (!viewerClosed) throw new Error("html-view flow: Close button missing");
+    const delClicked = await evalJs(c, rowBtnExpr("view.html", "Delete"));
+    if (!delClicked) throw new Error("html-view flow: Delete button missing");
+    const fileGone = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-name="view.html"]`)})`,
+      15000,
+      500,
+      "view.html deleted",
+    );
+    if (!fileGone) throw new Error("html-view flow: view.html still listed");
+    flow.steps.push("deleted-view.html");
+
+    const back = await evalJs(c, `(() => {
+      const btns = [...document.querySelectorAll('button[class*="crumbLink"]')];
+      const b = btns.find((x) => x.textContent.trim() === "root");
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!back) throw new Error("html-view flow: breadcrumb root missing");
+    const folderAgain = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)})`,
+      15000,
+      500,
+      "html-view folder at root",
+    );
+    if (!folderAgain) throw new Error("html-view flow: fixture folder not listed at root");
+    const delFolder = await evalJs(c, rowBtnExpr(folder, "Delete"));
+    if (!delFolder) throw new Error("html-view flow: folder Delete missing");
+    const folderGone = await waitFor(
+      c,
+      `!document.querySelector(${JSON.stringify(`[data-name="${folder}"]`)})`,
+      15000,
+      500,
+      "html-view folder deleted",
+    );
+    if (!folderGone) throw new Error("html-view flow: fixture folder still listed");
+    await screenshot(c, "files-html-clean.png");
+
+    flow.result = { createdViaUi: true, iframeVerified: true, newTabVerified: true, deletedViaUi: true };
+    flow.timings.elapsedMs = Date.now() - started;
+    log(`  html-view journey done in ${flow.timings.elapsedMs}ms`);
+    return { url, tabInfo: { id: tab.id, created: tab.created }, flow, errors: sink };
+  } finally {
+    c.close();
+    for (const id of extraTabs) {
+      const ok = await fetch(`${BASE}/json/close/${id}`, { method: "GET" })
+        .then((r) => r.ok)
+        .catch(() => false);
+      if (!ok) log(`  warn: could not close html-view tab ${id}`);
+    }
+  }
+}
+
+/** Server-side cleanup + verification for the HTML-view journey. */
+async function htmlCleanup(flow) {
+  if (!flow?.scope || !flow?.folder) return "none";
+  const scope = flow.scope;
+  const del = async (rel) => {
+    const r = await fetch(
+      `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(rel)}`,
+      { method: "DELETE" },
+    );
+    if (r.status >= 400 && r.status !== 404) {
+      throw new Error(`delete ${rel} -> HTTP ${r.status}`);
+    }
+  };
+  try {
+    await del(flow.file || `${flow.folder}/view.html`);
+    await del(flow.folder);
+    const res = await fetch(`${API}/files/list?scope=${encodeURIComponent(scope)}&path=`);
+    if (!res.ok) throw new Error(`list -> HTTP ${res.status}`);
+    const body = await res.json();
+    const leftovers = (body.entries ?? []).map((e) => e.name).filter((n) => n === flow.folder);
+    if (leftovers.length) {
+      log(`  cleanup: html-view leftover(s) [${leftovers.join(", ")}]`);
+      return `error: leftover ${leftovers.join(", ")}`;
+    }
+    log("  cleanup: html-view removed, verified clean");
+    return "clean";
+  } catch (err) {
+    log(`  cleanup FAILED: ${err.message}`);
+    return `error: ${err.message}`;
+  }
+}
+
 /** PostgreSQL helpers for bucket fixtures. Buckets expose no delete API by
  *  design (read-only), so browser-E2E fixtures are removed from the compose DB
  *  directly. These require the docker CLI + the `fmcv-db` container (the app
@@ -2701,7 +2991,7 @@ async function skillsCleanup(flow) {
  *  channel deletion; any still-present fixture folder is reported, not
  *  silently removed (the read-only project API cannot force a delete). */
 async function staleSweep() {
-  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], skills: [], projectFolders: [], errors: [] };
+  const result = { channels: [], sessions: [], connections: [], crons: [], buckets: [], skills: [], files: [], projectFolders: [], errors: [] };
   const isFixture = (name) =>
     ["browser-e2e-", "e2e-settings-", "e2e-auto-", "e2e-session-", "e2e-status-"].some((p) =>
       String(name ?? "").startsWith(p),
@@ -2821,11 +3111,65 @@ async function staleSweep() {
   try {
     const res = await fetch(`${API}/agent/workspaces`);
     if (!res.ok) throw new Error(`workspaces -> HTTP ${res.status}`);
+    // Remove file-manager fixtures left by interrupted files/html journeys.
+    const ws = await fetch(`${API}/agent/workspaces`);
+    if (ws.ok) {
+      const wsBody = await ws.json();
+      const agent = Array.isArray(wsBody.agents) && wsBody.agents[0]?.name;
+      if (agent) {
+        const listRes = await fetch(`${API}/files/list?scope=${encodeURIComponent(`agent:${agent}`)}&path=`);
+        if (listRes.ok) {
+          const scope = `agent:${agent}`;
+          const listing = await listRes.json();
+          const isFixtureFolder = (n) =>
+            String(n).startsWith("browser-e2e-files-") || String(n).startsWith("browser-e2e-html-");
+          const isFixtureFile = (n) => String(n).startsWith(".dot-");
+          const del = async (rel) => {
+            const r = await fetch(
+              `${API}/files/delete?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(rel)}`,
+              { method: "DELETE" },
+            );
+            if (r.status >= 400 && r.status !== 404) {
+              throw new Error(`delete files fixture ${rel} -> HTTP ${r.status}`);
+            }
+          };
+          // The API refuses to delete a non-empty directory, so empty any
+          // fixture folder before removing it (recursively for safety).
+          const removeFolder = async (name) => {
+            const inner = await fetch(
+              `${API}/files/list?scope=${encodeURIComponent(scope)}&path=${encodeURIComponent(name)}`,
+            );
+            if (inner.ok) {
+              const innerBody = await inner.json();
+              for (const e of innerBody.entries ?? []) {
+                if (e.type === "directory") await removeFolder(`${name}/${e.name}`);
+                else await del(`${name}/${e.name}`);
+              }
+            }
+            await del(name);
+          };
+          result.files = [];
+          for (const e of listing.entries ?? []) {
+            const n = String(e.name ?? "");
+            if (isFixtureFile(n)) {
+              await del(n);
+              result.files.push(n);
+            } else if (isFixtureFolder(n)) {
+              await removeFolder(n);
+              result.files.push(n);
+            }
+          }
+        }
+      }
+    }
     const body = await res.json();
     const projects = Array.isArray(body.projects) ? body.projects : [];
     for (const pr of projects) {
       const name = String(pr?.name ?? pr ?? "");
       if (isFixture(name)) result.projectFolders.push(name);
+    }
+    if (result.files.length) {
+      log(`  stale sweep: deleted ${result.files.length} files fixture(s) [${result.files.join(", ")}]`);
     }
     if (result.projectFolders.length) {
       log(`  stale sweep: leftover fixture project folder(s) [${result.projectFolders.join(", ")}]`);
@@ -3851,6 +4195,8 @@ async function main() {
     report.sessionsFlow.cleanup = await cleanupSessions(report.sessionsFlow.flow);
     report.filesFlow = await filesFlow();
     report.filesFlow.cleanup = await filesCleanup(report.filesFlow.flow);
+    report.htmlFlow = await htmlFlow();
+    report.htmlFlow.cleanup = await htmlCleanup(report.htmlFlow.flow);
     report.bucketsFlow = await bucketsFlow();
     report.bucketsFlow.cleanup = await bucketsCleanup(report.bucketsFlow.flow);
     report.cronFlow = await cronFlow();
@@ -3959,6 +4305,22 @@ async function main() {
   }
   const filesErrs = errorCount(ffl ? ffl.errors : {});
   if (filesErrs > 0) failures.push(`files flow: ${filesErrs} console/network error(s)`);
+
+  const hfl = report.htmlFlow;
+  if (
+    !hfl ||
+    !hfl.flow.result?.createdViaUi ||
+    !hfl.flow.result?.iframeVerified ||
+    !hfl.flow.result?.newTabVerified ||
+    !hfl.flow.result?.deletedViaUi
+  ) {
+    failures.push(`html-view flow: create/iframe/new-tab/delete not verified (${JSON.stringify(hfl && hfl.flow)})`);
+  }
+  if (hfl && hfl.cleanup !== "clean") {
+    failures.push(`html-view flow: cleanup not verified (${hfl.cleanup})`);
+  }
+  const htmlErrs = errorCount(hfl ? hfl.errors : {});
+  if (htmlErrs > 0) failures.push(`html-view flow: ${htmlErrs} console/network error(s)`);
 
   const bfl = report.bucketsFlow;
   if (
