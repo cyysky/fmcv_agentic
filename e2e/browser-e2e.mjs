@@ -752,6 +752,18 @@ async function agentChannelFlow() {
     log(`  agent terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
     const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
     flow.feedSnippet = feed.slice(0, 600);
+    // Round 89 guard: the channel feed must render local-time timestamps via
+    // the shared formatTime helper, never raw UTC ISO strings.
+    if (feed !== "NO FEED") {
+      const rawIsoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/m;
+      const localTimestamp = /^\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2}\s*(?:AM|PM)/m;
+      if (rawIsoTimestamp.test(feed)) {
+        throw new Error("agent flow: channel feed rendered raw UTC ISO timestamps (expected shared local-time formatter)");
+      }
+      if (!localTimestamp.test(feed)) {
+        throw new Error("agent flow: channel feed rendered no local-time timestamps (expected shared local-time formatter)");
+      }
+    }
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
     c.close();
