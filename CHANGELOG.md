@@ -1,3 +1,33 @@
+## Round 2026-08-09 — autonomous iteration round 129 (tag `round-129`)
+
+Round 128's focus #1: refresh the enabled-mode browser E2E on the rebuilt
+backend image so no E2E report is stale.
+
+### Changed
+- **Enabled-mode browser E2E re-run on the rebuilt image** — full 13-flow
+  run green with zero console/network/HTTP errors; webtools recorded
+  `provider=bing` in `auto` mode (live DDG bot-wall + Bing RSS fallback
+  still working). `e2e/report-enabled.json` + `e2e/report.json` refreshed;
+  all three browser reports (enabled `auto`, API-only `duckduckgo`,
+  API-only `bing`) now come from the image that actually contains the
+  `WEB_SEARCH_PROVIDER` feature.
+
+### Test status
+- Backend unit: **16 suites / 328 tests passed** (no source changes this
+  round).
+- Browser E2E: **3/3 fresh reports green** — enabled `auto`
+  (`provider=bing`), API-only pinned `duckduckgo` (`provider=duckduckgo
+  (expected duckduckgo)`), API-only pinned `bing` (`provider=bing
+  (expected bing)`).
+- Full gate: Round 127's `verify --build --api-e2e` green result stands
+  (no runtime code changed since).
+
+### Known issues / open tickets
+- **Closed** (accepted environmental limitation) — Brave/DDG captchas on
+  datacenter IPs; the Bing RSS fallback is proven in unit + browser E2E and
+  is the intended mitigation. No action remains within the project's
+  control.
+
 ## Round 2026-08-09 — autonomous iteration round 128 (tag `round-128`)
 
 Round 127's focus #1: prove the pinned `duckduckgo` web-search path through
