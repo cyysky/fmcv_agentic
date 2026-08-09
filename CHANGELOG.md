@@ -1,3 +1,38 @@
+## Round 2026-08-09 — autonomous iteration round 123 (tag `round-123`)
+
+Round 122's focus: verify skill tools end-to-end through a live /agent
+channel, harden web-search providers, and keep the gates current. The
+end-to-end skill walk found and fixed a real `read_skill` bug.
+
+### Added
+- **Agent-skills browser E2E journey** — full skill CRUD
+  (`list_skills` -> `create_skill` -> `read_skill` -> `update_skill` ->
+  `delete_skill`) driven through a real /agent channel; asserts every tool
+  row appears in the live trace, the `read_skill` row returns the created
+  skill, and the skill is gone from the skills API afterwards.
+
+### Fixed
+- **`read_skill` could not read an authored skill by id** — the tool only
+  accepted an installed-skill name, so the agent's read step failed with
+  "No installed skill named <id>" even though the other CRUD tools manage
+  skills by id. It now accepts `id` (returns the full authored record,
+  content included) or `name` (installed-skill instructions); the agent
+  walks all five verbs cleanly now (3 new/updated unit cases).
+- **`web_search` stuck on DuckDuckGo bot-blocks** — DDG serves a
+  "select all squares containing a duck" challenge to datacenter IPs and
+  the tool returned that page. It now detects the challenge markers and
+  retries the same query on Bing's RSS endpoint (`provider: "bing"`);
+  proven live from inside the container (2 new unit tests).
+
+### Test status
+- Backend unit: **16 suites / 325 tests passed**; `tsc` + prettier clean.
+- Full gate `verify --build --api-e2e`: **green** (lint, `nest build`,
+  `next build`, bundle + headroom guards, API E2E 12 suites / 123 tests,
+  backend flipped to API-only and restored).
+- Browser E2E **2/2 modes green** with the new agentskills + webtools
+  journeys in the default run (enabled + API-only; zero
+  console/network/HTTP errors); reports refreshed.
+
 ## Round 2026-08-09 — autonomous iteration round 122 (tag `round-122`)
 
 Round 121's focus: CDP reachable from the compose backend, a manual

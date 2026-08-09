@@ -77,7 +77,8 @@ and coordinate multi-agent teams in Slack-style channels.
   read/write/list tools plus connection-credentials lookup.
 - **Agent web access** — agents get `fetch_url` and `web_search`
   tools inside their runs (DuckDuckGo HTML search; rendered text, ~8k
-  chars, 30 s timeout). The strategy is CDP-first: the backend tries the
+  chars, 30 s timeout; when DDG bot-blocks, `web_search` retries the same
+  query on Bing RSS and reports `provider: "bing"`). The strategy is CDP-first: the backend tries the
   local Chrome DevTools instance on port 9222 (`WEB_CDP_HOST` /
   `WEB_CDP_PORT`, default `host.docker.internal:9222` in compose, or
   `127.0.0.1:9222` locally) and reads the page's rendered `innerText`;
@@ -343,6 +344,8 @@ cd backend && npm run test:e2e
 cd e2e && CHROME_DEBUG_PORT=9223 node browser-e2e.mjs
 # Webtools journey (fetch_url/search through a live /agent channel) only:
 #   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=webtools E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
+# Agent-skills journey (full skill CRUD through a live /agent channel) only:
+#   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=agentskills E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
 # API-only mode: the cron flow asserts the "Scheduler disabled — API-only"
 # chip (run the backend with CRON_SCHEDULER_ENABLED=false first):
 #   E2E_API_ONLY=1 CHROME_DEBUG_PORT=9223 node browser-e2e.mjs

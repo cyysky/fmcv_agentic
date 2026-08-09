@@ -5,14 +5,14 @@
   ],
   "browser": "Chrome/151.0.7922.71",
   "app": "http://localhost:3333",
-  "ranAt": "2026-08-09T03:09:55.036Z",
+  "ranAt": "2026-08-09T03:24:20.379Z",
   "routes": [
     {
       "route": "home",
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "3E798BD2DA622F7174E90AB8C4B8ED1B",
+        "id": "14D48C2381D70A746A8152700C8DEFB1",
         "created": true
       },
       "checks": {
@@ -42,7 +42,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "1792629DBD4508C4B3903099A459284F",
+        "id": "69EDF36ADCCCBEBB76753187E4889FF2",
         "created": true
       },
       "checks": {
@@ -67,7 +67,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "639D4243464D119DF4176145EBBE20F4",
+        "id": "9FC90189819E0D2E5A489308A9D490ED",
         "created": true
       },
       "checks": {
@@ -93,7 +93,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "93C390245C1B52C54213844C551F99D5",
+        "id": "474F7728245AF166C93E86A9B98EC9DD",
         "created": true
       },
       "checks": {
@@ -120,7 +120,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "0EEB9D98D4F64F4669E5E9DF41DC8F13",
+        "id": "47FD0DE6F8FBC97834E6F5184907709C",
         "created": true
       },
       "checks": {
@@ -147,7 +147,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "B47866CD2CFD64C42085695053A9E1B3",
+        "id": "4712D790F639695C243AF412B0725695",
         "created": true
       },
       "checks": {
@@ -173,7 +173,7 @@
       "url": "http://localhost:3333/buckets",
       "docTitle": "Buckets - FMCV Agentic",
       "tabInfo": {
-        "id": "1E7F81C47969D87E7B35F6529F5F693C",
+        "id": "F947888D25E8D0BDBACBD4535A4C9CC2",
         "created": true
       },
       "checks": {
@@ -197,7 +197,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "E8E13B6D2C52073635FB3ECD94624C53",
+        "id": "52AD2A1DD35D58CE755E9B18D406EEB0",
         "created": true
       },
       "checks": {
@@ -224,7 +224,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "2DD9FFC14E9427D757263652AB66B48C",
+        "id": "6DF6AAF7F805AD857A05CD3F7C7003CD",
         "created": true
       },
       "checks": {
@@ -250,7 +250,7 @@
       "url": "http://localhost:3333/cron",
       "docTitle": "Cron - FMCV Agentic",
       "tabInfo": {
-        "id": "1F5D1FCC1E0B984B35796CFEBC350C61",
+        "id": "A743139AF05297EE94D7B9A7275AA66B",
         "created": true
       },
       "checks": {
@@ -274,7 +274,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "58DB841527E08C390619BACBC6BFB31D",
+        "id": "AFD12D9618068A59C57B6E20C905D9AB",
         "created": true
       },
       "checks": {
@@ -301,7 +301,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "5C5490EAE46A69B0FFE03ABCD249FBB5",
+        "id": "9892D082EF4DD95D1635B874C7006E15",
         "created": true
       },
       "checks": {
@@ -326,7 +326,7 @@
       "url": "http://localhost:3333/skills",
       "docTitle": "Skills - FMCV Agentic",
       "tabInfo": {
-        "id": "20B470D77F01F45EBA5CE26501235462",
+        "id": "916195CDD606D9F428A47D7FEEAD983E",
         "created": true
       },
       "checks": {
@@ -350,7 +350,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "6CEBF4264C6903D9EC0BE9EF5532F594",
+        "id": "DD89B9D8AC81789DF8C152D03CB16441",
         "created": true
       },
       "checks": {
@@ -373,7 +373,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "F98971D1029A7A6BD59F6E64CAAD7076",
+        "id": "E73DBFDE3EBF70D71D6B575A410DBF24",
         "created": true
       },
       "checks": {
@@ -398,7 +398,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "B0AA19638444CC6DA83CB301D49413E5",
+        "id": "56F3336C4C9CAB8E8C3256826FED6DA6",
         "created": true
       },
       "checks": {
@@ -423,7 +423,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "999A079CAEF949BAE5F840F5298383B3",
+        "id": "7671881B376C354D0F013AC1A3B3B282",
         "created": true
       },
       "checks": {
@@ -449,7 +449,7 @@
       "url": "http://localhost:3333/",
       "docTitle": "FMCV Agentic",
       "tabInfo": {
-        "id": "B6EF4C24BF607FBDFB8B9EF3E103BDCB",
+        "id": "99EAC0C65E28BCF9788BEE07BA9C0677",
         "created": true
       },
       "checks": {
@@ -474,7 +474,7 @@
       "url": "http://localhost:3333/settings",
       "docTitle": "Settings - FMCV Agentic",
       "tabInfo": {
-        "id": "3DFCF3213881EC02C905034F3F8381B8",
+        "id": "AAC00F1E5B25CFF50B973272E3F649B6",
         "created": true
       },
       "checks": {
@@ -497,7 +497,7 @@
       "url": "http://localhost:3333/agent",
       "docTitle": "Agent - FMCV Agentic",
       "tabInfo": {
-        "id": "8246675F31D60E9FE0BFF82550081CE8",
+        "id": "A00AE63779FA4B8CA77AEEC249DF2CF1",
         "created": true
       },
       "checks": {
@@ -522,7 +522,7 @@
       "url": "http://localhost:3333/files",
       "docTitle": "Files - FMCV Agentic",
       "tabInfo": {
-        "id": "D3BB65CC6B716D6DD140C83BB61DA06D",
+        "id": "C5E434FB0F2D3D309BE343F7AAACC301",
         "created": true
       },
       "checks": {
@@ -546,10 +546,10 @@
   "flow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "27C397DA811772E575B443DA90BAA68B",
+      "id": "F74649D6211F2E6B4100A4C2AB686BEE",
       "created": true
     },
-    "channelName": "browser-e2e-msl86q4d",
+    "channelName": "browser-e2e-msl8pax7",
     "flow": {
       "steps": [
         "lazy-chunk-guard",
@@ -560,9 +560,9 @@
         "terminal-state"
       ],
       "timings": {
-        "postedAt": "2026-08-09T03:10:56.767Z",
-        "finishedAt": "2026-08-09T03:10:59.452Z",
-        "elapsedMs": 1346
+        "postedAt": "2026-08-09T03:25:23.541Z",
+        "finishedAt": "2026-08-09T03:25:26.199Z",
+        "elapsedMs": 1367
       },
       "result": {
         "answer": true,
@@ -599,8 +599,8 @@
         "resumeWindowMs": 9500,
         "ok": true
       },
-      "channelName": "browser-e2e-msl86q4d",
-      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 11:10:56 AM\nAgent coder joined #browser-e2e-msl86q4d.\nsystem\n[SYSTEM]\n8/9/2026, 11:10:56 AM\nChannel #browser-e2e-msl86q4d created.\nyou\n[USER]\n8/9/2026, 11:10:56 AM\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n8/9/2026, 11:10:59 AM\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
+      "channelName": "browser-e2e-msl8pax7",
+      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 11:25:22 AM\nAgent coder joined #browser-e2e-msl8pax7.\nsystem\n[SYSTEM]\n8/9/2026, 11:25:22 AM\nChannel #browser-e2e-msl8pax7 created.\nyou\n[USER]\n8/9/2026, 11:25:23 AM\nFollow the channel brief: write round2.md into YOUR OWN agent folder with write_own_file (args: { path: \"round2.md\", content: \"# Round 2 own-folder E2E artifact.\" }), then reply hello.\ncoder\n[AGENT]\n8/9/2026, 11:25:25 AM\nhello\n[STATUS]\nAgent started\n🔧 write_own_file\n[STEP 1]\n▸\nwrite_own_file\n{\"path\": \"round2.md\", \"content\": \"# Round 2 own-folder E2E artifact.\"}\nagent\n[ANSWER]\nhello"
     },
     "errors": {
       "netFailures": [],
@@ -635,7 +635,7 @@
   "navFlow": {
     "url": "http://localhost:3333/",
     "tabInfo": {
-      "id": "CD586BDBD7AA90EC9F6E36AAC407D836",
+      "id": "D2435C4A98D4DB556E344A8E05E552B0",
       "created": true
     },
     "flow": {
@@ -672,10 +672,10 @@
   "webtoolsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "E1407E578FB0C99C14DEA941A5BEC0D0",
+      "id": "877B608DF503CE8388609837FAC7C57D",
       "created": true
     },
-    "channelName": "browser-e2e-web-msl86ta7",
+    "channelName": "browser-e2e-web-msl8pe3n",
     "flow": {
       "steps": [
         "created-channel",
@@ -683,7 +683,7 @@
         "expanded-trace"
       ],
       "timings": {
-        "elapsedMs": 8504
+        "elapsedMs": 6922
       },
       "result": {
         "answer": true,
@@ -696,19 +696,90 @@
           },
           {
             "name": "web_search",
-            "body": "ARGS\n{\"query\": \"OpenAI\"}\nRESULT\n{\"ok\":true,\"status\":200,\"via\":\"cdp\",\"url\":\"https://html.duckduckgo.com/html/?q=OpenAI\",\"title\":\"DuckDuckGo\",\"text\":\"\\nDuckDuckGo\\n\\n\\nUnfortunately, bots use DuckDuckGo too.\\nPlease complete the following challenge to confirm this search was made by a human.\\nSelect all squares containing a duck:\\nSubmit\\n\\nImages not loading?\\n\\n\"}"
+            "body": "ARGS\n{\"query\": \"OpenAI\"}\nRESULT\n{\"ok\":true,\"status\":200,\"via\":\"cdp\",\"url\":\"https://www.bing.com/search?q=OpenAI&format=rss\",\"text\":\"This XML file does not appear to have any style information associated with it. The document tree is shown below.\\n\\n<rss version=\\\"2.0\\\">\\n<channel>\\n<title>Bing: OpenAI</title>\\n<link>http://www.bing.com:80/search?q=OpenAI</link>\\n<description>Search results</description>\\n<image>\\n<url>http://www.bing.com:80/s/a/rsslogo.gif</url>\\n<title>OpenAI</title>\\n<link>http://www.bing.com:80/search?q=OpenAI</link>\\n</image>\\n<copyright>Copyright © 2026 Microsoft. All rights reserved. These XML results may not be used, reproduced or transmitted in any manner or for any purpose other than rendering Bing results within an RSS aggregator for your personal, non-commercial use. Any other use of these results requires express written permission from Microsoft Corporation. By accessing this web page or using these results in any manner whatsoever, you agree to be bound by the foregoing restrictions.</copyright>\\n<item>\\n<title>OpenAI | Research & Deployment</title>\\n<link>https://openai.com/</link>\\n<description>OpenAI for business View all Choco automates food distribution with AI agents Apr 27, 2026</description>\\n<pubDate>Sat, 08 Aug 2026 17:18:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>Introducing ChatGPT - OpenAI</title>\\n<link>https://openai.com/index/chatgpt/</link>\\n<description>Iterative deployment Today’s research release of ChatGPT is the latest step in OpenAI’s iterative deployment ⁠ of increasingly safe and useful AI systems.</description>\\n<pubDate>Sat, 08 Aug 2026 09:12:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>ChatGPT: Chat, Work, Create & Code with AI</title>\\n<link>https://chatgpt.com/</link>\\n<description>Use ChatGPT to answer questions, write, create images, complete work, and code—all in one place. Get started for free or download the app.</description>\\n<pubDate>Sat, 08 Aug 2026 15:02:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>OpenAI - Wikipedia</title>\\n<link>https://en.wikipedia.org/wiki/OpenAI</link>\\n<description>The holding company OpenAI LP was owned by the nonprofit OpenAI, Inc., OpenAI employees, and investors, whereas OpenAI Global, LLC, was owned by OpenAI LP and Microsoft, the latter of which had a minority non-voting stake.</description>\\n<pubDate>Sat, 08 Aug 2026 23:24:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>OpenAI Platform</title>\\n<link>https://platform.openai.com/</link>\\n<description>Build on the OpenAI API Platform Sign up or login with an OpenAI account to build with the OpenAI API.</description>\\n<pubDate>Sat, 08 Aug 2026 15:10:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>ChatGPT | AI Chatbot to Discover, Learn & Create</title>\\n<link>https://chatgpt.com/overview/</link>\\n<description>For completing work tasks from start to finish. ChatGPT Work can create and edit docs, slide decks, spreadsheets, charts, PDFs, images, and other deliverables using the tools, context, and apps you’re already using.</description>\\n<pubDate>Sun, 09 Aug 2026 00:07:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>GPT-4 | OpenAI</title>\\n<link>https://openai.com/index/gpt-4/</link>\\n<description>More on GPT-4 Research GPT‑4 is the latest milestone in OpenAI’s effort in scaling up deep learning. View GPT‑4 research ⁠ Infrastructure GPT‑4 was trained on Microsoft Azure AI supercomputers. Azure’s AI-optimized infrastructure also allows us to deliver GPT‑4 to users around the world. Limitations</description>\\n<pubDate>Sat, 08 Aug 2026 15:17:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>API Platform | OpenAI</title>\\n<link>https://openai.com/api/</link>\\n<description>Our API platform offers our latest models and guides for safety best practices.</description>\\n<pubDate>Sat, 08 Aug 2026 15:02:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>GPT‑5 is here - OpenAI</title>\\n<link>https://openai.com/gpt-5/</link>\\n<description>GPT‑5 is smarter across the board, providing more useful responses across math, science, finance, law, and more. It’s like having a team of experts on call for whatever you want to know.</description>\\n<pubDate>Sat, 08 Aug 2026 17:04:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>About - OpenAI</title>\\n<link>https://openai.com/about/</link>\\n<description>OpenAI is an AI research and deployment company. Our mission is to ensure that artificial general intelligence benefits all of humanity.</description>\\n<pubDate>Sat, 08 Aug 2026 17:04:00 GMT</pubDate>\\n</item>\\n</channel>\\n</rss>\",\"provider\":\"bing\"}"
           }
         ],
         "fetchTrace": "ARGS\n{\"url\": \"https://example.com\"}\nRESULT\n{\"ok\":true,\"status\":200,\"via\":\"cdp\",\"url\":\"https://example.com/\",\"title\":\"Example Domain\",\"text\":\"Example Domain\\n\\nThis domain is for use in documentation examples without needing permission. Avoid use in operations.\\n\\nLearn more\"}",
-        "searchTrace": "ARGS\n{\"query\": \"OpenAI\"}\nRESULT\n{\"ok\":true,\"status\":200,\"via\":\"cdp\",\"url\":\"https://html.duckduckgo.com/html/?q=OpenAI\",\"title\":\"DuckDuckGo\",\"text\":\"\\nDuckDuckGo\\n\\n\\nUnfortunately, bots use DuckDuckGo too.\\nPlease complete the following challenge to confirm this search was made by a human.\\nSelect all squares containing a duck:\\nSubmit\\n\\nImages not loading?\\n\\n\"}",
+        "searchTrace": "ARGS\n{\"query\": \"OpenAI\"}\nRESULT\n{\"ok\":true,\"status\":200,\"via\":\"cdp\",\"url\":\"https://www.bing.com/search?q=OpenAI&format=rss\",\"text\":\"This XML file does not appear to have any style information associated with it. The document tree is shown below.\\n\\n<rss version=\\\"2.0\\\">\\n<channel>\\n<title>Bing: OpenAI</title>\\n<link>http://www.bing.com:80/search?q=OpenAI</link>\\n<description>Search results</description>\\n<image>\\n<url>http://www.bing.com:80/s/a/rsslogo.gif</url>\\n<title>OpenAI</title>\\n<link>http://www.bing.com:80/search?q=OpenAI</link>\\n</image>\\n<copyright>Copyright © 2026 Microsoft. All rights reserved. These XML results may not be used, reproduced or transmitted in any manner or for any purpose other than rendering Bing results within an RSS aggregator for your personal, non-commercial use. Any other use of these results requires express written permission from Microsoft Corporation. By accessing this web page or using these results in any manner whatsoever, you agree to be bound by the foregoing restrictions.</copyright>\\n<item>\\n<title>OpenAI | Research & Deployment</title>\\n<link>https://openai.com/</link>\\n<description>OpenAI for business View all Choco automates food distribution with AI agents Apr 27, 2026</description>\\n<pubDate>Sat, 08 Aug 2026 17:18:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>Introducing ChatGPT - OpenAI</title>\\n<link>https://openai.com/index/chatgpt/</link>\\n<description>Iterative deployment Today’s research release of ChatGPT is the latest step in OpenAI’s iterative deployment ⁠ of increasingly safe and useful AI systems.</description>\\n<pubDate>Sat, 08 Aug 2026 09:12:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>ChatGPT: Chat, Work, Create & Code with AI</title>\\n<link>https://chatgpt.com/</link>\\n<description>Use ChatGPT to answer questions, write, create images, complete work, and code—all in one place. Get started for free or download the app.</description>\\n<pubDate>Sat, 08 Aug 2026 15:02:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>OpenAI - Wikipedia</title>\\n<link>https://en.wikipedia.org/wiki/OpenAI</link>\\n<description>The holding company OpenAI LP was owned by the nonprofit OpenAI, Inc., OpenAI employees, and investors, whereas OpenAI Global, LLC, was owned by OpenAI LP and Microsoft, the latter of which had a minority non-voting stake.</description>\\n<pubDate>Sat, 08 Aug 2026 23:24:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>OpenAI Platform</title>\\n<link>https://platform.openai.com/</link>\\n<description>Build on the OpenAI API Platform Sign up or login with an OpenAI account to build with the OpenAI API.</description>\\n<pubDate>Sat, 08 Aug 2026 15:10:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>ChatGPT | AI Chatbot to Discover, Learn & Create</title>\\n<link>https://chatgpt.com/overview/</link>\\n<description>For completing work tasks from start to finish. ChatGPT Work can create and edit docs, slide decks, spreadsheets, charts, PDFs, images, and other deliverables using the tools, context, and apps you’re already using.</description>\\n<pubDate>Sun, 09 Aug 2026 00:07:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>GPT-4 | OpenAI</title>\\n<link>https://openai.com/index/gpt-4/</link>\\n<description>More on GPT-4 Research GPT‑4 is the latest milestone in OpenAI’s effort in scaling up deep learning. View GPT‑4 research ⁠ Infrastructure GPT‑4 was trained on Microsoft Azure AI supercomputers. Azure’s AI-optimized infrastructure also allows us to deliver GPT‑4 to users around the world. Limitations</description>\\n<pubDate>Sat, 08 Aug 2026 15:17:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>API Platform | OpenAI</title>\\n<link>https://openai.com/api/</link>\\n<description>Our API platform offers our latest models and guides for safety best practices.</description>\\n<pubDate>Sat, 08 Aug 2026 15:02:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>GPT‑5 is here - OpenAI</title>\\n<link>https://openai.com/gpt-5/</link>\\n<description>GPT‑5 is smarter across the board, providing more useful responses across math, science, finance, law, and more. It’s like having a team of experts on call for whatever you want to know.</description>\\n<pubDate>Sat, 08 Aug 2026 17:04:00 GMT</pubDate>\\n</item>\\n<item>\\n<title>About - OpenAI</title>\\n<link>https://openai.com/about/</link>\\n<description>OpenAI is an AI research and deployment company. Our mission is to ensure that artificial general intelligence benefits all of humanity.</description>\\n<pubDate>Sat, 08 Aug 2026 17:04:00 GMT</pubDate>\\n</item>\\n</channel>\\n</rss>\",\"provider\":\"bing\"}",
         "fetchSeen": true,
         "searchSeen": true,
         "fetchCdp": true,
         "searchCdp": true,
         "exampleTitle": true
       },
-      "channelName": "browser-e2e-web-msl86ta7",
-      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 11:11:01 AM\nAgent coder joined #browser-e2e-web-msl86ta7.\nsystem\n[SYSTEM]\n8/9/2026, 11:11:01 AM\nChannel #browser-e2e-web-msl86ta7 created.\nyou\n[USER]\n8/9/2026, 11:11:01 AM\nUse your two web tools in this exact order and report both results: (1) fetch_url on https://example.com — state the page title; (2) web_search with query 'OpenAI' — quote one result headline. Then give a one-line summary of each tool's output.\ncoder\n[AGENT]\n8/9/2026, 11:11:06 AM\nBoth tools used in order. Results:\n\n1. **fetch_url on https://example.com** — Page title: **\"Example Domain\"** (status 200). The page shows the standard example text: \"This domain is for use in documentation examples without needing permission.\"\n\n2. **web_search with query 'OpenAI'** — No result headline available: DuckDuckGo returned a bot-detection challenge page (\"Please complete the following challenge to confirm this search was made by a human\") instead of search results, so there was nothing to quote.\n\n**Summary:** fetch_url works cleanly and returned the expected \"Example Domain\" page; web_search was blocked by a CAPTCHA/bot challenge, so it produced no usable results this time.\n[STATUS]\nAgent started\n🔧 "
+      "channelName": "browser-e2e-web-msl8pe3n",
+      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 11:25:28 AM\nAgent coder joined #browser-e2e-web-msl8pe3n.\nsystem\n[SYSTEM]\n8/9/2026, 11:25:28 AM\nChannel #browser-e2e-web-msl8pe3n created.\nyou\n[USER]\n8/9/2026, 11:25:28 AM\nUse your two web tools in this exact order and report both results: (1) fetch_url on https://example.com — state the page title; (2) web_search with query 'OpenAI' — quote one result headline. Then give a one-line summary of each tool's output.\ncoder\n[AGENT]\n8/9/2026, 11:25:33 AM\nBoth web tools ran in order. Results:\n\n**(1) fetch_url → https://example.com**\n- Page title: **\"Example Domain\"**\n- Body: \"This domain is for use in documentation examples without needing permission. Avoid use in operations.\"\n\n**(2) web_search → query \"OpenAI\"**\n- One result headline (first result): **\"OpenAI | Research & Deployment\"** (openai.com)\n\n**One-line summaries:**\n- fetch_url: Fetched example.com successfully (HTTP 200) and returned the page title \"Example Domain\" with its placeholder text.\n- web_search: Returned a Bing RSS result list for \"OpenAI\", with the top headline being \"OpenAI | Research & Deployment\".\n[STATUS]\nAgent started\n🔧 fetch_url\n[STEP 1]\n▾\nfetch_url\n{\"url\": \"https://example.com\"}\nARGS\n{"
+    },
+    "errors": {
+      "netFailures": [],
+      "httpErrors": [],
+      "expectedHttp": [],
+      "consoleErrors": [],
+      "exceptions": [],
+      "logErrors": []
+    },
+    "cleanup": "deleted+agent-fixture-clean",
+    "projectPrune": {
+      "ok": true,
+      "leftovers": [],
+      "projects": [
+        "fmcv"
+      ]
+    }
+  },
+  "agentskillsFlow": {
+    "url": "http://localhost:3333/agent",
+    "tabInfo": {
+      "id": "B6B5F968162FC9445261576B9B87A654",
+      "created": true
+    },
+    "channelName": "browser-e2e-skills-msl8pka3",
+    "flow": {
+      "steps": [
+        "created-channel",
+        "posted-message",
+        "expanded-trace"
+      ],
+      "timings": {
+        "elapsedMs": 9306
+      },
+      "result": {
+        "answer": true,
+        "stopped": false,
+        "error": false,
+        "trace": [
+          {
+            "name": "list_skills",
+            "body": "ARGS\n{}\nRESULT\n[]"
+          },
+          {
+            "name": "create_skill",
+            "body": "ARGS\n{\"name\": \"e2e-agent-skill\", \"description\": \"Round 123 agent skill e2e\", \"content\": \"# Agent skill e2e\\n\\nCreated by the agent loop.\", \"installed\": false}\nRESULT\n{\"id\":\"5f289993-143a-40b9-9aa2-20569f4bfa25\",\"name\":\"e2e-agent-skill\",\"description\":\"Round 123 agent skill e2e\",\"content\":\"# Agent skill e2e\\n\\nCreated by the agent loop.\",\"installed\":false,\"createdAt\":\"2026-08-09T03:25:39.117Z\",\"updatedAt\":\"2026-08-09T03:25:39.117Z\"}"
+          },
+          {
+            "name": "read_skill",
+            "body": "ARGS\n{\"id\": \"5f289993-143a-40b9-9aa2-20569f4bfa25\"}\nRESULT\n{\"id\":\"5f289993-143a-40b9-9aa2-20569f4bfa25\",\"name\":\"e2e-agent-skill\",\"description\":\"Round 123 agent skill e2e\",\"content\":\"# Agent skill e2e\\n\\nCreated by the agent loop.\",\"installed\":false,\"createdAt\":\"2026-08-09T03:25:39.117Z\",\"updatedAt\":\"2026-08-09T03:25:39.117Z\"}"
+          },
+          {
+            "name": "update_skill",
+            "body": "ARGS\n{\"id\": \"5f289993-143a-40b9-9aa2-20569f4bfa25\", \"description\": \"Round 123 agent skill e2e (updated)\"}\nRESULT\n{\"id\":\"5f289993-143a-40b9-9aa2-20569f4bfa25\",\"name\":\"e2e-agent-skill\",\"description\":\"Round 123 agent skill e2e (updated)\",\"content\":\"# Agent skill e2e\\n\\nCreated by the agent loop.\",\"installed\":false,\"createdAt\":\"2026-08-09T03:25:39.117Z\",\"updatedAt\":\"2026-08-09T03:25:41.241Z\"}"
+          },
+          {
+            "name": "delete_skill",
+            "body": "ARGS\n{\"id\": \"5f289993-143a-40b9-9aa2-20569f4bfa25\"}\nRESULT\n{\"deleted\":true}"
+          }
+        ],
+        "listSeen": true,
+        "createSeen": true,
+        "readSeen": true,
+        "readOk": true,
+        "updateSeen": true,
+        "deleteSeen": true,
+        "skillId": "5f289993-143a-40b9-9aa2-20569f4bfa25",
+        "skillLeftover": false
+      },
+      "channelName": "browser-e2e-skills-msl8pka3",
+      "feedSnippet": "system\n[SYSTEM]\n8/9/2026, 11:25:36 AM\nAgent coder joined #browser-e2e-skills-msl8pka3.\nsystem\n[SYSTEM]\n8/9/2026, 11:25:36 AM\nChannel #browser-e2e-skills-msl8pka3 created.\nyou\n[USER]\n8/9/2026, 11:25:36 AM\nUse your five skill tools in this exact order and report each result: (1) list_skills to show existing skills; (2) create_skill with name 'e2e-agent-skill', description 'Round 123 agent skill e2e', content '# Agent skill e2e\\n\\nCreated by the agent loop.', installed false; (3) read_skill with that skill's id; (4) update_skill with that id to set description 'Round 123 agent skill e2e (updated)'; (5) delete_skill with that id. Quote the updated description before deleting.\ncoder\n[AGENT]\n8/9/2026, 11:25:43 AM\nAll five skill tools executed in order. Results:\n\n1. **list_skills** → returned `[]` (no existing skills).\n2. **create_skill** → created `e2e-agent-skill` (id `5f289993-143a-40b9-9aa2-20569f4bfa25`, description \"Round 123 agent skill e2e\", installed: false).\n3. **read_skill** → returned the full record for that id, confirming name `e2e-agent-skill`, description \"Round 123 agent skill e2e\", content \"# Agent skill e2e\\n\\nCreated by the agent loop.\", installed: false.\n4. **update_s"
     },
     "errors": {
       "netFailures": [],
@@ -730,24 +801,24 @@
   "mobileChannelFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "1F64044E128DDB6C8BD94DC2608B92DA",
+      "id": "6B60F64D8A786928126B8A7E371A5E65",
       "created": true
     },
-    "channelName": "browser-e2e-mobile-msl870ns",
+    "channelName": "browser-e2e-mobile-msl8psaw",
     "flow": {
       "steps": [
         "dashboard-layout",
         "member-debug"
       ],
       "timings": {
-        "elapsedMs": 2129
+        "elapsedMs": 2157
       },
       "result": {
         "layoutOk": true,
         "memberDebugReachable": true,
         "overflowAfterDebug": true
       },
-      "channelName": "browser-e2e-mobile-msl870ns",
+      "channelName": "browser-e2e-mobile-msl8psaw",
       "layout": {
         "noHorizontalOverflow": true,
         "stacked": true,
@@ -774,7 +845,7 @@
   "sessionsFlow": {
     "url": "http://localhost:3333/agent",
     "tabInfo": {
-      "id": "D954FD17A414369D507E9DCF428BC412",
+      "id": "2B8DA20167E9DCA2D1501C2FD08656F7",
       "created": true
     },
     "flow": {
@@ -798,15 +869,15 @@
         "connection-fixture-deleted"
       ],
       "timings": {
-        "postedAt": "2026-08-09T03:11:13.874Z",
-        "finishedAt": "2026-08-09T03:11:15.481Z",
-        "elapsedMs": 2180,
-        "connectionSentAt": "2026-08-09T03:11:19.006Z",
-        "connectionFinishedAt": "2026-08-09T03:11:19.811Z",
-        "connListSentAt": "2026-08-09T03:11:19.834Z",
-        "connListFinishedAt": "2026-08-09T03:11:20.641Z",
-        "overrideSentAt": "2026-08-09T03:11:20.763Z",
-        "overrideFinishedAt": "2026-08-09T03:11:21.567Z"
+        "postedAt": "2026-08-09T03:25:49.454Z",
+        "finishedAt": "2026-08-09T03:25:51.062Z",
+        "elapsedMs": 2177,
+        "connectionSentAt": "2026-08-09T03:25:54.548Z",
+        "connectionFinishedAt": "2026-08-09T03:25:55.351Z",
+        "connListSentAt": "2026-08-09T03:25:55.362Z",
+        "connListFinishedAt": "2026-08-09T03:25:56.164Z",
+        "overrideSentAt": "2026-08-09T03:25:56.283Z",
+        "overrideFinishedAt": "2026-08-09T03:25:57.087Z"
       },
       "result": {
         "persisted": true,
@@ -822,10 +893,10 @@
         "fixtureModel": "ds4-flash",
         "connListNotCatalog": true,
         "connListOptionSeen": true,
-        "connListModel": "e2e-conn-list-msl872ho",
+        "connListModel": "e2e-conn-list-msl8pu3i",
         "connListModelSentOnConverse": true,
         "connListUpstreamHit": true,
-        "connListUpstreamModel": "e2e-conn-list-msl872ho",
+        "connListUpstreamModel": "e2e-conn-list-msl8pu3i",
         "connListUpstreamAuthOk": true,
         "connListReplySeen": true,
         "connectionReplySeen": true,
@@ -844,27 +915,27 @@
         "connectionCleanup": "deleted"
       },
       "fixtureId": null,
-      "fixtureName": "e2e-session-msl872ho",
+      "fixtureName": "e2e-session-msl8pu3i",
       "fixtureModel": "ds4-flash",
       "fixtureLive": true,
       "fixtureModels": [
-        "e2e-conn-list-msl872ho"
+        "e2e-conn-list-msl8pu3i"
       ],
-      "createdAt": "2026-08-09T03:11:13.151Z",
-      "sentText": "Hello from sessions E2E (msl873vk)",
+      "createdAt": "2026-08-09T03:25:48.729Z",
+      "sentText": "Hello from sessions E2E (msl8pvh6)",
       "answerSeen": true,
-      "threadSnippet": "YOU\nHello from sessions E2E (msl873vk)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help.\n\nI can assist with things like:\n- **Workspace files** — read/write files in your agent folder or shared projects\n- **Web research** — search and fetch pages\n- **Skills** — create, install, and manage reusable skills\n- **Scheduled jobs** — set up and manage cron jobs\n\nWhat would you like to do?",
+      "threadSnippet": "YOU\nHello from sessions E2E (msl8pvh6)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. What can I do for you today?",
       "autoTitleSeen": true,
-      "renamedTitle": "Renamed msl875na",
+      "renamedTitle": "Renamed msl8px8v",
       "historySeen": true,
       "titleAfterReload": true,
       "connListNotCatalog": true,
       "connectionSelected": true,
       "modelDeferredToConnection": true,
       "connectionNoteShown": true,
-      "connectionMessage": "Via saved connection (msl877u6)",
+      "connectionMessage": "Via saved connection (msl8pzev)",
       "connectionReplyError": false,
-      "connectionThreadSnippet": "YOU\nHello from sessions E2E (msl873vk)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help.\n\nI can assist with things like:\n- **Workspace files** — read/write files in your agent folder or shared projects\n- **Web research** — search and fetch pages\n- **Skills** — create, install, and manage reusable ",
+      "connectionThreadSnippet": "YOU\nHello from sessions E2E (msl8pvh6)\nAGENT\nHello! 👋 I'm FMCC Base Agent, ready to help. What can I do for you today?\nYOU\nVia saved connection (msl8pzev)\nAGENT\nConnection fixture reply OK",
       "upstreamHit": true,
       "upstreamModel": "ds4-flash",
       "upstreamAuthOk": true,
@@ -872,11 +943,11 @@
       "connectionReplySeen": true,
       "connectionIdSent": true,
       "modelOmittedFromConverse": true,
-      "converseUrl": "http://10.0.151.7:5555/api/agent/sessions/e5bd7a69-54a1-4d97-9b0c-3b55ffab9aaa/converse",
+      "converseUrl": "http://10.0.151.7:5555/api/agent/sessions/8e8b29df-2a94-42ff-8ebe-2fca3ba3105d/converse",
       "connListOptionSeen": true,
-      "connListMessage": "Via connection model list (msl878jq)",
+      "connListMessage": "Via connection model list (msl8q048)",
       "connListUpstreamHit": true,
-      "connListUpstreamModel": "e2e-conn-list-msl872ho",
+      "connListUpstreamModel": "e2e-conn-list-msl8pu3i",
       "connListUpstreamAuthOk": true,
       "connListReplySeen": true,
       "connListModelSentOnConverse": true,
@@ -904,22 +975,22 @@
   "filesFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "C944FB803AE7AFAED8EC36FDD7A957F0",
+      "id": "18BCEAD3CA43871C2926F13317E137C4",
       "created": true
     },
     "flow": {
       "steps": [
-        "created browser-e2e-files-msl87b0n/hello.txt",
-        "created .dot-msl87b0n",
+        "created browser-e2e-files-msl8q2jw/hello.txt",
+        "created .dot-msl8q2jw",
         "root-lists-folder-and-dotfile",
         "navigated-into-folder",
         "downloaded-hello.txt",
         "deleted-hello.txt",
-        "deleted browser-e2e-files-msl87b0n",
-        "deleted .dot-msl87b0n"
+        "deleted browser-e2e-files-msl8q2jw",
+        "deleted .dot-msl8q2jw"
       ],
       "timings": {
-        "elapsedMs": 5615
+        "elapsedMs": 5566
       },
       "result": {
         "created": true,
@@ -927,11 +998,11 @@
         "deleted": true
       },
       "scope": "agent:coder",
-      "createdAt": "2026-08-09T03:11:22.614Z",
-      "folder": "browser-e2e-files-msl87b0n",
-      "dotfile": ".dot-msl87b0n",
-      "file": "browser-e2e-files-msl87b0n/hello.txt",
-      "content": "hello from files e2e msl87b0n",
+      "createdAt": "2026-08-09T03:25:58.107Z",
+      "folder": "browser-e2e-files-msl8q2jw",
+      "dotfile": ".dot-msl8q2jw",
+      "file": "browser-e2e-files-msl8q2jw/hello.txt",
+      "content": "hello from files e2e msl8q2jw",
       "contentSeen": true,
       "realDownload": "ok",
       "downloadVerified": true,
@@ -954,7 +1025,7 @@
   "htmlFlow": {
     "url": "http://localhost:3333/files",
     "tabInfo": {
-      "id": "F1BAE9752FCF6369A2750D98B88E1920",
+      "id": "57090D46CEDEAF0B7FD8E95B76A2B5CB",
       "created": true
     },
     "flow": {
@@ -965,7 +1036,7 @@
         "deleted-view.html"
       ],
       "timings": {
-        "elapsedMs": 6489
+        "elapsedMs": 4082
       },
       "result": {
         "createdViaUi": true,
@@ -974,16 +1045,16 @@
         "deletedViaUi": true
       },
       "scope": "agent:coder",
-      "folder": "browser-e2e-html-msl87fw6",
-      "file": "browser-e2e-html-msl87fw6/view.html",
-      "marker": "html-view-msl87fw6",
-      "content": "<!doctype html><html><head><meta charset=\"utf-8\"><title>HTML view E2E msl87fw6</title></head><body><h1 id=\"marker\">html-view-msl87fw6</h1><p>viewed-by-link</p></body></html>",
+      "folder": "browser-e2e-html-msl8q7bj",
+      "file": "browser-e2e-html-msl8q7bj/view.html",
+      "marker": "html-view-msl8q7bj",
+      "content": "<!doctype html><html><head><meta charset=\"utf-8\"><title>HTML view E2E msl8q7bj</title></head><body><h1 id=\"marker\">html-view-msl8q7bj</h1><p>viewed-by-link</p></body></html>",
       "viewHeaders": {
         "contentType": "text/html; charset=utf-8",
         "disposition": "inline; filename=\"view.html\"",
         "csp": "sandbox"
       },
-      "proxyHref": "http://localhost:3333/api/files/view?scope=agent%3Acoder&path=browser-e2e-html-msl87fw6%2Fview.html",
+      "proxyHref": "http://localhost:3333/api/files/view?scope=agent%3Acoder&path=browser-e2e-html-msl8q7bj%2Fview.html",
       "newTabVerified": true
     },
     "errors": {
@@ -999,7 +1070,7 @@
   "bucketsFlow": {
     "url": "http://localhost:3333/buckets",
     "tabInfo": {
-      "id": "1FA5A963598B66FA953471BDB5392664",
+      "id": "197EE82109B0871EB906FB65786C21D4",
       "created": true
     },
     "flow": {
@@ -1013,7 +1084,7 @@
         "deleted-bucket"
       ],
       "timings": {
-        "elapsedMs": 6976
+        "elapsedMs": 7018
       },
       "result": {
         "createdViaUi": true,
@@ -1025,15 +1096,15 @@
         "renamedViaUi": true,
         "deletedViaUi": true
       },
-      "bucket": "browser-e2e-bucket-msl87l3d",
-      "docName": "notes-msl87l3d.txt",
-      "docBody": "hello from buckets e2e msl87l3d",
+      "bucket": "browser-e2e-bucket-msl8qamy",
+      "docName": "notes-msl8qamy.txt",
+      "docBody": "hello from buckets e2e msl8qamy",
       "scope": "agent:coder",
       "duplicateRejected": true,
       "uploadedViaUi": true,
       "duplicateUploadRejected": true,
       "persistedAfterReload": true,
-      "renamedBucket": "browser-e2e-bucket-msl87l3d-renamed"
+      "renamedBucket": "browser-e2e-bucket-msl8qamy-renamed"
     },
     "errors": {
       "netFailures": [],
@@ -1044,7 +1115,7 @@
           "status": 409
         },
         {
-          "url": "http://10.0.151.7:5555/api/buckets/9acb200f-64de-407e-b079-2c95882f8bd1/documents",
+          "url": "http://10.0.151.7:5555/api/buckets/0b9efaea-128a-421e-9344-6fe1c1d9656a/documents",
           "status": 409
         }
       ],
@@ -1057,7 +1128,7 @@
   "cronFlow": {
     "url": "http://localhost:3333/cron",
     "tabInfo": {
-      "id": "F5DF5D864C65E15187B7FBC7071DAB4C",
+      "id": "2064B08EDCC6FA6EF0A9C9CEAF9A9931",
       "created": true
     },
     "flow": {
@@ -1081,7 +1152,7 @@
         "deleted-job"
       ],
       "timings": {
-        "elapsedMs": 18646
+        "elapsedMs": 18554
       },
       "result": {
         "createdViaUi": true,
@@ -1099,8 +1170,8 @@
         "resumed": true,
         "deletedViaUi": true
       },
-      "jobId": "b5926d8a-9ecf-4bc2-a219-8549773e128f",
-      "jobName": "browser-e2e-cron-msl87r4c",
+      "jobId": "2f83cda2-313b-4161-b55d-71680a1da4a5",
+      "jobName": "browser-e2e-cron-msl8qgph",
       "schedulerChip": "disabled",
       "createdViaUi": true,
       "runStatus": "done",
@@ -1113,11 +1184,11 @@
       "historyJumpToNewest": true,
       "runHistoryLoadAll": true,
       "overviewSeen": true,
-      "foreignJobGroup": "e2e-list-msl87wtd",
-      "foreignJobName": "browser-e2e-cron-foreign-msl87wtd",
+      "foreignJobGroup": "e2e-list-msl8qme4",
+      "foreignJobName": "browser-e2e-cron-foreign-msl8qme4",
       "groupFilterProven": true,
-      "syntheticEventId": "browser-e2e-event-msl87z7p",
-      "syntheticEventGroup": "e2e-msl87z7p",
+      "syntheticEventId": "browser-e2e-event-msl8qp6h",
+      "syntheticEventGroup": "e2e-msl8qp6h",
       "eventWindowClarity": true,
       "overviewEventsLoadAll": true,
       "eventWindowDepth": true,
@@ -1140,7 +1211,7 @@
   "skillsFlow": {
     "url": "http://localhost:3333/skills",
     "tabInfo": {
-      "id": "3E3CD6FD877C8E5A6666DE8201182017",
+      "id": "8B6FB03ADD96F6EAAB2B913C7FB9F9D9",
       "created": true
     },
     "flow": {
@@ -1153,7 +1224,7 @@
         "deleted-skill"
       ],
       "timings": {
-        "elapsedMs": 3439
+        "elapsedMs": 3465
       },
       "result": {
         "createdViaUi": true,
@@ -1164,8 +1235,8 @@
         "reinstalledViaUi": true,
         "deletedViaUi": true
       },
-      "skillId": "6215d14c-a839-4ed6-89df-973d6d3e32af",
-      "skillName": "browser-e2e-skill-msl8866w",
+      "skillId": "ecf7214b-5b78-48dc-9040-041332ca480c",
+      "skillName": "browser-e2e-skill-msl8qvpt",
       "createdViaUi": true,
       "persistedAfterReload": true,
       "editedViaUi": true,
@@ -1215,7 +1286,7 @@
         "autoProbeUpstreamAuthOk": true,
         "autoProbeUpstreamModel": "ds4-flash",
         "autoProbeUpstreamMaxTokens": 1,
-        "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 11 ms",
+        "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 2 ms",
         "autoEditReplaysProbe": true,
         "modelsFetchStoredKeyOk": true,
         "modelsFetchStoredKeyAuthOk": true,
@@ -1224,7 +1295,7 @@
         "modelsFetchDeadGraceful": true,
         "autoProbePersistedServerSide": true,
         "autoProbePersistedAfterReload": true,
-        "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 11 ms · probed 11:12 AM",
+        "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 2 ms · probed 11:26 AM",
         "failureWithStatusMetrics": true,
         "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 5 ms",
         "failurePersistedServerSide": true,
@@ -1240,7 +1311,7 @@
       "formTestGracefulFailure": true,
       "cancelPreservedUrl": true,
       "patchBodies": [
-        "{\"displayName\":\"Renamed msl88ac8\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000,\"models\":[]}"
+        "{\"displayName\":\"Renamed msl8qzvx\",\"baseUrl\":\"http://127.0.0.1:9/v1\",\"modelName\":\"ds4-flash\",\"contextLength\":128000,\"models\":[]}"
       ],
       "keyNotSentOnPatch": true,
       "keyDisabledBeforeCheck": false,
@@ -1250,7 +1321,7 @@
       "testResultText": "Connection failed: fetch failed",
       "testGracefulFailure": true,
       "autoProbeRowSeen": true,
-      "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 11 ms",
+      "autoProbeRowText": "Connected — ds4-flash responded.\nHTTP 200 · 2 ms",
       "autoProbeBannerSeen": true,
       "autoProbeUpstreamHit": true,
       "autoProbeUpstreamAuthOk": true,
@@ -1264,7 +1335,7 @@
       "modelsFetchDeadGraceful": true,
       "autoProbePersistedServerSide": true,
       "autoProbePersistedAfterReload": true,
-      "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 11 ms · probed 11:12 AM",
+      "autoProbePersistedRowText": "Connected — ds4-flash responded.\nHTTP 200 · 2 ms · probed 11:26 AM",
       "failureWithStatusMetrics": true,
       "failureWithStatusRowText": "Upstream returned HTTP 401: {\"error\":{\"message\":\"simulated HTTP 401\"}}\nHTTP 401 · 5 ms",
       "failurePersistedServerSide": true,

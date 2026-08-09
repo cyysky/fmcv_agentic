@@ -42,7 +42,7 @@ Environment overrides:
 | `CHROME_DEBUG_PORT` | `9222`                        | CDP port                            |
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
 | `E2E_API_ONLY`      | unset                          | run the cron flow against an API-only backend (`CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend`): asserts the "Scheduler disabled — API-only" chip, the "no lease · no background firing" meta, and the overview gauge's "disabled" lease chip |
-| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `webtools`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
+| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `webtools`, `agentskills`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
 | `E2E_SHOT_DIR`      | `e2e/screenshots/<mode>`      | screenshot output dir (`enabled` or `api-only` subdir; an explicit value is used verbatim) |
 | `E2E_REPORT`        | `e2e/report.json` (+`report-<mode>.json`) | JSON report path; the mode archive `report-<mode>.json` is always written too (an explicit `E2E_REPORT` value is used verbatim as the latest mirror) |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
@@ -79,10 +79,20 @@ Environment overrides:
    must show `via: "cdp"` (proving the CDP-first path from inside the
    container, not the native-fetch fallback), and the fetch row must include
    the "Example Domain" title. The channel is deleted afterwards and the
-   `browser-e2e-web-*` project folder must be gone. Search engines may still
-   bot-block (DuckDuckGo CAPTCHA) — the assertion is the `via` provenance
-   plus the rendered title, not the result ranking.
-5. **Sessions + saved-connection journey**: on `/agent`, the script opens the
+   `browser-e2e-web-*` project folder must be gone. DuckDuckGo may still
+   bot-block (its CAPTCHA challenge); `web_search` then automatically falls
+   back to Bing RSS (`provider: "bing"`) — the assertions are the `via`
+   provenance, a real rendered page/title, and the fetch body containing
+   "Example Domain".
+5. **Agent-skills journey**: on `/agent`, a fresh `browser-e2e-skills-*`
+   channel is created through the Channels UI and the agent is told to run
+   the full skill CRUD loop in order — `list_skills`, `create_skill`
+   (`e2e-agent-skill`), `read_skill` by the returned id, `update_skill`,
+   `delete_skill`. Every tool row must appear in the live trace, the
+   `read_skill` row must actually return the created skill (not an error),
+   and afterwards the skill must be gone from the skills API. The channel is
+   deleted and the `browser-e2e-skills-*` project folder must be pruned.
+6. **Sessions + saved-connection journey**: on `/agent`, the script opens the
    Sessions tab, creates a session, posts a live converse, asserts the
    auto-title and history survive a page reload, renames the session through
    the UI, and reopens it to prove history + title persisted. It then starts
@@ -106,12 +116,12 @@ Environment overrides:
    server-side. Finally it restores the default gateway, deletes the fixture
    Connection + upstream, and asserts cleanup (`E2E_CONN_HOST` /
    `E2E_CONN_MODEL` override the fixture endpoint/model).
-5. **Files journey**: on `/files`, the script creates a nested file and a
+7. **Files journey**: on `/files`, the script creates a nested file and a
    dotfile through the UI (agent scope), verifies the root listing shows both,
    navigates into the folder, reads the file content back, deletes the file +
    folder + dotfile through the UI, and then confirms server-side removal via
    the files API (no leftovers).
-6. **HTML-view journey**: on `/files`, the script creates an
+8. **HTML-view journey**: on `/files`, the script creates an
    `view.html` fixture through the UI (agent scope), clicks **View** and
    proves the in-app sandboxed iframe preview renders the fixture, asserts
    both the iframe and the **Open in new tab** link point at the
@@ -125,7 +135,7 @@ Environment overrides:
    UI and the server-side state is verified clean. If the popup target is ever
    missed, the script falls back to opening the same proxy `href` in a fresh
    tab and still verifies the rendered document.
-7. **Settings journey**: the script creates a throwaway connection via the
+9. **Settings journey**: the script creates a throwaway connection via the
    API (with a stored key), clicks Edit and asserts the API-key field opens
    blank (so the masked preview cannot overwrite the stored secret), changes
    the URL to a dead endpoint and clicks the form's **Test Connection** button
@@ -144,7 +154,7 @@ Environment overrides:
    probe result (message + HTTP status + latency) into the form until a probed
    value changes. Both fixtures are then deleted via the API and the script
    asserts both rows disappear server-side (cleanup).
-8. **Buckets journey**: on `/buckets`, the script creates a document bucket
+10. **Buckets journey**: on `/buckets`, the script creates a document bucket
    through the UI (unique name, agent folder), proves a duplicate bucket name
    renders the in-page 409, opens the bucket, uploads a text document from a
    temp file, proves a duplicate upload 409s (documents are immutable),
@@ -155,7 +165,7 @@ Environment overrides:
    via the two-click confirm. Server-side cleanup afterwards uses the new
    `DELETE /api/buckets/:id` endpoint; the psql helpers only remain as a
    final DB verification/fallback.
-9. **Skills journey**: on `/skills`, the script creates a skill through
+11. **Skills journey**: on `/skills`, the script creates a skill through
    the UI (slug-form fixture name, description, markdown instructions) with
    the **Install now** box checked, verifies the row + Installed pill +
    success notice, reloads and proves the skill and its installed state
@@ -164,7 +174,7 @@ Environment overrides:
    stays listed), reinstalls from the row button, then deletes it with the
    two-click confirm. Fixtures are removed afterwards via the skills DELETE
    API (idempotent, verified 404).
-10. **Screenshots**: key screens (home, settings, agent, channel running,
+12. **Screenshots**: key screens (home, settings, agent, channel running,
     channel done, sessions picker/connection, files before/after,
     html-view/iframe/new-tab/clean, buckets
     created/uploaded/downloaded/reloaded, skills created/reload/edited/
@@ -172,7 +182,7 @@ Environment overrides:
     `e2e/screenshots/<mode>/` (mode = `enabled` or `api-only`, so both
     runs' screenshots can be committed side by side).
 
-11. **Mobile channel-dashboard journey**: on `/agent` emulated at 360×640,
+13. **Mobile channel-dashboard journey**: on `/agent` emulated at 360×640,
     the script creates a fixture channel (with `coder` as creator), opens the
     Channels tab and the channel row, and asserts the dashboard stacks —
     sidebar, conversation, and member/project column each fit the viewport

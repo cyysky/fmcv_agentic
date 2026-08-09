@@ -204,11 +204,13 @@ export class BaseAgentService implements OnModuleInit {
           properties: {
             id: {
               type: 'string',
-              description: 'Skill id (uuid) of an authored skill; returns the full record.',
+              description:
+                'Skill id (uuid) of an authored skill; returns the full record.',
             },
             name: {
               type: 'string',
-              description: 'Exact name of an installed skill; returns its instructions.',
+              description:
+                'Exact name of an installed skill; returns its instructions.',
             },
           },
         },
