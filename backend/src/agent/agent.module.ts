@@ -7,9 +7,10 @@ import { WorkspaceService } from './workspace.service';
 import { ChannelService } from './channel.service';
 import { ChannelJobService } from './channel-job.service';
 import { SkillsModule } from '../skills/skills.module';
+import { WebModule } from '../web/web.module';
 
 @Module({
-  imports: [ConfigModule, SkillsModule],
+  imports: [ConfigModule, SkillsModule, WebModule],
   controllers: [AgentController, ChannelController],
   providers: [
     BaseAgentService,

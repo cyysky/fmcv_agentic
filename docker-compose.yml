@@ -36,6 +36,15 @@ services:
       # Empty/absent = scheduler enabled. Set CRON_SCHEDULER_ENABLED=false
       # for an API-only node (no background firing; CRUD + Run now still work).
       - CRON_SCHEDULER_ENABLED=${CRON_SCHEDULER_ENABLED:-}
+      # Agent web access (DIRECTION items 1 + 4): try the host's CDP Chrome
+      # on 9222 first, then fall back to native fetch inside the backend.
+      - WEB_CDP_HOST=${WEB_CDP_HOST:-host.docker.internal}
+      - WEB_CDP_PORT=${WEB_CDP_PORT:-9222}
+      - WEB_FETCH_TIMEOUT_MS=${WEB_FETCH_TIMEOUT_MS:-30000}
+    extra_hosts:
+      # Resolves host.docker.internal to the Docker host so the backend can
+      # reach the host's local Chrome DevTools instance on port 9222.
+      - "host.docker.internal:host-gateway"
     volumes:
       - workspace_data:/data/workspaces
     depends_on:

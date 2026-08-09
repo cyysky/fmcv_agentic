@@ -986,6 +986,53 @@ describe('BaseAgentService skills integration', () => {
   });
 });
 
+describe('BaseAgentService web tools integration', () => {
+  it('registers fetch_url and web_search only when a web service is wired', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'fmcv-agent-webkit-'));
+    try {
+      const plain = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+      );
+      const plainNames = plain.listTools().map((t) => t.name);
+      expect(plainNames).not.toContain('fetch_url');
+      expect(plainNames).not.toContain('web_search');
+
+      const web = {
+        fetchUrl: jest.fn(async () => ({ ok: true, via: 'cdp', text: 'page' })),
+        webSearch: jest.fn(async () => ({ ok: true, via: 'cdp', text: 'hits' })),
+      };
+      const withWeb = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+        undefined,
+        web as never,
+      );
+      const names = withWeb.listTools().map((t) => t.name);
+      expect(names).toContain('fetch_url');
+      expect(names).toContain('web_search');
+
+      const fetchUrl = withWeb
+        .listTools()
+        .find((t) => t.name === 'fetch_url')!;
+      const webSearch = withWeb
+        .listTools()
+        .find((t) => t.name === 'web_search')!;
+      await fetchUrl.run({ url: 'https://example.com/doc' });
+      expect(web.fetchUrl).toHaveBeenCalledWith('https://example.com/doc');
+      await webSearch.run({ query: 'nestjs schedule docs' });
+      expect(web.webSearch).toHaveBeenCalledWith('nestjs schedule docs');
+      await expect(fetchUrl.run({})).rejects.toThrow('url must be a non-empty string');
+      await webSearch.run({ query: 42 });
+      expect(web.webSearch).toHaveBeenCalledWith('');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('BaseAgentService resilience', () => {
   it('falls back to live sessions when the persistence read fails', async () => {
     const root = await fs.mkdtemp(

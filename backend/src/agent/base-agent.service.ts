@@ -21,6 +21,8 @@ import { buildChannelTools } from './channel-tools';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import type { SkillsService } from '../skills/skills.service';
+import type { WebService } from '../web/web.service';
+import { buildWebTools } from '../web/web-tools';
 
 /**
  * Base agent for FMCC Agentic.
@@ -156,11 +158,17 @@ export class BaseAgentService implements OnModuleInit {
    *  `read_skill` tool and a system-prompt block listing installed skills. */
   private readonly skills?: SkillsService | null;
 
+  /** Optional web access (DIRECTION items 1 + 4). When injected, agents get
+   *  `fetch_url`/`web_search` tools that try local CDP (port 9222) first and
+   *  fall back to native fetch. */
+  private readonly web?: WebService | null;
+
   constructor(
     config: ConfigService,
     workspaces: WorkspaceService,
     prisma: PrismaService,
     @Optional() skills?: SkillsService,
+    @Optional() web?: WebService,
   ) {
     this.baseUrl = (
       config.get<string>('AGENT_BASE_URL', 'http://60.51.17.97:9999/v1') ?? ''
@@ -176,6 +184,10 @@ export class BaseAgentService implements OnModuleInit {
     this.workspaces = workspaces;
     this.prisma = prisma;
     this.registerTools(buildWorkspaceTools(workspaces));
+    if (web) {
+      this.web = web;
+      this.registerTools(buildWebTools(web));
+    }
     if (skills) {
       this.skills = skills;
       this.registerTool({
