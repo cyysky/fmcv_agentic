@@ -25,6 +25,14 @@ The app must be up (`docker compose up -d --build`); the script talks to the
 frontend in the browser and requires the backend API reachable from Chrome's
 network view.
 
+> Backend code changes only take effect in the browser E2E after rebuilding
+> the image — `docker compose up -d --force-recreate backend` recycles the
+> container and environment but not the compiled app. Run
+> `docker compose build backend` (or `docker compose up -d --build backend`)
+> first. The strict `E2E_EXPECT_SEARCH_PROVIDER` assertion caught exactly
+> this staleness once (Round 128): the env var was set in the container but
+> the old image silently ignored it.
+
 ## Run
 
 ```sh

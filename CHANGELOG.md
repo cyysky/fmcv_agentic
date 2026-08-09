@@ -1,3 +1,43 @@
+## Round 2026-08-09 — autonomous iteration round 128 (tag `round-128`)
+
+Round 127's focus #1: prove the pinned `duckduckgo` web-search path through
+real Chrome (closing the deterministic-fixture ticket) and keep the gates
+current.
+
+### Changed
+- **Pinned-DDG browser pass + image-staleness catch** — the first
+  pinned-`duckduckgo` API-only run **failed**: the trace recorded `bing`,
+  and `E2E_EXPECT_SEARCH_PROVIDER=duckduckgo` rejected it. Root cause:
+  `docker compose up -d --force-recreate backend` recycles the container
+  but not the image, so the container's `WEB_SEARCH_PROVIDER=duckduckgo`
+  env was ignored by the pre-feature build — Round 127's "pinned bing" pass
+  had passed for the same reason (auto fallback also yields `bing`), not
+  because the pin worked. Rebuilt the backend image (`docker compose build
+  backend`) and re-ran: **both pins now proven** through real Chrome —
+  `provider=duckduckgo (expected duckduckgo)` and `provider=bing (expected
+  bing)`, each a full 13-flow API-only run with zero console/network/HTTP
+  errors.
+- **Docs** — e2e/README now calls out that backend code changes require
+  `docker compose build backend` before browser E2E (force-recreate alone
+  is not enough); CHANGELOG + ROUND updated.
+
+### Test status
+- Backend unit: **16 suites / 328 tests passed** (Round 127's count; no
+  backend code changed this round — image rebuild + E2E only); lint/type
+  checks were green before the round and untouched source.
+- Browser E2E **API-only 2/2 pinned passes green** — `duckduckgo` then
+  `bing`, each full 13 flows, strict provider assertion active.
+- Full gate: Round 127's `verify --build --api-e2e` result stands (no
+  runtime code changed this round); backend restored to enabled mode.
+
+### Known issues / open tickets
+- **Closed — deterministic web-search fixture**: both `duckduckgo` and
+  `bing` pins are now proven end-to-end in the browser (strict assertion),
+  unit tests lock both paths offline, and round 127's sticky-image
+  pitfall is documented in e2e/README.
+- **Low — Brave captcha** once on datacenter IPs; other engines may still
+  bot-wall. Bing RSS fallback observed healthy.
+
 ## Round 2026-08-09 — autonomous iteration round 127 (tag `round-127`)
 
 Round 126's focus #1: make the web-search provider choice deterministic so
