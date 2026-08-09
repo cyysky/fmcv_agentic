@@ -1,3 +1,50 @@
+## Round 2026-08-09 — autonomous iteration round 127 (tag `round-127`)
+
+Round 126's focus #1: make the web-search provider choice deterministic so
+the webtools E2E journey no longer depends on live DuckDuckGo bot-wall
+behavior.
+
+### Changed
+- **`WEB_SEARCH_PROVIDER` override** (`backend/src/web/web.service.ts`) —
+  `auto` (default) keeps DDG-first with the Bing RSS fallback; `duckduckgo`
+  or `bing` pins exactly one provider and never silently retries on the
+  other, so the tool-trace `provider` field is deterministic. Exposed on the
+  backend service in `docker-compose.yml` (`WEB_SEARCH_PROVIDER=auto`
+  default).
+- **Unit coverage** (`web.service.spec.ts`, +3 tests): forced `bing` skips
+  DDG entirely (one tab); forced `duckduckgo` keeps a bot-walled DDG outcome
+  without a Bing retry (one tab); an unknown value degrades to `auto` with
+  the full DDG→Bing fallback (two tabs). Both provider paths plus the block
+  signal now lock deterministically offline.
+- **Strict browser assertion** (`e2e/browser-e2e.mjs`,
+  `e2e/README.md`) — `E2E_EXPECT_SEARCH_PROVIDER=duckduckgo|bing` makes the
+  webtools journey fail unless the live trace recorded exactly that
+  provider; pair it with the backend env for a fully pinned run
+  (`WEB_SEARCH_PROVIDER=bing ... docker compose up -d --force-recreate
+  backend`).
+- **Browser E2E both modes green, reports refreshed** — enabled mode on
+  `auto` recorded `provider=bing` live (DDG bot-walled, fallback fired, 13
+  flows, zero console/network/HTTP errors); API-only mode with
+  `WEB_SEARCH_PROVIDER=bing` + `E2E_EXPECT_SEARCH_PROVIDER=bing` recorded
+  `provider=bing (expected bing)` and passed all 13 flows with zero errors.
+
+### Test status
+- Backend unit: **16 suites / 328 tests passed**; lint + type checks clean.
+- Full gate `verify --build --api-e2e`: **green** — API E2E 12 suites /
+  123 tests exit cleanly, REST docs + test-count guards, `/agent` 484 KB /
+  33.6 KB headroom, backend flipped to API-only and restored to enabled.
+- Browser E2E: **2/2 modes green** (enabled `auto` + API-only pinned `bing`).
+
+### Known issues / open tickets
+- **Closed** — deterministic web-search fixture: provider choice is now
+  pinable at runtime and asserted strictly in the browser journey; unit
+  tests hold both pinned paths offline. A pinned-`duckduckgo` browser pass
+  (which would record a live bot-wall text with `provider=duckduckgo`) was
+  not run; it is optional because the assertion is the same and the DDG path
+  is unit-locked (see next focus).
+- **Low** — occasional Brave captcha on datacenter IPs; Bing RSS fallback
+  observed healthy.
+
 ## Round 2026-08-09 — autonomous iteration round 126 (tag `round-126`)
 
 Round 125's focus #2: quiet the Jest "did not exit one second after the test
