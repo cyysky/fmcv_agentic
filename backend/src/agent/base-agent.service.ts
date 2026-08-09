@@ -658,10 +658,12 @@ export class BaseAgentService implements OnModuleInit {
         `You are working in team channel #${opts.channelSlug}.`,
         `The channel owns a project folder named "${opts.channelProjectName}".`,
         `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
-        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
+        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file / save_own_binary (no agent argument needed).`,
         'You can work directly on this channel project folder with the',
-        'channel_list / channel_read / channel_write tools, and you can also work',
-        'in your own agent folder with the workspace tools. Use channel_post to',
+        'channel_list / channel_read / channel_write / channel_save_binary tools, and you can also work',
+        'in your own agent folder with the workspace tools. Use save_own_binary or',
+        'channel_save_binary to save BINARY content (PDF, image, archive, etc.) from',
+        'base64 or a URL — never fall back to saving extracted text as .md. Use channel_post to',
         'publish short updates to the channel feed so your teammates can see them.',
       ].join('\n') + (skillsBlock ? `\n\n${skillsBlock}` : '');
 
@@ -761,10 +763,12 @@ export class BaseAgentService implements OnModuleInit {
         `You are working in team channel #${opts.channelSlug}.`,
         `The channel owns a project folder named "${opts.channelProjectName}".`,
         `Your agent name is "${opts.agentName}" — your own folder is agents/${opts.agentName}.`,
-        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file (no agent argument needed).`,
+        `When asked about "your" folder or files, use list_own_workspace / read_own_file / write_own_file / save_own_binary (no agent argument needed).`,
         'You can work directly on this channel project folder with the',
-        'channel_list / channel_read / channel_write tools, and you can also work',
-        'in your own agent folder with the workspace tools. Use channel_post to',
+        'channel_list / channel_read / channel_write / channel_save_binary tools, and you can also work',
+        'in your own agent folder with the workspace tools. Use save_own_binary or',
+        'channel_save_binary to save BINARY content (PDF, image, archive, etc.) from',
+        'base64 or a URL — never fall back to saving extracted text as .md. Use channel_post to',
         'publish short updates to the channel feed so your teammates can see them.',
       ].join('\n') + (skillsBlock ? `\n\n${skillsBlock}` : '');
 

@@ -26,6 +26,11 @@
 //   3b. Web tools: through the /agent channel UI, drive fetch_url
 //      (https://example.com) + web_search and prove the live trace shows the
 //      CDP-first path (`via: "cdp"`) for both tools
+//   3c. Agent binary: through the /agent channel UI, the agent downloads the
+//      EGGROLL paper PDF and saves the real bytes with channel_save_binary
+//      (channel project folder) + save_own_binary (its own folder); both files
+//      are re-verified through the files API with %PDF magic bytes and matching
+//      byte counts; the run must never fall back to saving .md text
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
 //   5. Channel deletion prunes the per-channel project folder (verified via the
 //      workspace API — no docker/container dependency)
@@ -106,7 +111,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
 // Round 88: E2E_JOURNEYS=<comma-separated> picks which flows run (default
 // "all"). Names: routes, nav, agent, webtools, agentskills, agentcron, mobile,
-// sessions, files, html, buckets, cron, skills, settings. Skipped flows are
+// sessions, files, html, buckets, cron, skills, settings, binary. Skipped flows are
 // reported as null and their validation blocks are skipped too, so a quick
 // regression run stays green.
 // Round 92: shorthand presets expand to explicit flow lists, so quick runs
@@ -1192,6 +1197,198 @@ async function webtoolsFlow() {
       (EXPECT_SEARCH_PROVIDER ? ` (expected ${EXPECT_SEARCH_PROVIDER})` : ""),
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+
+/** Agent-binary channel journey (Round 131): drive the new binary-save tools
+ *  through a real /agent channel — the agent downloads the exact EGGROLL
+ *  paper PDF named in the DIRECTION ticket and saves the actual bytes, not
+ *  text, with channel_save_binary (channel project folder) AND
+ *  save_own_binary (its own agent folder). Proves the URL-streamed path
+ *  end-to-end: both tool rows appear in the live trace, both fixtures exist
+ *  through the files API with %PDF magic bytes, and the saved byte counts
+ *  match the on-disk downloads. */
+async function agentbinaryFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  const channelName = `browser-e2e-binary-${Date.now().toString(36)}`;
+  const projectName = channelName; // UI creates the channel with projectName = slug
+  const ownRelFile = "papers/EGGROLL_hyperscale.pdf";
+  const channelRelFile = "papers/EGGROLL_hyperscale.pdf";
+  const pdfUrl = "https://eshyperscale.github.io/imgs/paper.pdf";
+  log(`flow agentbinary -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, channelName, projectName, ownRelFile, channelRelFile };
+  const started = Date.now();
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "agentbinary ready");
+    if (!ready) throw new Error("agentbinary flow: page never loaded");
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea')}`,
+      30000,
+      600,
+      "agent composer",
+    );
+    if (!composer) throw new Error("agentbinary flow: page never rendered its composer");
+
+    // Same Channels -> New channel UI path as the other channel journeys.
+    await evalJs(c, jsClick("Channels", true));
+    await delay(400);
+    await evalJs(c, jsClick("New channel", false));
+    const modalOpen = await waitFor(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+      5000,
+      300,
+      "new-channel dialog",
+    );
+    if (!modalOpen) throw new Error("agentbinary flow: new-channel dialog did not open");
+    await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
+    await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
+    await delay(100);
+    await evalJs(c, jsClick("Create", true));
+    flow.steps.push("created-channel");
+    log(`  created channel ${channelName}`);
+
+    const composerReady = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
+      30000,
+      600,
+      "channel composer",
+    );
+    if (!composerReady) throw new Error("agentbinary flow: channel composer never appeared");
+    const msg =
+      "Download the EGGROLL paper PDF from " + pdfUrl +
+      " and save the actual BINARY file (not extracted text) with BOTH tools " +
+      "in this exact order: " +
+      "(1) channel_save_binary with path '" + channelRelFile + "' so it lands " +
+      "in this channel's project folder; " +
+      "(2) save_own_binary with path '" + ownRelFile + "' so it lands in your " +
+      "own agent folder. " +
+      "Use the url argument on both so the bytes are streamed from the server. " +
+      "Never fall back to saving extracted text as .md. " +
+      "After both saves, use channel_post to confirm the saved byte counts and paths.";
+    await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("agentbinary flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    log("  posted message; waiting for agent run");
+    await delay(1800);
+    await screenshot(c, "agentbinary-running.png");
+
+    const terminal = await waitFor(
+      c,
+      '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
+      240000,
+      800,
+      "agentbinary terminal state",
+    );
+    flow.timings.elapsedMs = Date.now() - started;
+    if (!terminal) throw new Error("agentbinary flow: no terminal state within 240s");
+    const state = await evalJs(c, `(() => {
+      const t = document.body.innerText.toUpperCase();
+      return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
+    })()`);
+    await delay(500);
+    await screenshot(c, "agentbinary-done.png");
+    flow.result = state;
+    log(`  agentbinary terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
+
+    // Expand every live tool row, then read the tool name + expanded body.
+    await evalJs(c, `(() => {
+      let clicked = 0;
+      for (const b of [...document.querySelectorAll('[class*="liveTool"]')]) {
+        if (!(b instanceof HTMLButtonElement)) continue;
+        b.click();
+        clicked += 1;
+      }
+      return clicked;
+    })()`);
+    await delay(400);
+    const trace = await evalJs(c, `(() => {
+      const rows = [...document.querySelectorAll('[class*="liveToolRow"]')];
+      return rows.map((r) => {
+        const name = r.querySelector("code")?.textContent ?? "";
+        const body = r.querySelector('[class*="liveBody"]')?.innerText ?? "";
+        return { name, body };
+      });
+    })()`);
+    const entry = (n) => (trace ?? []).find((t) => String(t.name || "").includes(n));
+    const channelEntry = entry("channel_save_binary");
+    const ownEntry = entry("save_own_binary");
+    const viaUrl = (b) => /"via":\s*"url"/.test(b);
+    const savedTrue = (b) => /"saved":\s*true/.test(b);
+    const bytesOf = (b) => {
+      const m = b.match(/"bytes":\s*(\d+)/);
+      return m ? Number(m[1]) : null;
+    };
+    flow.result.trace = trace;
+    flow.result.channelSeen = !!channelEntry;
+    flow.result.ownSeen = !!ownEntry;
+    flow.result.channelViaUrl = !!(channelEntry && viaUrl(channelEntry.body));
+    flow.result.ownViaUrl = !!(ownEntry && viaUrl(ownEntry.body));
+    flow.result.channelSavedTrue = !!(channelEntry && savedTrue(channelEntry.body));
+    flow.result.ownSavedTrue = !!(ownEntry && savedTrue(ownEntry.body));
+    flow.result.channelBytes = bytesOf(channelEntry ? channelEntry.body : "");
+    flow.result.ownBytes = bytesOf(ownEntry ? ownEntry.body : "");
+    flow.steps.push("expanded-trace");
+
+    // Prove BOTH files really exist on disk through the backend files API,
+    // with PDF magic bytes and a byte count that matches the trace.
+    flow.result.ownDownloadOk = false;
+    flow.result.ownDownloadBytes = null;
+    flow.result.ownDownloadName = null;
+    try {
+      const ownRes = await fetch(`${API}/files/download?scope=agent:coder&path=${encodeURIComponent(ownRelFile)}`);
+      if (ownRes.ok) {
+        const ownBuf = Buffer.from(await ownRes.arrayBuffer());
+        flow.result.ownDownloadOk = ownBuf.length > 5 && ownBuf.slice(0, 4).toString("latin1") === "%PDF";
+        flow.result.ownDownloadBytes = ownBuf.length;
+        flow.result.ownDownloadName = ownRes.headers.get("content-disposition") ?? "";
+      }
+    } catch (err) {
+      flow.result.ownDownloadError = String(err.message ?? err);
+    }
+    flow.result.channelDownloadOk = false;
+    flow.result.channelDownloadBytes = null;
+    flow.result.channelDownloadContentType = null;
+    try {
+      // /files/view only serves .html inline (415 for a PDF), so the binary
+      // fixture is re-downloaded byte-exact through /files/download instead.
+      const projRes = await fetch(`${API}/files/download?scope=project:${encodeURIComponent(projectName)}&path=${encodeURIComponent(channelRelFile)}`);
+      flow.result.channelDownloadContentType = projRes.headers.get("content-type") ?? null;
+      if (projRes.ok) {
+        const projBuf = Buffer.from(await projRes.arrayBuffer());
+        flow.result.channelDownloadOk = projBuf.length > 5 && projBuf.slice(0, 4).toString("latin1") === "%PDF";
+        flow.result.channelDownloadBytes = projBuf.length;
+      }
+    } catch (err) {
+      flow.result.channelDownloadError = String(err.message ?? err);
+    }
+    const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
+    flow.feedSnippet = feed.slice(0, 1200);
+    log(
+      `  trace: channel_save_binary=${flow.result.channelSeen} viaUrl=${flow.result.channelViaUrl} ` +
+      `bytes=${flow.result.channelBytes}; save_own_binary=${flow.result.ownSeen} viaUrl=${flow.result.ownViaUrl} ` +
+      `bytes=${flow.result.ownBytes}; disk: own=%PDF?${flow.result.ownDownloadOk} ` +
+      `(${flow.result.ownDownloadBytes}) channel=%PDF?${flow.result.channelDownloadOk} ` +
+      `(${flow.result.channelDownloadBytes} ${flow.result.channelDownloadContentType})`,
+    );
+    return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, projectName, ownRelFile, channelRelFile, flow, errors: sink };
   } finally {
     c.close();
   }
@@ -5067,6 +5264,53 @@ async function skillsCleanup(flow) {
   return detail;
 }
 
+
+/** Agent-binary cleanup: delete the fixture channel and both copies of the
+ *  downloaded PDF. The agent-folder copy is removed through the files API
+ *  (agent:<name> scopes are writable); the channel-project copy lives in a
+ *  read-only project scope, so after deleting the channel the exact fixture
+ *  folder is removed via the host docker CLI (only names matching the
+ *  browser-e2e-binary- fixture prefix are ever touched). */
+async function binaryCleanup(f) {
+  if (!f?.channelName) return null;
+  const parts = [];
+  try {
+    const ownPath = f.ownRelFile || "papers/EGGROLL_hyperscale.pdf";
+    // 1. Agent-folder PDF (agent:<name> scope is writable).
+    const del = await fetch(`${API}/files/delete?scope=agent:coder&path=${encodeURIComponent(ownPath)}`, { method: "DELETE" });
+    if (del.status >= 400 && del.status !== 404) {
+      throw new Error(`delete agent binary -> HTTP ${del.status}`);
+    }
+    const listRes = await fetch(`${API}/files/list?scope=agent:coder&path=papers`);
+    let names = [];
+    if (listRes.ok) {
+      const body = await listRes.json();
+      names = (body.entries ?? []).map((e) => e.name);
+    }
+    const targetName = ownPath.split("/").pop();
+    if (names.includes(targetName)) {
+      throw new Error("agent binary still present after delete");
+    }
+    parts.push("agent-file-clean");
+    // 2. Channel row (channel delete only prunes empty project folders).
+    parts.push(await cleanupChannel(f.channelName));
+    // 3. Channel-project PDF: project scope is read-only, so remove the exact
+    // fixture folder via docker, refusing any non-fixture project name.
+    const project = String(f.projectName || f.channelName);
+    if (!project.startsWith("browser-e2e-binary-")) {
+      throw new Error(`refusing to clean non-fixture project folder ${project}`);
+    }
+    execFileSync("docker", ["exec", "fmcv-backend", "rm", "-rf", `/data/workspaces/projects/${project}`], { stdio: "pipe" });
+    parts.push("project-folder-clean");
+    log(`  cleanup: binary fixtures removed (${parts.join("+")})`);
+  } catch (err) {
+    log(`  cleanup FAILED: ${err.message}`);
+    return `error: ${err.message}`;
+  }
+  return parts.join("+");
+}
+
+
 /* --------------------------------- main --------------------------------- */
 
 
@@ -6332,6 +6576,11 @@ report.webtoolsFlow = await webtoolsFlow();
     report.webtoolsFlow.cleanup = await agentChannelCleanup(report.webtoolsFlow);
     report.webtoolsFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-web-");
     }
+    if (want("binary")) {
+report.binaryFlow = await agentbinaryFlow();
+    report.binaryFlow.cleanup = await binaryCleanup(report.binaryFlow);
+    report.binaryFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-binary-");
+    }
     if (want("agentskills")) {
 report.agentskillsFlow = await agentskillsFlow();
     report.agentskillsFlow.cleanup = await agentChannelCleanup(report.agentskillsFlow);
@@ -6454,6 +6703,42 @@ if (want("webtools")) {
   }
   const webErrs = errorCount(wfl ? wfl.errors : {});
   if (webErrs > 0) failures.push(`webtools flow: ${webErrs} console/network error(s)`);
+
+}
+
+if (want("binary")) {
+  const bfl = report.binaryFlow;
+  const br = bfl && bfl.flow && bfl.flow.result;
+  const diskBytesMatch =
+    br &&
+    br.ownDownloadBytes === br.ownBytes &&
+    br.channelDownloadBytes === br.channelBytes;
+  if (
+    !bfl ||
+    !terminalOk(br) ||
+    !br?.channelSeen ||
+    !br?.ownSeen ||
+    !br?.channelViaUrl ||
+    !br?.ownViaUrl ||
+    !br?.channelSavedTrue ||
+    !br?.ownSavedTrue ||
+    !br?.ownDownloadOk ||
+    !br?.channelDownloadOk ||
+    !diskBytesMatch ||
+    !br?.ownBytes ||
+    br.ownBytes < 1000000 ||
+    br.ownBytes !== br.channelBytes
+  ) {
+    failures.push(`binary flow: channel_save_binary/save_own_binary binary PDF save not verified (${JSON.stringify(bfl && bfl.flow)})`);
+  }
+  if (bfl && bfl.projectPrune && bfl.projectPrune.ok === false) {
+    failures.push(`binary flow: leftover channel project folder(s) [${bfl.projectPrune.leftovers.join(", ")}]`);
+  }
+  if (bfl && (!bfl.cleanup || !bfl.cleanup.includes("deleted") || !bfl.cleanup.includes("project-folder-clean"))) {
+    failures.push(`binary flow: cleanup not verified (${JSON.stringify(bfl && bfl.cleanup)})`);
+  }
+  const binaryErrs = errorCount(bfl ? bfl.errors : {});
+  if (binaryErrs > 0) failures.push(`binary flow: ${binaryErrs} console/network error(s)`);
 
 }
 

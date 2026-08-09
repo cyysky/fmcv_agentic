@@ -1,3 +1,4 @@
+import { createServer } from 'http';
 import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -239,6 +240,144 @@ describe('workspace tools', () => {
       }),
     ).rejects.toThrow(/file too large/);
   });
+
+  it('save_binary writes decoded base64 bytes and rejects bad inputs', async () => {
+    const tools = buildWorkspaceTools(ws);
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+    const bytes = Buffer.from([0, 1, 2, 128, 255, 0xfe, 0]);
+    const written = (await byName['save_binary'].run({
+      name: 'coder',
+      path: 'bin/bytes.dat',
+      base64: bytes.toString('base64'),
+    })) as { saved: boolean; bytes: number; via: string };
+    expect(written).toMatchObject({
+      saved: true,
+      bytes: bytes.length,
+      via: 'base64',
+    });
+    const onDisk = await fs.readFile(
+      path.join(root, 'agents', 'coder', 'bin', 'bytes.dat'),
+    );
+    expect(onDisk.equals(bytes)).toBe(true);
+
+    await expect(
+      byName['save_binary'].run({
+        name: 'coder',
+        path: 'x.bin',
+        base64: 'not-base64!!',
+      }),
+    ).rejects.toThrow(/valid base64/);
+    await expect(
+      byName['save_binary'].run({ name: 'coder', path: 'x.bin' }),
+    ).rejects.toThrow(/base64 or url must be provided/);
+    await expect(
+      byName['save_binary'].run({
+        name: 'coder',
+        path: 'x.bin',
+        base64: bytes.toString('base64'),
+        url: 'https://example.com/x.bin',
+      }),
+    ).rejects.toThrow(/exactly one of base64 or url/);
+    await expect(
+      byName['save_binary'].run({
+        name: 'coder',
+        path: '../escape.bin',
+        base64: bytes.toString('base64'),
+      }),
+    ).rejects.toThrow(/path outside allowed root/);
+  });
+
+  it('save_binary streams a URL download (redirects followed, failures rejected)', async () => {
+    const tools = buildWorkspaceTools(ws);
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+    const payload = Buffer.from([
+      0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0xfe, 0x01, 0x02, 0x03,
+    ]);
+    const server = createServer((req, res) => {
+      if (req.url === '/paper.pdf') {
+        res.writeHead(200, { 'content-type': 'application/pdf' });
+        res.end(payload);
+        return;
+      }
+      if (req.url === '/redirect') {
+        res.writeHead(302, { location: '/paper.pdf' });
+        res.end();
+        return;
+      }
+      res.writeHead(404);
+      res.end('nope');
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', () => resolve()),
+    );
+    const port = (server.address() as { port: number }).port;
+    try {
+      const saved = (await byName['save_binary'].run({
+        name: 'coder',
+        path: 'papers/paper.pdf',
+        url: `http://127.0.0.1:${port}/redirect`,
+      })) as { saved: boolean; bytes: number; via: string };
+      expect(saved).toMatchObject({
+        saved: true,
+        bytes: payload.length,
+        via: 'url',
+      });
+      const onDisk = await fs.readFile(
+        path.join(root, 'agents', 'coder', 'papers', 'paper.pdf'),
+      );
+      expect(onDisk.equals(payload)).toBe(true);
+
+      await expect(
+        byName['save_binary'].run({
+          name: 'coder',
+          path: 'missing.bin',
+          url: `http://127.0.0.1:${port}/missing`,
+        }),
+      ).rejects.toThrow(/Download failed: HTTP 404/);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('save_own_binary writes decoded bytes and URL downloads into the bound folder', async () => {
+    const byName = Object.fromEntries(
+      buildSelfTools(ws, 'coder').map((t) => [t.name, t]),
+    );
+    const bytes = Buffer.from([1, 2, 3, 0, 255]);
+    const b64 = (await byName['save_own_binary'].run({
+      path: 'own/notes.bin',
+      base64: bytes.toString('base64'),
+    })) as { saved: boolean; bytes: number };
+    expect(b64.saved).toBe(true);
+    expect(b64.bytes).toBe(bytes.length);
+
+    const payload = Buffer.from('streamed bytes', 'utf8');
+    const server = createServer((_req, res) => {
+      res.writeHead(200);
+      res.end(payload);
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', () => resolve()),
+    );
+    const port = (server.address() as { port: number }).port;
+    try {
+      const viaUrl = (await byName['save_own_binary'].run({
+        path: 'own/streamed.bin',
+        url: `http://127.0.0.1:${port}/file.bin`,
+      })) as { saved: boolean; bytes: number; via: string };
+      expect(viaUrl).toMatchObject({
+        saved: true,
+        bytes: payload.length,
+        via: 'url',
+      });
+      const onDisk = await fs.readFile(
+        path.join(root, 'agents', 'coder', 'own', 'streamed.bin'),
+      );
+      expect(onDisk.equals(payload)).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });
 
 describe('channel tools', () => {
@@ -287,5 +426,36 @@ describe('channel tools', () => {
 
     await byName['channel_post'].run({ text: 'update' });
     expect(posted).toEqual(['update']);
+  });
+
+  it('channel_save_binary writes decoded bytes into the channel project', async () => {
+    const tools = buildChannelTools(ws, {
+      agentName: 'coder',
+      channelSlug: 'team-alpha',
+      channelProjectName: 'team-alpha',
+      channelPost: async () => ({ ok: true }),
+    });
+    const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0xfe]);
+    const saved = (await byName['channel_save_binary'].run({
+      path: 'images/blob.png',
+      base64: bytes.toString('base64'),
+    })) as { saved: boolean; bytes: number; via: string };
+    expect(saved).toMatchObject({
+      saved: true,
+      bytes: bytes.length,
+      via: 'base64',
+    });
+    const onDisk = await fs.readFile(
+      path.join(root, 'projects', 'team-alpha', 'images', 'blob.png'),
+    );
+    expect(onDisk.equals(bytes)).toBe(true);
+
+    await expect(
+      byName['channel_save_binary'].run({
+        path: '../escape.bin',
+        base64: bytes.toString('base64'),
+      }),
+    ).rejects.toThrow(/path outside allowed root/);
   });
 });

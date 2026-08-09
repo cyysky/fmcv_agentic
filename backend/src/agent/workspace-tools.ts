@@ -1,10 +1,17 @@
-import { promises as fs } from 'fs';
+import { createWriteStream, promises as fs } from 'fs';
 import * as path from 'path';
+import { Readable, Transform } from 'stream';
+import { pipeline } from 'stream/promises';
 import type { BaseTool } from './base-agent.service';
 import { WorkspaceService } from './workspace.service';
 
 /** Max file size (bytes) `read_workspace_file` will return. */
 const MAX_FILE_BYTES = 100 * 1024;
+/** Max binary payload a save_binary-family tool will write (matches the
+ *  /buckets upload cap of 100 MB; keeps the workspace disk bounded). */
+const MAX_BINARY_BYTES = 100 * 1024 * 1024;
+/** Timeout for the streamed URL-download path of the save_binary tools. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 function argString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
@@ -17,6 +24,119 @@ function argString(args: Record<string, unknown>, key: string): string {
 function argOptionalString(args: Record<string, unknown>, key: string): string {
   const v = args[key];
   return typeof v === 'string' ? v : '.';
+}
+/** Decode a base64 string into bytes, validating the payload strictly enough
+ *  that `Buffer.from(..., 'base64')` cannot silently accept garbage. Padded
+ *  and unpadded base64 both work; whitespace is ignored. */
+function decodeBase64(value: string): Buffer {
+  const cleaned = value.replace(/\s+/g, '');
+  if (!cleaned) throw new Error('base64 must be a non-empty string');
+  const buf = Buffer.from(cleaned, 'base64');
+  const normalized = buf.toString('base64').replace(/=+$/, '');
+  if (buf.length === 0 || normalized !== cleaned.replace(/=+$/, '')) {
+    throw new Error('base64 must be valid base64-encoded content');
+  }
+  return buf;
+}
+
+/** Stream an http(s) URL into `target`, enforcing the MAX_BINARY_BYTES cap on
+ *  the declared content-length AND on the live body stream, cleaning up the
+ *  partial file when a download fails mid-stream. */
+async function streamDownloadToFile(
+  url: string,
+  target: string,
+): Promise<{ bytes: number; finalUrl: string }> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('url must be an absolute http(s) URL');
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (compatible; fmcv-agent-binary/1.0; +agent download tool)',
+      },
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(
+        `Download failed: HTTP ${res.status ?? 'no response body'}`,
+      );
+    }
+    const declared = Number(res.headers.get('content-length') ?? '0');
+    if (declared > MAX_BINARY_BYTES) {
+      throw new Error(
+        `Download too large (${declared} bytes, max ${MAX_BINARY_BYTES})`,
+      );
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const out = createWriteStream(target);
+    let bytes = 0;
+    const cap = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        bytes += chunk.length;
+        if (bytes > MAX_BINARY_BYTES) {
+          cb(new Error(`Download exceeded the ${MAX_BINARY_BYTES} byte limit`));
+          return;
+        }
+        cb(null, chunk);
+      },
+    });
+    try {
+      await pipeline(Readable.fromWeb(res.body as never), cap, out);
+    } catch (err) {
+      await fs.rm(target, { force: true }).catch(() => undefined);
+      throw err;
+    }
+    return { bytes, finalUrl: res.url || url };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Write binary content to an already-safe-resolved target. Exactly one of
+ * `base64` (decoded bytes) or `url` (streamed download) must be provided;
+ * never echo the bytes back into the tool result, only metadata.
+ */
+async function saveBinaryTo(
+  target: string,
+  args: Record<string, unknown>,
+): Promise<{
+  saved: true;
+  path: string;
+  bytes: number;
+  via: 'base64' | 'url';
+  url?: string;
+}> {
+  const hasBase64 =
+    typeof args.base64 === 'string' && args.base64.trim() !== '';
+  const hasUrl = typeof args.url === 'string' && args.url.trim() !== '';
+  if (hasBase64 && hasUrl) {
+    throw new Error('provide exactly one of base64 or url');
+  }
+  if (hasUrl) {
+    const { bytes, finalUrl } = await streamDownloadToFile(
+      (args.url as string).trim(),
+      target,
+    );
+    return { saved: true, path: target, bytes, via: 'url', url: finalUrl };
+  }
+  if (hasBase64) {
+    const buf = decodeBase64(args.base64 as string);
+    if (buf.length > MAX_BINARY_BYTES) {
+      throw new Error(
+        `content too large (${buf.length} bytes, max ${MAX_BINARY_BYTES})`,
+      );
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, buf);
+    return { saved: true, path: target, bytes: buf.length, via: 'base64' };
+  }
+  throw new Error('base64 or url must be provided');
 }
 
 /**
@@ -72,6 +192,13 @@ export function buildSelfTools(
       path: target,
       bytes: Buffer.byteLength(content, 'utf8'),
     };
+  };
+
+  /** Save binary content into the agent's own folder (base64 or URL). */
+  const saveOwnBinary: BaseTool['run'] = async (args) => {
+    const relPath = argString(args, 'path');
+    const target = await ws.safeResolve(ws.getAgentRoot(agentName), relPath);
+    return saveBinaryTo(target, args);
   };
 
   return [
@@ -130,6 +257,36 @@ export function buildSelfTools(
         required: ['path', 'content'],
       },
       run: writeOwn,
+    },
+    {
+      name: 'save_own_binary',
+      description:
+        `Save BINARY content (PDF, image, archive, etc.) into a file in ` +
+        `YOUR OWN agent folder (agents/${agentName}). Provide base64 ` +
+        `(decoded to bytes) or url (downloaded and streamed to disk, max ` +
+        `${MAX_BINARY_BYTES} bytes). Use this instead of write_own_file when ` +
+        `the payload is a real binary file — never fall back to saving .md ` +
+        `text. Creates parent directories as needed. ` +
+        `args: { path, base64?, url? } — exactly one of base64 or url.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          path: {
+            type: 'string',
+            description: 'Relative file path inside your own folder.',
+          },
+          base64: {
+            type: 'string',
+            description: 'Binary file content encoded as base64.',
+          },
+          url: {
+            type: 'string',
+            description: 'Absolute http(s) URL to download and save as-is.',
+          },
+        },
+        required: ['path'],
+      },
+      run: saveOwnBinary,
     },
   ];
 }
@@ -212,6 +369,14 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
     };
   };
 
+  /** Save binary content into a named agent's own folder. */
+  const saveWorkspaceBinary: BaseTool['run'] = async (args) => {
+    const name = argString(args, 'name');
+    const relPath = argString(args, 'path');
+    const target = await ws.safeResolve(ws.getAgentRoot(name), relPath);
+    return saveBinaryTo(target, args);
+  };
+
   return [
     {
       name: 'list_workspace',
@@ -280,6 +445,39 @@ export function buildWorkspaceTools(ws: WorkspaceService): BaseTool[] {
         required: ['name', 'path', 'content'],
       },
       run: writeWorkspaceFile,
+    },
+    {
+      name: 'save_binary',
+      description:
+        'Save BINARY content (PDF, image, archive, etc.) into a named ' +
+        "agent's own folder. Provide base64 (decoded to bytes) or url " +
+        '(downloaded and streamed to disk, max 100MB). Use this instead of ' +
+        'write_workspace_file when the payload is a real binary file — never ' +
+        'fall back to saving .md text. Creates parent directories as needed. ' +
+        'args: { name, path, base64?, url? } — exactly one of base64 or url.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: "Named agent id (the caller's own folder).",
+          },
+          path: {
+            type: 'string',
+            description: 'Relative file path within the agent folder.',
+          },
+          base64: {
+            type: 'string',
+            description: 'Binary file content encoded as base64.',
+          },
+          url: {
+            type: 'string',
+            description: 'Absolute http(s) URL to download and save as-is.',
+          },
+        },
+        required: ['name', 'path'],
+      },
+      run: saveWorkspaceBinary,
     },
   ];
 }
