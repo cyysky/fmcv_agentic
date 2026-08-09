@@ -1,6 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+/** Shape of one CDP page snapshot read from the tab. */
+interface CdpPageState {
+  title: string;
+  href: string;
+  ready: string;
+  text: string;
+}
+
 /** Result of one web fetch/search attempt (DIRECTION items 1 + 4). */
 export interface FetchResult {
   ok: boolean;
@@ -31,7 +39,10 @@ class CdpSession {
   private nextId = 0;
   private readonly pending = new Map<
     number,
-    { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void }
+    {
+      resolve: (v: Record<string, unknown>) => void;
+      reject: (e: Error) => void;
+    }
   >();
 
   constructor(
@@ -53,7 +64,11 @@ class CdpSession {
       >;
       this.pending.delete(Number(id));
       if (msg.error) {
-        reject(new Error(String((msg.error as { message?: string }).message ?? 'CDP error')));
+        reject(
+          new Error(
+            String((msg.error as { message?: string }).message ?? 'CDP error'),
+          ),
+        );
       } else {
         resolve((msg.result as Record<string, unknown>) ?? msg);
       }
@@ -67,14 +82,16 @@ class CdpSession {
       try {
         ws = new WebSocket(this.wsUrl);
       } catch (err) {
-        reject(new Error(`CDP websocket connect failed: ${(err as Error).message}`));
+        reject(
+          new Error(`CDP websocket connect failed: ${(err as Error).message}`),
+        );
         return;
       }
       const timer = setTimeout(() => {
         ws.close();
         reject(new Error('CDP websocket open timed out'));
       }, this.timeoutMs);
-      ws.addEventListener('message', (e) => this.onMessage(e as MessageEvent));
+      ws.addEventListener('message', (e) => this.onMessage(e));
       ws.addEventListener(
         'open',
         () => {
@@ -121,7 +138,9 @@ class CdpSession {
       } catch (err) {
         clearTimeout(timer);
         this.pending.delete(id);
-        reject(new Error(`CDP ${method} send failed: ${(err as Error).message}`));
+        reject(
+          new Error(`CDP ${method} send failed: ${(err as Error).message}`),
+        );
       }
     });
   }
@@ -256,7 +275,7 @@ export class WebService {
       await session.open();
       await session.send('Page.enable');
       const deadline = Date.now() + this.timeoutMs;
-      let last: Record<string, unknown> | null = null;
+      let last: CdpPageState | null = null;
       while (Date.now() < deadline) {
         await delay(250);
         const res = await session.send('Runtime.evaluate', {
@@ -265,10 +284,13 @@ export class WebService {
         });
         const value = res.value;
         if (value && typeof value === 'object') {
-          last = value as Record<string, unknown>;
-          const text = String(last.text ?? '');
-          const ready = String(last.ready ?? '');
-          if (ready === 'complete' && (text.trim() !== '' || last.title)) break;
+          last = value as CdpPageState;
+          if (
+            last.ready === 'complete' &&
+            (last.text.trim() !== '' || last.title)
+          ) {
+            break;
+          }
         }
       }
       if (!last) {
@@ -278,9 +300,9 @@ export class WebService {
         ok: true,
         status: 200,
         via: 'cdp',
-        url: String(last.href || url),
-        title: last.title ? String(last.title) : undefined,
-        text: String(last.text ?? ''),
+        url: last.href || url,
+        title: last.title || undefined,
+        text: last.text,
       };
     } finally {
       if (session) session.close();

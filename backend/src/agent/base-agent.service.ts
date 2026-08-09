@@ -21,6 +21,7 @@ import { buildChannelTools } from './channel-tools';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
 import type { SkillsService } from '../skills/skills.service';
+import { buildSkillTools } from '../skills/skills-tools';
 import type { WebService } from '../web/web.service';
 import { buildWebTools } from '../web/web-tools';
 
@@ -190,6 +191,7 @@ export class BaseAgentService implements OnModuleInit {
     }
     if (skills) {
       this.skills = skills;
+      this.registerTools(buildSkillTools(skills));
       this.registerTool({
         name: 'read_skill',
         description:

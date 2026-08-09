@@ -7,7 +7,6 @@ import { CronJob, Prisma } from '@prisma/client';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  CRON_TICK_MS,
   CronService,
   MAX_RUN_HISTORY,
   MAX_RUN_MESSAGE,
@@ -1304,7 +1303,7 @@ describe('CronService', () => {
 
     it('registers the cron management tools with the agent registry', () => {
       const { agent } = makeSvc();
-      const registered = (agent.registerTools as jest.Mock).mock.calls[0][0] as {
+      const registered = agent.registerTools.mock.calls[0][0] as {
         name: string;
       }[];
       expect(registered.map((t) => t.name)).toEqual(

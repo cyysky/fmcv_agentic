@@ -27,7 +27,10 @@ function optionalString(
   return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
 }
 
-function optionalInt(args: Record<string, unknown>, key: string): number | undefined {
+function optionalInt(
+  args: Record<string, unknown>,
+  key: string,
+): number | undefined {
   const v = args[key];
   if (typeof v === 'number' && Number.isInteger(v)) return v;
   if (typeof v === 'string' && v.trim() !== '' && Number.isInteger(Number(v))) {
@@ -36,7 +39,10 @@ function optionalInt(args: Record<string, unknown>, key: string): number | undef
   return undefined;
 }
 
-function optionalBool(args: Record<string, unknown>, key: string): boolean | undefined {
+function optionalBool(
+  args: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
   const v = args[key];
   if (typeof v === 'boolean') return v;
   if (typeof v === 'string') {
@@ -63,15 +69,14 @@ export function buildCronTools(cron: CronService): BaseTool[] {
       description:
         'Create a recurring agent-turn cron job. args: { name, schedule ' +
         '(5-field cron: minute hour day-of-month month day-of-week), prompt, ' +
-        "model?, connectionId?, maxSteps?, enabled? }.",
+        'model?, connectionId?, maxSteps?, enabled? }.',
       parameters: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Unique job name.' },
           schedule: {
             type: 'string',
-            description:
-              'Five-field cron expression, e.g. "*/15 * * * *".',
+            description: 'Five-field cron expression, e.g. "*/15 * * * *".',
           },
           prompt: {
             type: 'string',
@@ -141,7 +146,8 @@ export function buildCronTools(cron: CronService): BaseTool[] {
         ] as const) {
           if (args[key] === undefined) continue;
           if (key === 'model' || key === 'connectionId') {
-            const v = typeof args[key] === 'string' ? args[key].trim() : args[key];
+            const v =
+              typeof args[key] === 'string' ? args[key].trim() : args[key];
             if (v !== '') dto[key] = v;
             continue;
           }
@@ -157,7 +163,7 @@ export function buildCronTools(cron: CronService): BaseTool[] {
           }
           dto[key] = args[key];
         }
-        return cron.update(argString(args, 'id'), dto as never);
+        return cron.update(argString(args, 'id'), dto);
       },
     },
     {

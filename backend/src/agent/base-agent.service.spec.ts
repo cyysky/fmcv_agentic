@@ -878,6 +878,70 @@ describe('BaseAgentService skills integration', () => {
       const readSkill = tools.find((t) => t.name === 'read_skill');
       expect(readSkill).toBeTruthy();
       expect(readSkill?.description).toContain('installed skill');
+      for (const name of [
+        'list_skills',
+        'create_skill',
+        'update_skill',
+        'delete_skill',
+      ]) {
+        expect(tools.some((t) => t.name === name)).toBe(true);
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('skill CRUD tools delegate to the registry and validate input', async () => {
+    const root = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'fmcv-agent-skilltools-'),
+    );
+    try {
+      const skills = {
+        ...skillsDouble(),
+        list: jest.fn(async () => [{ id: 's1', name: 'code-review' }]),
+        create: jest.fn(async (dto: Record<string, unknown>) => ({
+          id: 's2',
+          ...dto,
+        })),
+        update: jest.fn(async (id: string, dto: Record<string, unknown>) => ({
+          id,
+          ...dto,
+        })),
+        delete: jest.fn(async (id: string) => ({ deleted: true, id })),
+      };
+      const agent = new BaseAgentService(
+        configMock(root),
+        new WorkspaceService(configMock(root)),
+        prismaDouble(),
+        skills as never,
+      );
+      const find = (name: string) =>
+        agent.listTools().find((t) => t.name === name)!;
+
+      await find('list_skills').run({});
+      expect(skills.list).toHaveBeenCalled();
+
+      await find('create_skill').run({
+        name: 'new-skill',
+        description: 'A new skill',
+        content: '# Body\nSteps.',
+        installed: true,
+      });
+      expect(skills.create).toHaveBeenCalledWith({
+        name: 'new-skill',
+        description: 'A new skill',
+        content: '# Body\nSteps.',
+        installed: true,
+      });
+      await expect(
+        find('create_skill').run({ name: 'bad name!' }),
+      ).rejects.toThrow('name must start with a letter or digit');
+
+      await find('update_skill').run({ id: 's2', name: 'renamed' });
+      expect(skills.update).toHaveBeenCalledWith('s2', { name: 'renamed' });
+
+      await find('delete_skill').run({ id: 's2' });
+      expect(skills.delete).toHaveBeenCalledWith('s2');
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1001,7 +1065,11 @@ describe('BaseAgentService web tools integration', () => {
 
       const web = {
         fetchUrl: jest.fn(async () => ({ ok: true, via: 'cdp', text: 'page' })),
-        webSearch: jest.fn(async () => ({ ok: true, via: 'cdp', text: 'hits' })),
+        webSearch: jest.fn(async () => ({
+          ok: true,
+          via: 'cdp',
+          text: 'hits',
+        })),
       };
       const withWeb = new BaseAgentService(
         configMock(root),
@@ -1014,9 +1082,7 @@ describe('BaseAgentService web tools integration', () => {
       expect(names).toContain('fetch_url');
       expect(names).toContain('web_search');
 
-      const fetchUrl = withWeb
-        .listTools()
-        .find((t) => t.name === 'fetch_url')!;
+      const fetchUrl = withWeb.listTools().find((t) => t.name === 'fetch_url')!;
       const webSearch = withWeb
         .listTools()
         .find((t) => t.name === 'web_search')!;
@@ -1024,7 +1090,9 @@ describe('BaseAgentService web tools integration', () => {
       expect(web.fetchUrl).toHaveBeenCalledWith('https://example.com/doc');
       await webSearch.run({ query: 'nestjs schedule docs' });
       expect(web.webSearch).toHaveBeenCalledWith('nestjs schedule docs');
-      await expect(fetchUrl.run({})).rejects.toThrow('url must be a non-empty string');
+      await expect(fetchUrl.run({})).rejects.toThrow(
+        'url must be a non-empty string',
+      );
       await webSearch.run({ query: 42 });
       expect(web.webSearch).toHaveBeenCalledWith('');
     } finally {

@@ -1,15 +1,13 @@
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { ConfigService } from '@nestjs/config';
-import { FetchResult, WebService } from './web.service';
+import { WebService } from './web.service';
 
 function configService(values: Record<string, string> = {}): ConfigService {
   return {
     get: (key: string, def?: string) => values[key] ?? def,
   } as unknown as ConfigService;
 }
-
-type WsEvent = { data?: string };
 
 /** Minimal fake WebSocket that auto-opens and answers CDP messages. */
 class FakeWebSocket {
@@ -28,11 +26,7 @@ class FakeWebSocket {
     }, 0);
   }
 
-  addEventListener(
-    type: string,
-    fn: (e?: unknown) => void,
-    _opts?: { once?: boolean },
-  ): void {
+  addEventListener(type: string, fn: (e?: unknown) => void): void {
     const set = this.listeners.get(type) ?? new Set();
     set.add(fn);
     this.listeners.set(type, set);
@@ -96,11 +90,11 @@ describe('WebService', () => {
 
   it('rejects non-http(s) and empty web-search requests', async () => {
     const svc = new WebService(configService());
-    const bad = (await svc.fetchUrl('ftp://example.com/file')) as FetchResult;
+    const bad = await svc.fetchUrl('ftp://example.com/file');
     expect(bad.ok).toBe(false);
     expect(bad.error).toContain('Only absolute http(s)');
 
-    const noQuery = (await svc.webSearch('   ')) as FetchResult;
+    const noQuery = await svc.webSearch('   ');
     expect(noQuery.ok).toBe(false);
     expect(noQuery.error).toContain('non-empty string');
   });
@@ -112,7 +106,8 @@ describe('WebService', () => {
     const cdpPort = (cdp.address() as AddressInfo).port;
     await new Promise<void>((r) => cdp.close(() => r()));
 
-    const html = '<html><body><h1>Native page</h1><p>Hello &amp; goodbye</p></body></html>';
+    const html =
+      '<html><body><h1>Native page</h1><p>Hello &amp; goodbye</p></body></html>';
     let target: Server | null = null;
     try {
       target = createServer((_req, res) => {
@@ -127,9 +122,7 @@ describe('WebService', () => {
           WEB_CDP_PORT: String(cdpPort),
         }),
       );
-      const result = (await svc.fetchUrl(
-        `http://127.0.0.1:${targetPort}/page`,
-      )) as FetchResult;
+      const result = await svc.fetchUrl(`http://127.0.0.1:${targetPort}/page`);
       expect(result.ok).toBe(true);
       expect(result.via).toBe('http');
       expect(result.status).toBe(200);
@@ -150,7 +143,7 @@ describe('WebService', () => {
         text: 'Hello from CDP page',
       },
     ];
-    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+    global.fetch = jest.fn(async (input: string) => {
       const url = String(input);
       if (url.includes('/json/version')) {
         return { ok: true, json: async () => ({}) } as Response;
@@ -174,14 +167,14 @@ describe('WebService', () => {
     const svc = new WebService(
       configService({ WEB_CDP_HOST: '127.0.0.1', WEB_CDP_PORT: '9222' }),
     );
-    const result = (await svc.fetchUrl('https://example.com')) as FetchResult;
+    const result = await svc.fetchUrl('https://example.com');
     expect(result.ok).toBe(true);
     expect(result.via).toBe('cdp');
     expect(result.url).toBe('https://example.com/');
     expect(result.text).toBe('Hello from CDP page');
     expect(result.title).toBe('Example Domain');
     expect(FakeWebSocket.instances.length).toBe(1);
-    expect(FakeWebSocket.instances[0]!.readyState).toBe(3); // closed after use
+    expect(FakeWebSocket.instances[0].readyState).toBe(3); // closed after use
   });
 
   it('reports the failure when CDP and native fetch both fail', async () => {
@@ -199,7 +192,7 @@ describe('WebService', () => {
         WEB_CDP_PORT: String(cdpPort),
       }),
     );
-    const result = (await svc.fetchUrl('https://example.com')) as FetchResult;
+    const result = await svc.fetchUrl('https://example.com');
     expect(result.ok).toBe(false);
     expect(result.error).toContain('HTTP fetch failed');
   });
