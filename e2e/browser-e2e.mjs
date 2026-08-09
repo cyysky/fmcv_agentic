@@ -1170,12 +1170,19 @@ async function webtoolsFlow() {
     flow.result.fetchCdp = !!(fetchEntry && viaCdp.test(fetchEntry.body));
     flow.result.searchCdp = !!(searchEntry && viaCdp.test(searchEntry.body));
     flow.result.exampleTitle = !!(fetchEntry && /example domain/i.test(fetchEntry.body));
+    // Round 125: lock the DDG-first -> Bing fallback into the journey. The
+    // search result body carries `provider: "duckduckgo"` (default path) or
+    // `provider: "bing"` (DDG bot-blocked, Bing RSS fallback); both are valid
+    // live outcomes, and asserting the field proves which one actually ran.
+    const providerMatch = searchEntry && searchEntry.body.match(/"provider":\s*"([a-z]+)"/i);
+    flow.result.searchProvider = providerMatch ? providerMatch[1].toLowerCase() : null;
     flow.steps.push("expanded-trace");
     const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
     flow.feedSnippet = feed.slice(0, 1200);
     log(
       `  trace: fetch_url seen=${flow.result.fetchSeen} cdp=${flow.result.fetchCdp} exampleTitle=${flow.result.exampleTitle}; ` +
-      `web_search seen=${flow.result.searchSeen} cdp=${flow.result.searchCdp}`,
+      `web_search seen=${flow.result.searchSeen} cdp=${flow.result.searchCdp} ` +
+      `provider=${flow.result.searchProvider}`,
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
@@ -1331,18 +1338,23 @@ async function agentskillsFlow() {
   }
 }
 
-/** Agent-cron channel journey (Round 124): drive the cron tool family —
+/** Agent-cron channel journey (Round 124 + 125): drive the cron tool family —
  *  list_cron_jobs -> create_cron_job -> update_cron_job -> run_cron_job_now ->
- *  delete_cron_job — through a real /agent channel and prove the created job
- *  is really gone from the backend afterwards. */
+ *  delete_cron_job — through a real /agent channel and prove the first job is
+ *  really gone from the backend afterwards. The run then leaves a second,
+ *  enabled agent-created job behind (annual schedule so it never fires on its
+ *  own), and this journey drives /cron in real Chrome to prove that job
+ *  appears as a row with its run history visible after `run_cron_job_now`,
+ *  before deleting it through the API in cleanup. */
 async function agentcronFlow() {
   const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
   const url = `${APP}/agent`;
   const jobName = `e2e-agent-cron-${Date.now().toString(36)}`;
+  const uiJobName = `e2e-agent-cron-ui-${Date.now().toString(36)}`;
   const channelName = `browser-e2e-cron-${Date.now().toString(36)}`;
   log(`flow agentcron -> ${url}`);
   const { tab, c } = await setupPage(url);
-  const flow = { steps: [], timings: {}, result: null, channelName, jobName };
+  const flow = { steps: [], timings: {}, result: null, channelName, jobName, uiJobName };
   const started = Date.now();
   try {
     wireErrorCapture(c, sink);
@@ -1386,13 +1398,18 @@ async function agentcronFlow() {
     );
     if (!composerReady) throw new Error("agentcron flow: channel composer never appeared");
     const msg =
-      `Use your five cron tools in this exact order and report each result: ` +
+      `Use your cron tools in this exact order and report each result: ` +
       `(1) list_cron_jobs to show existing jobs; ` +
       `(2) create_cron_job with name '${jobName}', schedule '* * * * *', ` +
       `prompt 'Reply with exactly: cron e2e ok', maxSteps 3, enabled false; ` +
       `(3) update_cron_job with that id to set enabled true; ` +
-      `(4) run_cron_job_now with that id; ` +
-      `(5) delete_cron_job with that id. Quote the run result from step 4.`;
+      `(4) run_cron_job_now with that id and quote the run result; ` +
+      `(5) delete_cron_job with that id; ` +
+      `(6) create a second, separate cron job with name '${uiJobName}', ` +
+      `schedule '0 0 1 1 *', prompt 'Reply with exactly: cron e2e ok', ` +
+      `maxSteps 3, enabled true; ` +
+      `(7) run_cron_job_now with the second job's id and quote its result — ` +
+      `leave the second job in place and report its id.`;
     await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
     await delay(100);
     const submitted = await evalJs(c, `(() => {
@@ -1475,6 +1492,116 @@ async function agentcronFlow() {
       `  trace: list=${flow.result.listSeen} create=${flow.result.createSeen}/${flow.result.createOk} ` +
       `update=${flow.result.updateSeen} run=${flow.result.runSeen}/${flow.result.runOk} ` +
       `delete=${flow.result.deleteSeen}; jobLeftover=${flow.result.jobLeftover}`,
+    );
+
+    // Round 125: the second job was created by the agent and left enabled —
+    // drive /cron in real Chrome and prove the agent-created job appears as a
+    // row with its run history visible after `run_cron_job_now`, then delete
+    // it through the API so the journey leaves nothing behind.
+    const uiJob = await cronFindByName(uiJobName);
+    flow.result.uiJobId = uiJob ? uiJob.id : null;
+    if (!uiJob) {
+      throw new Error(`agentcron flow: agent did not leave UI fixture job ${uiJobName} behind`);
+    }
+    await c.send("Page.navigate", { url: `${APP}/cron` });
+    const cronPage = await waitFor(
+      c,
+      `document.body.innerText.includes("Cron Jobs")`,
+      30000,
+      600,
+      "cron page",
+    );
+    if (!cronPage) throw new Error("agentcron flow: /cron never rendered");
+    const uiRow = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-name="${uiJobName}"]`)})`,
+      15000,
+      500,
+      "agent-created cron row",
+    );
+    if (!uiRow) throw new Error("agentcron flow: agent-created job not listed in /cron UI");
+    flow.result.uiJobRowSeen = true;
+    const uiRowText = await evalJs(
+      c,
+      `document.querySelector(${JSON.stringify(`[data-name="${uiJobName}"]`)})?.innerText ?? ""`,
+    );
+    flow.result.uiJobRowText = uiRowText;
+    const uiRowPill = await waitFor(
+      c,
+      `(() => {
+        const row = document.querySelector(${JSON.stringify(`[data-name="${uiJobName}"]`)});
+        if (!row) return null;
+        const pill = row.querySelector('[class*="statusPill"]');
+        const t = pill ? pill.textContent.trim() : "";
+        return t === "Done" || t === "Failed" ? t : null;
+      })()`,
+      15000,
+      500,
+      "agent-created job terminal status pill",
+    );
+    if (!uiRowPill) {
+      throw new Error(
+        `agentcron flow: UI fixture job never reached a terminal status (row: ${JSON.stringify(uiRowText.slice(0, 200))})`,
+      );
+    }
+    flow.result.uiJobRowStatus = uiRowPill;
+    const uiHist = await evalJs(c, rowBtnExpr(uiJobName, "History"));
+    if (!uiHist) throw new Error("agentcron flow: History button missing for UI fixture job");
+    const uiRunsBox = await waitFor(
+      c,
+      `!!document.querySelector(${JSON.stringify(`[data-runs="${uiJob.id}"]`)})`,
+      10000,
+      400,
+      "agent-created run history list",
+    );
+    if (!uiRunsBox) throw new Error("agentcron flow: run history never rendered for UI fixture job");
+    const uiHistoryOk = await waitFor(
+      c,
+      `(() => {
+        const box = document.querySelector(${JSON.stringify(`[data-runs="${uiJob.id}"]`)});
+        if (!box) return null;
+        const row = [...box.querySelectorAll('[class*="runRow"]')][0];
+        if (!row) return null;
+        const pill = row.querySelector('[class*="statusPill"]');
+        const t = pill ? pill.textContent.trim() : "";
+        if (t === "Done" && /cron\\s*e2e\\s*ok/i.test(row.textContent)) return "done-with-message";
+        if (t === "Failed") return "failed-tolerated";
+        return null;
+      })()`,
+      15000,
+      500,
+      "agent-created run history row",
+    );
+    if (!uiHistoryOk) {
+      throw new Error("agentcron flow: UI fixture run history lacks a terminal run row");
+    }
+    flow.result.uiJobHistory = uiHistoryOk;
+    flow.steps.push("cron-ui-agent-job");
+    await screenshot(c, "cron-agent-created-ui.png");
+
+    // Delete the UI fixture job through the API and confirm it is gone.
+    const uiDel = await fetch(`${API}/cron/${encodeURIComponent(String(uiJob.id))}`, {
+      method: "DELETE",
+    });
+    if (uiDel.status >= 400 && uiDel.status !== 404) {
+      throw new Error(`agentcron cleanup: delete UI fixture job -> HTTP ${uiDel.status}`);
+    }
+    const uiGoneRes = await fetch(`${API}/cron`);
+    let uiLeftover = `HTTP ${uiGoneRes.status}`;
+    if (uiGoneRes.ok) {
+      const jobs = await uiGoneRes.json();
+      uiLeftover = (Array.isArray(jobs) ? jobs : []).some((j) => j && j.name === uiJobName)
+        ? "present-after-cleanup"
+        : false;
+    }
+    flow.result.uiJobLeftover = uiLeftover;
+    if (uiLeftover !== false) {
+      throw new Error(`agentcron flow: UI fixture job still present after cleanup (${uiLeftover})`);
+    }
+    flow.steps.push("cron-ui-cleanup");
+    log(
+      `  cron-ui: row=${flow.result.uiJobRowSeen} status=${flow.result.uiJobRowStatus} ` +
+      `history=${flow.result.uiJobHistory} leftover=${flow.result.uiJobLeftover}`,
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
@@ -4970,10 +5097,17 @@ async function staleSweep() {
     const res = await fetchReady(`${API}/channels`, "list channels");
     if (!res.ok) throw new Error(`list channels -> HTTP ${res.status}`);
     const channels = await res.json();
-    for (const ch of Array.isArray(channels) ? channels : []) {
+    const rows = Array.isArray(channels) ? channels : [];
+    // Sub-channels (rows with a parentId) must be deleted before their parent:
+    // Prisma cascades children on parent delete, so a stale snapshot would
+    // otherwise 404 on the already-deleted child. 404 is tolerated either way.
+    rows.sort((a, b) => Number(!!a.parentId) - Number(!!b.parentId));
+    for (const ch of rows) {
       if (!isFixture(ch.slug ?? ch.name ?? "")) continue;
       const del = await fetch(`${API}/channels/${ch.id}`, { method: "DELETE" });
-      if (!del.ok) throw new Error(`delete channel #${ch.slug} -> HTTP ${del.status}`);
+      if (!del.ok && del.status !== 404) {
+        throw new Error(`delete channel #${ch.slug} -> HTTP ${del.status}`);
+      }
       result.channels.push(ch.slug ?? ch.id);
     }
     if (result.channels.length) log(`  stale sweep: deleted ${result.channels.length} channel(s) [${result.channels.join(", ")}]`);
@@ -6284,16 +6418,20 @@ if (want("agent")) {
 
 if (want("webtools")) {
   const wfl = report.webtoolsFlow;
+  const wr = wfl && wfl.flow && wfl.flow.result;
   if (
     !wfl ||
-    !terminalOk(wfl.flow.result) ||
-    !wfl.flow.result?.fetchSeen ||
-    !wfl.flow.result?.searchSeen ||
-    !wfl.flow.result?.fetchCdp ||
-    !wfl.flow.result?.searchCdp ||
-    !wfl.flow.result?.exampleTitle
+    !terminalOk(wr) ||
+    !wr?.fetchSeen ||
+    !wr?.searchSeen ||
+    !wr?.fetchCdp ||
+    !wr?.searchCdp ||
+    !wr?.exampleTitle ||
+    !wr?.searchProvider
   ) {
-    failures.push(`webtools flow: CDP-first fetch_url/web_search not verified (${JSON.stringify(wfl && wfl.flow)})`);
+    failures.push(`webtools flow: CDP-first fetch_url/web_search with provider not verified (${JSON.stringify(wfl && wfl.flow)})`);
+  } else if (wr && !["duckduckgo", "bing"].includes(wr.searchProvider)) {
+    failures.push(`webtools flow: unexpected web_search provider ${JSON.stringify(wr.searchProvider)} (expected duckduckgo or bing)`);
   }
   if (wfl && wfl.projectPrune && wfl.projectPrune.ok === false) {
     failures.push(`webtools flow: leftover channel project folder(s) [${wfl.projectPrune.leftovers.join(", ")}]`);
@@ -6346,7 +6484,11 @@ if (want("agentcron")) {
     !cr?.runSeen ||
     !cr?.runOk ||
     !cr?.deleteSeen ||
-    cr?.jobLeftover !== false
+    cr?.jobLeftover !== false ||
+    !cr?.uiJobRowSeen ||
+    !cr?.uiJobRowStatus ||
+    !cr?.uiJobHistory ||
+    cr?.uiJobLeftover !== false
   ) {
     failures.push(`agentcron flow: full cron tool loop not verified (${JSON.stringify(cfl && cfl.flow)})`);
   }
