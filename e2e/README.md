@@ -50,7 +50,7 @@ Environment overrides:
 | `CHROME_DEBUG_PORT` | `9222`                        | CDP port                            |
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
 | `E2E_API_ONLY`      | unset                          | run the cron flow against an API-only backend (`CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend`): asserts the "Scheduler disabled — API-only" chip, the "no lease · no background firing" meta, and the overview gauge's "disabled" lease chip |
-| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `webtools`, `agentskills`, `agentcron`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
+| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `webtools`, `binary`, `agentskills`, `agentcron`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
 | `E2E_SHOT_DIR`      | `e2e/screenshots/<mode>`      | screenshot output dir (`enabled` or `api-only` subdir; an explicit value is used verbatim) |
 | `E2E_REPORT`        | `e2e/report.json` (+`report-<mode>.json`) | JSON report path; the mode archive `report-<mode>.json` is always written too (an explicit `E2E_REPORT` value is used verbatim as the latest mirror) |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
@@ -99,7 +99,20 @@ Environment overrides:
    `WEB_SEARCH_PROVIDER=bing docker compose up -d --force-recreate backend`),
    and `E2E_EXPECT_SEARCH_PROVIDER=bing` makes this journey assert that
    exact provider instead of accepting either live outcome.
-5. **Agent-skills journey**: on `/agent`, a fresh `browser-e2e-skills-*`
+4b. **Agent-binary journey**: on `/agent`, a fresh `browser-e2e-binary-*`
+   channel is created through the same UI path and posted a brief that asks
+   the agent to download the EGGROLL paper PDF
+   (https://eshyperscale.github.io/imgs/paper.pdf) and save the *actual
+   binary* with both `channel_save_binary` (channel project folder) and
+   `save_own_binary` (its own agent folder), using the `url` argument. The
+   live trace must show both tool rows with `saved: true` and `via: "url"`,
+   and both saved files are re-downloaded through the files API and checked
+   for `%PDF` magic bytes + a byte count matching the tool results. The run
+   must never fall back to `.md` text. Cleanup deletes the agent-folder copy
+   through the files API, deletes the channel, and removes the exact
+   `browser-e2e-binary-*` project folder (project scope is read-only, so the
+   fixture folder is removed via the host docker CLI); the prune is verified
+   through the workspace API.: on `/agent`, a fresh `browser-e2e-skills-*`
    channel is created through the Channels UI and the agent is told to run
    the full skill CRUD loop in order — `list_skills`, `create_skill`
    (`e2e-agent-skill`), `read_skill` by the returned id, `update_skill`,
@@ -222,8 +235,8 @@ Environment overrides:
 ## Exit code / gate
 
 Exit code `0` only when every route check and every journey (channel,
-mobile channel dashboard, sessions, files, HTML view, buckets, cron,
-skills, settings) pass
+mobile channel dashboard, web tools, agent binary, agent skills, agent
+cron, sessions, files, HTML view, buckets, cron, skills, settings) pass
 *without* console/network errors — this is the Phase-5 browser quality gate.
 Failures print the failing routes/checks and the collected errors in
 `e2e/report-<mode>.json` (also mirrored to `e2e/report.json`).

@@ -1,3 +1,59 @@
+# Round 2026-08-10 — autonomous iteration round 131 (tag `round-131`)
+
+Human DIRECTION item: **agents can save binary files** — agent tools now
+store real binary content (base64 decoded or http(s) URL streamed to disk)
+in the agent workspace and channel project folder, instead of falling back
+to saving extracted text as `.md`.
+
+### Changed
+- **`save_binary` + `save_own_binary` workspace tools**
+  (`backend/src/agent/workspace-tools.ts`) — save binary content into any
+  named agent's own folder (scoped via `safeResolve`, path-escape-safe)
+  from `base64` (strictly validated decode) or `url` (native fetch with
+  redirects followed, 100 MB declared + live-stream cap, 60 s timeout,
+  partial-file cleanup). Results return metadata only
+  (`saved`/`path`/`bytes`/`via`) — binary bytes are never echoed.
+- **`channel_save_binary` channel tool**
+  (`backend/src/agent/channel-tools.ts`) — same semantics scoped to the
+  channel's project folder.
+- **Agent system prompts** (`backend/src/agent/base-agent.service.ts`) —
+  both channel prompt blocks advertise the new tools and explicitly forbid
+  falling back to `.md` text.
+- **Unit coverage** (4 new specs in `workspace-tools.spec.ts`) — base64
+  round-trip + strict validation errors, URL streaming with 302 redirect +
+  HTTP 404 rejection, own-folder scoping, channel-project scoping + path
+  escape rejection. Backend: **16 suites / 332 tests passed**.
+- **New `binary` browser E2E journey** (`e2e/browser-e2e.mjs`) — a real
+  `/agent` channel run downloads the EGGROLL paper PDF
+  (<https://eshyperscale.github.io/imgs/paper.pdf>) with
+  `channel_save_binary` and `save_own_binary`, both via the `url` argument:
+  the live trace shows both tool rows (`saved: true`, `via: "url"`,
+  2,578,984 bytes), both saved files are re-downloaded through the files
+  API and verified with `%PDF` magic bytes + byte counts matching the tool
+  results, and cleanup removes the agent fixture + channel + project folder
+  (prune verified).
+- **Backend image rebuilt/restarted** (`fmcv-backend`) so the runtime
+  picked up the new tools.
+- **Docs** — README feature list + source structure, e2e README journey
+  list/exit gate updated.
+
+### Test status
+- Backend unit: **16 suites / 332 tests passed**.
+- Browser E2E: **enabled-mode full run green** — 14 flows including the new
+  `binary` journey (real Chrome downloaded the real PDF byte-exact), zero
+  console/network/HTTP errors.
+- Fast gate: `node scripts/verify.mjs` green (REST docs + test-count
+  guards, lint + type checks both apps).
+
+### Known issues / open tickets
+- None open. Accepted environmental limitation unchanged: Brave/DDG
+  captchas on datacenter IPs, mitigated by the proven Bing RSS fallback.
+
+### Loop state
+- DIRECTION item implemented, unit-tested, and live-E2E-proven.
+- Next round focus: _(empty — no tickets open; no obviously valuable
+  improvement identified.)_ Exit: **condition C (goal complete)**.
+
 # Round 2026-08-09 — autonomous iteration round 130 (tag `round-130`)
 
 Round 129's focus: empty — all DIRECTION items implemented and E2E-proven,

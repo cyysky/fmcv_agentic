@@ -1,52 +1,67 @@
-# Round 130 — verification round: fast gate + enabled-mode browser E2E green; loop finished (2026-08-09)
+# Round 131 — DIRECTION: agents can save binary files (2026-08-10)
 
 Loop state: finished
 
-Previous focus (Round 129's "Next round focus"): empty — all DIRECTION
-items are implemented and E2E-proven. This round was a fresh verification
-pass (full suite + real-browser E2E) to confirm that state still holds
-before stopping per LOOP.md exit condition C.
+DIRECTION (human) item: add a tool that lets agents save binary content
+(downloaded PDFs, images, archives) to the workspace/channel folder — when
+an agent fetches a URL returning binary data it must save the actual binary
+(base64 or streamed) instead of falling back to extracted `.md` text.
 
 ## What changed this round
 
-- **Fast gate re-run** — `node scripts/verify.mjs` green: REST docs guard,
-  test-count guard, backend unit tests, backend lint + type check, frontend
-  type check + lint (no source changes).
-- **Enabled-mode browser E2E re-run** — full 13-flow run (routes light/dark/
-  mobile, nav, agent channel, webtools, agentskills, agentcron, sessions,
-  files, html, buckets, cron, skills, settings) green with zero
-  console/network/HTTP errors. Webtools recorded `fetch_url` and
-  `web_search` both `via: "cdp"`, with `web_search` answering from Bing RSS
-  (`provider=bing` fallback fired live). `e2e/report.json` +
-  `e2e/report-enabled.json` refreshed; screenshots refreshed under
-  `e2e/screenshots/enabled`.
-- **DIRECTION audit** — all six items verified present in code: web tools
-  (`backend/src/web/web-tools.ts`), skill CRUD tools
-  (`backend/src/skills/skills-tools.ts`), native `@nestjs/schedule` cron
-  (`backend/src/cron/cron.service.ts`), CDP-first web strategy with
-  `WEB_CDP_HOST`/`WEB_CDP_PORT` (`backend/src/web/web.service.ts`),
-  add-new-channel modal in the `/agent` Channels UI, and the navigated
-  UI/UX fixes covered by the 13 browser journeys.
-- No runtime source changes this round.
+- **`save_binary` + `save_own_binary` workspace tools**
+  (`backend/src/agent/workspace-tools.ts`) — save binary content into any
+  named agent's own folder (self-scoped variant needs no name), from
+  `base64` (strictly validated decode; garbage rejected) or `url` (native
+  fetch, redirects followed, 100 MB declared + live-stream cap, 60 s
+  timeout, partial-file cleanup). Results return metadata only — binary
+  bytes are never echoed into the tool trace.
+- **`channel_save_binary` channel tool**
+  (`backend/src/agent/channel-tools.ts`) — same semantics scoped to the
+  channel's project folder.
+- **Agent system prompts** (`backend/src/agent/base-agent.service.ts`) —
+  both channel prompt blocks (non-streaming + streaming) advertise the new
+  tools and explicitly say never to fall back to saving extracted text as
+  `.md`.
+- **Unit coverage** — 4 new specs: base64 round-trip + invalid/missing/
+  both-inputs/escape rejections; URL streaming with 302 redirect followed
+  and HTTP 404 rejected; own-folder scoping; channel-project scoping +
+  escape rejection.
+- **Backend image rebuilt/restarted** (`fmcv-backend`) so the runtime
+  picked up the new tools.
+- **New `binary` browser E2E journey** (`e2e/browser-e2e.mjs`) — a real
+  `/agent` channel run downloads the EGGROLL paper PDF (the exact URL from
+  the ticket) with `channel_save_binary` + `save_own_binary`, both via the
+  `url` argument; the live trace shows both tool rows, and both saved files
+  are re-downloaded through the files API and verified with `%PDF` magic
+  bytes + byte counts matching the tool results (2,578,984 B). Cleanup
+  removes the agent fixture via API, deletes the channel, and removes the
+  exact `browser-e2e-binary-*` project folder (project scope is read-only)
+  with the prune check green.
+- **Docs** — README feature list + source structure and e2e README journey
+  list/exit gate updated; CHANGELOG Round 131 entry added.
 
 ## Test status
 
-- Backend unit: **16 suites / 328 tests passed**.
-- Browser E2E: **enabled-mode full run green** — 13 flows, zero
-  console/network/HTTP errors, fetch/search `via: "cdp"` proven live.
+- Backend unit: **16 suites / 332 tests passed** (+4 from Round 130).
+- Browser E2E: **enabled-mode full run green** — 14 flows including the new
+  `binary` journey, zero console/network/HTTP errors; the EGGROLL paper PDF
+  was downloaded and saved byte-exact by the live agent.
 - Fast gate `node scripts/verify.mjs`: **green** (REST docs + test-count
   guards, lint + type checks both apps).
 
 ## Known issues / open tickets
 
-- None open. The accepted environmental limitation still stands: Brave/DDG
-  captchas on datacenter IPs, mitigated by the proven Bing RSS fallback
-  (unit + browser E2E) — nothing further is actionable inside this project.
+- None open. Accepted environmental limitation unchanged: Brave/DDG
+  captchas on datacenter IPs, mitigated by the proven Bing RSS fallback.
+- Note: `/api/files/view` only serves `.html` inline (415 for a PDF), so
+  the binary journey verifies project-scope fixtures via
+  `/api/files/download` — documented in the journey.
 
 ## Next round focus
 
-_(empty — all DIRECTION items implemented and E2E-proven; no tickets open;
-no obviously valuable improvement identified.)_
+_(empty — DIRECTION item implemented, unit-tested, and live-E2E-proven; no
+tickets open; no obviously valuable improvement identified.)_
 
 Exit: **condition C (goal complete)** — stopping. Resume only when new
 human direction arrives or a runtime change warrants re-running the gates.

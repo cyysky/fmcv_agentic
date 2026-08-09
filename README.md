@@ -74,7 +74,12 @@ and coordinate multi-agent teams in Slack-style channels.
   (Docker default `/data/workspaces`): public project folders under
   `projects/` and one writable folder per agent under `agents/<name>/`
   (`coder`, `researcher`, each with a `work/` directory); agents get file
-  read/write/list tools plus connection-credentials lookup.
+  read/write/list tools plus connection-credentials lookup. Agents can also
+  save real binary content with `save_binary` / `save_own_binary` (agent
+  folder) and `channel_save_binary` (channel project folder): the tools
+  decode a base64 payload or stream an http(s) URL straight to disk (100 MB
+  cap, 60 s timeout), so downloaded PDFs/images/archives are stored as
+  binary files instead of falling back to extracted `.md` text.
 - **Agent web access** — agents get `fetch_url` and `web_search`
   tools inside their runs (DuckDuckGo HTML search; rendered text, ~8k
   chars, 30 s timeout; when DDG bot-blocks, `web_search` retries the same
@@ -937,8 +942,8 @@ backend/
       channel.service.ts      # channel persistence + message feeds
       channel-job.service.ts  # streaming SSE jobs per channel member
       workspace.service.ts    # filesystem workspaces (AGENT_WORKSPACE_ROOT)
-      workspace-tools.ts      # agent file/credential tools
-      channel-tools.ts        # agent channel tools
+      workspace-tools.ts      # agent file/credential/binary (save_binary) tools
+      channel-tools.ts        # agent channel tools (+ channel_save_binary)
       agent.models.ts         # model catalog (ds4-flash, qwen3.6-35b)
   test/                  # API E2E suites + bootstrap/e2e-setup helpers
 frontend/
