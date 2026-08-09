@@ -24,11 +24,16 @@ browsing, and a fix for the blocked add-new-channel dialog.
   was rendered unconditionally (`agent-views.tsx`); it is now gated on
   `showNew`, threaded through `agent-client.tsx` state + context, and the
   browser E2E asserts the dialog is closed on tab open and opens on click.
+- **Cron lease failover on shutdown** — `CronService.onModuleDestroy()`
+  now stops the native `@nestjs/schedule` tick interval via the
+  `SchedulerRegistry`, so a dead replica stops renewing its lease and the
+  standby actually takes over (multireplica API E2E now passes).
 
 ### Test status
-- Backend unit 321/321 across 16 suites (cron native-tick + tool
-  registration, web service, skill CRUD/web tool integration); backend
-  lint + `tsc` clean; frontend `tsc` + lint clean; full gate
+- Backend unit 323/323 across 16 suites (cron native-tick + tool
+  registration + teardown, web service, skill CRUD/web tool integration);
+  API E2E 123/123 across 12 suites (incl. the cron lease-failover fix);
+  backend lint + `tsc` clean; frontend `tsc` + lint clean; full gate
   (docs/test-count guards, `nest build`, `next build`, bundle + headroom
   guards, API E2E) re-run green; browser E2E both modes re-run green
   against the rebuilt images.

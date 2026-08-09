@@ -394,7 +394,8 @@ node scripts/api-e2e.mjs
   escape 400, missing-folder recreation), delete removing folder + both row
   types + 404 on unknown), and the cron service
   (native `@nestjs/schedule` `@Interval` ticker with the lease-gated
-  private tick via a directly invoked `handleSchedulerTick`, agent cron
+  private tick via a directly invoked `handleSchedulerTick`, teardown
+  stopping the interval so a dead replica stops renewing its lease, agent cron
   tool registration (list/create/update/delete/run-now), create with
   normalized fields + next-run slot, invalid schedule 400,
   duplicate-name 409, unknown pinned connection 400, list/get/404, update
