@@ -46,6 +46,7 @@ Environment overrides:
 | `E2E_SHOT_DIR`      | `e2e/screenshots/<mode>`      | screenshot output dir (`enabled` or `api-only` subdir; an explicit value is used verbatim) |
 | `E2E_REPORT`        | `e2e/report.json` (+`report-<mode>.json`) | JSON report path; the mode archive `report-<mode>.json` is always written too (an explicit `E2E_REPORT` value is used verbatim as the latest mirror) |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
+| `E2E_EXPECT_SEARCH_PROVIDER` | unset               | strict webtools provider pin: when set to `duckduckgo` or `bing`, the journey fails unless the tool trace recorded exactly that provider (pair with the backend `WEB_SEARCH_PROVIDER`; see journey 4) |
 | `E2E_CONN_HOST`      | auto-detected                 | host/IP the fixture connection points the backend at (override when the backend container cannot reach the auto-detected IP) |
 | `E2E_CONN_MODEL`     | `ds4-flash`                   | model name stored on the fixture connection in the sessions journey |
 | `E2E_CONN_OVERRIDE_MODEL` | `qwen3.6-35b`          | catalog model picked as an override during the sessions journey (must differ from `E2E_CONN_MODEL`) |
@@ -85,6 +86,11 @@ Environment overrides:
    provider used (`duckduckgo` or `bing` — either is valid, and `bing` proves
    the fallback ran live) plus the `via` provenance, a real rendered
    page/title, and the fetch body containing "Example Domain".
+   For a deterministic provider, the backend supports
+   `WEB_SEARCH_PROVIDER=duckduckgo|bing` (set it when starting the backend:
+   `WEB_SEARCH_PROVIDER=bing docker compose up -d --force-recreate backend`),
+   and `E2E_EXPECT_SEARCH_PROVIDER=bing` makes this journey assert that
+   exact provider instead of accepting either live outcome.
 5. **Agent-skills journey**: on `/agent`, a fresh `browser-e2e-skills-*`
    channel is created through the Channels UI and the agent is told to run
    the full skill CRUD loop in order — `list_skills`, `create_skill`

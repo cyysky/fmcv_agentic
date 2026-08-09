@@ -290,6 +290,159 @@ describe('WebService', () => {
     expect(newTabUrls[0]).toContain('html.duckduckgo.com');
   });
 
+  it('webSearch WEB_SEARCH_PROVIDER=bing skips DuckDuckGo entirely', async () => {
+    FakeWebSocket.pageStates = [
+      {
+        title: 'OpenAI - Search',
+        href: 'https://www.bing.com/search?q=OpenAI&format=rss',
+        ready: 'complete',
+        text:
+          '<rss><channel><title>Bing: OpenAI</title>' +
+          '<item><title>OpenAI | Research &amp; Deployment</title>' +
+          '<link>https://openai.com/</link></item></channel></rss>',
+      },
+    ];
+    const newTabUrls: string[] = [];
+    global.fetch = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/json/version') || url.includes('/json/close/')) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/json/new?')) {
+        newTabUrls.push(decodeURIComponent(url));
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'tab-search',
+            url: 'about:blank',
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/search',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const svc = new WebService(
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+        WEB_SEARCH_PROVIDER: 'bing',
+      }),
+    );
+    const result = await svc.webSearch('OpenAI');
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('bing');
+    expect(result.text).toContain('Bing: OpenAI');
+    expect(FakeWebSocket.instances.length).toBe(1); // DDG never contacted
+    expect(newTabUrls).toHaveLength(1);
+    expect(newTabUrls[0]).toContain('www.bing.com/search?q=OpenAI&format=rss');
+  });
+
+  it('webSearch WEB_SEARCH_PROVIDER=duckduckgo keeps a bot-blocked DDG outcome without retrying', async () => {
+    FakeWebSocket.pageStates = [
+      {
+        title: 'DuckDuckGo',
+        href: 'https://html.duckduckgo.com/html/?q=OpenAI',
+        ready: 'complete',
+        text:
+          '\nDuckDuckGo\n\n\nUnfortunately, bots use DuckDuckGo too.\n' +
+          'Please complete the following challenge to confirm this search ' +
+          'was made by a human.\nSelect all squares containing a duck:\nSubmit\n',
+      },
+    ];
+    const newTabUrls: string[] = [];
+    global.fetch = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/json/version') || url.includes('/json/close/')) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/json/new?')) {
+        newTabUrls.push(decodeURIComponent(url));
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'tab-search',
+            url: 'about:blank',
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/search',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const svc = new WebService(
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+        WEB_SEARCH_PROVIDER: 'duckduckgo',
+      }),
+    );
+    const result = await svc.webSearch('OpenAI');
+    expect(result.ok).toBe(true); // page loaded; bot-wall text captured as-is
+    expect(result.provider).toBe('duckduckgo');
+    expect(result.text.toLowerCase()).toContain(
+      'select all squares containing a duck',
+    );
+    expect(FakeWebSocket.instances.length).toBe(1); // no Bing retry
+    expect(newTabUrls).toHaveLength(1);
+    expect(newTabUrls[0]).toContain('html.duckduckgo.com');
+  });
+
+  it('webSearch treats an unknown WEB_SEARCH_PROVIDER value as auto', async () => {
+    FakeWebSocket.pageStates = [
+      {
+        title: 'DuckDuckGo',
+        href: 'https://html.duckduckgo.com/html/?q=OpenAI',
+        ready: 'complete',
+        text:
+          '\nDuckDuckGo\n\n\nUnfortunately, bots use DuckDuckGo too.\n' +
+          'Please complete the following challenge to confirm this search ' +
+          'was made by a human.\nSelect all squares containing a duck:\nSubmit\n',
+      },
+      {
+        title: 'OpenAI - Search',
+        href: 'https://www.bing.com/search?q=OpenAI&format=rss',
+        ready: 'complete',
+        text:
+          '<rss><channel><title>Bing: OpenAI</title>' +
+          '<item><title>OpenAI | Research &amp; Deployment</title>' +
+          '<link>https://openai.com/</link></item></channel></rss>',
+      },
+    ];
+    const newTabUrls: string[] = [];
+    global.fetch = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/json/version') || url.includes('/json/close/')) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/json/new?')) {
+        newTabUrls.push(decodeURIComponent(url));
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'tab-search',
+            url: 'about:blank',
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/search',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const svc = new WebService(
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+        WEB_SEARCH_PROVIDER: 'ddg-typo',
+      }),
+    );
+    const result = await svc.webSearch('OpenAI');
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('bing'); // auto fallback still runs
+    expect(FakeWebSocket.instances.length).toBe(2);
+    expect(newTabUrls).toHaveLength(2);
+  });
+
   it('reports the failure when CDP and native fetch both fail', async () => {
     const cdp = createServer();
     await new Promise<void>((r) => cdp.listen(0, '127.0.0.1', () => r()));

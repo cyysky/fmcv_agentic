@@ -188,6 +188,7 @@ export class WebService {
   private readonly cdpPort: number;
   private readonly timeoutMs: number;
   private readonly textCap: number;
+  private readonly searchProvider: 'auto' | 'duckduckgo' | 'bing';
 
   constructor(config: ConfigService) {
     this.cdpHost =
@@ -198,6 +199,14 @@ export class WebService {
     this.timeoutMs =
       Number(config.get<string>('WEB_FETCH_TIMEOUT_MS', '30000')) || 30000;
     this.textCap = Number(config.get<string>('WEB_TEXT_CAP', '8000')) || 8000;
+    // Deterministic search path for tests/CI: `auto` keeps DDG-first with the
+    // Bing fallback; `duckduckgo`/`bing` pin one provider with no retry so a
+    // run's provider choice never depends on live bot-wall behavior.
+    const wanted = (config.get<string>('WEB_SEARCH_PROVIDER') ?? 'auto')
+      .trim()
+      .toLowerCase();
+    this.searchProvider =
+      wanted === 'duckduckgo' || wanted === 'bing' ? wanted : 'auto';
   }
 
   get cdpBase(): string {
@@ -241,7 +250,9 @@ export class WebService {
   /** Web search: DuckDuckGo HTML results rendered through the same pipeline.
    *  DDG frequently bot-blocks datacenter IPs ("select all squares containing
    *  a duck"), so when its page looks blocked/errors we retry the same query
-   *  on Bing's RSS endpoint and return that instead. */
+   *  on Bing's RSS endpoint and return that instead. `WEB_SEARCH_PROVIDER`
+   *  pins `duckduckgo` or `bing` (no retry) for deterministic runs; anything
+   *  else keeps the `auto` DDG-first/Bing-fallback behavior. */
   async webSearch(query: string): Promise<FetchResult> {
     const q = typeof query === 'string' ? query.trim() : '';
     if (!q) {
@@ -254,9 +265,19 @@ export class WebService {
         error: 'Search query must be a non-empty string',
       };
     }
+    if (this.searchProvider === 'bing') {
+      const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(q)}&format=rss`;
+      const bing = await this.fetchUrl(bingUrl);
+      return bing.ok ? { ...bing, provider: 'bing' } : bing;
+    }
     const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
     const ddg = await this.fetchUrl(ddgUrl);
     if (ddg.ok && !looksBotBlocked(ddg.text)) {
+      return { ...ddg, provider: 'duckduckgo' };
+    }
+    if (this.searchProvider === 'duckduckgo') {
+      // Pinned provider: keep the DDG outcome (blocked/error included) instead
+      // of silently retrying on Bing, so the trace provider is deterministic.
       return { ...ddg, provider: 'duckduckgo' };
     }
     this.logger.warn(

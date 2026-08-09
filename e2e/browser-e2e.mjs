@@ -133,6 +133,11 @@ const REPORT = resolve(process.env.E2E_REPORT || resolve(SCRIPT_DIR, "report.jso
 const MODE_REPORT = resolve(SCRIPT_DIR, `report-${MODE}.json`);
 // Overall watchdog: a stuck CDP target must not let the round hang forever.
 const WATCHDOG_MS = Number(process.env.E2E_WATCHDOG_MS || 10 * 60 * 1000);
+// Optional strict provider pin for the webtools journey (Round 127): set the
+// backend's WEB_SEARCH_PROVIDER to auto|duckduckgo|bing, then point this at
+// the same value so the journey asserts exactly the provider that must have
+// run instead of accepting either live outcome.
+const EXPECT_SEARCH_PROVIDER = (process.env.E2E_EXPECT_SEARCH_PROVIDER || "").toLowerCase();
 mkdirSync(SHOT_DIR, { recursive: true });
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1176,13 +1181,15 @@ async function webtoolsFlow() {
     // live outcomes, and asserting the field proves which one actually ran.
     const providerMatch = searchEntry && searchEntry.body.match(/"provider":\s*"([a-z]+)"/i);
     flow.result.searchProvider = providerMatch ? providerMatch[1].toLowerCase() : null;
+    flow.result.expectedProvider = EXPECT_SEARCH_PROVIDER || null;
     flow.steps.push("expanded-trace");
     const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
     flow.feedSnippet = feed.slice(0, 1200);
     log(
       `  trace: fetch_url seen=${flow.result.fetchSeen} cdp=${flow.result.fetchCdp} exampleTitle=${flow.result.exampleTitle}; ` +
       `web_search seen=${flow.result.searchSeen} cdp=${flow.result.searchCdp} ` +
-      `provider=${flow.result.searchProvider}`,
+      `provider=${flow.result.searchProvider}` +
+      (EXPECT_SEARCH_PROVIDER ? ` (expected ${EXPECT_SEARCH_PROVIDER})` : ""),
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
@@ -6432,6 +6439,12 @@ if (want("webtools")) {
     failures.push(`webtools flow: CDP-first fetch_url/web_search with provider not verified (${JSON.stringify(wfl && wfl.flow)})`);
   } else if (wr && !["duckduckgo", "bing"].includes(wr.searchProvider)) {
     failures.push(`webtools flow: unexpected web_search provider ${JSON.stringify(wr.searchProvider)} (expected duckduckgo or bing)`);
+  } else if (EXPECT_SEARCH_PROVIDER && wr?.searchProvider !== EXPECT_SEARCH_PROVIDER) {
+    failures.push(
+      `webtools flow: web_search provider ${JSON.stringify(wr.searchProvider)} ` +
+      `does not match E2E_EXPECT_SEARCH_PROVIDER=${EXPECT_SEARCH_PROVIDER} ` +
+      `(check WEB_SEARCH_PROVIDER on the backend)`,
+    );
   }
   if (wfl && wfl.projectPrune && wfl.projectPrune.ok === false) {
     failures.push(`webtools flow: leftover channel project folder(s) [${wfl.projectPrune.leftovers.join(", ")}]`);

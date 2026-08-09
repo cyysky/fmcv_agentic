@@ -44,6 +44,10 @@ services:
       - WEB_CDP_HOST=${WEB_CDP_HOST:-host.docker.internal}
       - WEB_CDP_PORT=${WEB_CDP_PORT:-9222}
       - WEB_FETCH_TIMEOUT_MS=${WEB_FETCH_TIMEOUT_MS:-30000}
+      # Web-search provider pin (Round 127): auto = DDG first with a Bing RSS
+      # fallback when bot-walled; duckduckgo|bing force exactly one provider
+      # (no retry) so E2E runs can assert a deterministic provider.
+      - WEB_SEARCH_PROVIDER=${WEB_SEARCH_PROVIDER:-auto}
     extra_hosts:
       # Resolves host.docker.internal to the Docker host so the backend can
       # reach the host's local Chrome DevTools instance on port 9222.
