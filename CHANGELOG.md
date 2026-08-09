@@ -1,3 +1,40 @@
+## Round 2026-08-09 — autonomous iteration round 126 (tag `round-126`)
+
+Round 125's focus #2: quiet the Jest "did not exit one second after the test
+run" keep-alive warning in the unit/API E2E suites.
+
+### Changed
+- **Jest keep-alive warning fixed at the root** — the `cron-disabled` and
+  `cron-multireplica` E2E specs ran raw Prisma cleanups (`$executeRaw`)
+  *after* `app.close()` had already disconnected the shared pool. Those
+  queries silently reopened a Postgres pool nothing ever closed, leaving
+  live sockets for a few seconds past the last test — exactly the window
+  Jest's one-second exit grace trips on. Both afterAll hooks now call
+  `prisma.$disconnect()` after the raw cleanups; watchdog-style probes
+  confirmed the sockets (and the warning) disappear. `--forceExit` was
+  deliberately rejected: the suites now exit cleanly on their own.
+- **Rejected experiment removed** — an `undici` global-dispatcher keep-alive
+  override and temporary probe specs were tried while isolating the leak;
+  they were not the cause and were dropped before commit (no net
+  dependency change).
+
+### Test status
+- Backend unit: **16 suites / 325 tests passed**; lint + type checks clean.
+- Full gate `verify --build --api-e2e`: **green** — API E2E 12 suites /
+  123 tests with **no exit warning across repeated runs**, REST docs +
+  test-count guards, `/agent` bundle 484 KB / 33.6 KB headroom; backend
+  flipped to API-only for E2E and restored to enabled.
+- Browser E2E: **not re-run** — Round 126 changed test infrastructure only,
+  no runtime code, so the Round 125 2/2 green browser runs stand.
+
+### Known issues / open tickets
+- **Low** — webtools browser journey still tracks the live provider
+  (`duckduckgo`/`bing` asserted from the trace); not yet an offline
+  deterministic fixture. Unit tests already hold both provider paths
+  deterministically. (Carried; decision next round.)
+- **Low** — occasional Brave captcha on datacenter IPs; Bing RSS fallback
+  observed healthy.
+
 ## Round 2026-08-09 — autonomous iteration round 125 (tag `round-125`)
 
 Round 124's focus: lock the DDG->Bing web-search fallback into the browser
