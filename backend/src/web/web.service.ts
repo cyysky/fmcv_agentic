@@ -271,7 +271,10 @@ export class WebService {
     )) as { id: string; url: string; webSocketDebuggerUrl: string };
     let session: CdpSession | null = null;
     try {
-      session = new CdpSession(target.webSocketDebuggerUrl, this.timeoutMs);
+      session = new CdpSession(
+        this.normalizeCdpWsUrl(target.webSocketDebuggerUrl),
+        this.timeoutMs,
+      );
       await session.open();
       await session.send('Page.enable');
       const deadline = Date.now() + this.timeoutMs;
@@ -282,7 +285,13 @@ export class WebService {
           expression: `(() => ({ title: document.title, href: location.href, ready: document.readyState, text: (document.body ? document.body.innerText : '').slice(0, ${this.textCap}) }))()`,
           returnByValue: true,
         });
-        const value = res.value;
+        // Chrome returns the evaluated value inside `result.value`
+        // (`{ result: { type, value } }`); keep `res.value` as a fallback.
+        const remote = res.result;
+        const value =
+          remote !== undefined && remote !== null && typeof remote === 'object'
+            ? (remote as { value?: unknown }).value
+            : res.value;
         if (value && typeof value === 'object') {
           last = value as CdpPageState;
           if (
@@ -310,6 +319,24 @@ export class WebService {
         `/json/close/${encodeURIComponent(target.id)}`,
         'GET',
       ).catch(() => undefined);
+    }
+  }
+
+  /**
+   * Chrome advertises the page debugger as a loopback URL (e.g.
+   * `ws://127.0.0.1:9223/devtools/page/<id>`), which is unreachable from
+   * inside the compose backend even when the CDP HTTP port is reachable via
+   * the host relay / host-gateway. Rewrite host:port to the configured CDP
+   * endpoint so the session follows the same path as the `/json/*` requests.
+   */
+  private normalizeCdpWsUrl(wsUrl: string): string {
+    try {
+      const u = new URL(wsUrl);
+      u.hostname = this.cdpHost;
+      u.port = String(this.cdpPort);
+      return u.toString();
+    } catch {
+      return wsUrl;
     }
   }
 

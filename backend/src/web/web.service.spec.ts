@@ -49,7 +49,9 @@ class FakeWebSocket {
         ready: 'complete',
         text: 'Hello from CDP page',
       };
-      this.respond(msg.id, { value: state });
+      // Real Chrome wraps the evaluated value in `result.value`; keep the
+      // fake honest so the real CDP path cannot silently diverge from tests.
+      this.respond(msg.id, { result: { type: 'object', value: state } });
       return;
     }
     this.respond(msg.id, {});
@@ -154,7 +156,10 @@ describe('WebService', () => {
           json: async () => ({
             id: 'tab-round121',
             url: 'https://example.com',
-            webSocketDebuggerUrl: 'ws://fake-cdp/round121',
+            // Chrome advertises the loopback URL it actually bound; the service
+            // must rewrite it to the configured CDP endpoint so containers can
+            // reach it through the relay / host-gateway.
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/round121',
           }),
         } as unknown as Response;
       }
@@ -165,7 +170,10 @@ describe('WebService', () => {
     });
 
     const svc = new WebService(
-      configService({ WEB_CDP_HOST: '127.0.0.1', WEB_CDP_PORT: '9222' }),
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+      }),
     );
     const result = await svc.fetchUrl('https://example.com');
     expect(result.ok).toBe(true);
@@ -174,6 +182,9 @@ describe('WebService', () => {
     expect(result.text).toBe('Hello from CDP page');
     expect(result.title).toBe('Example Domain');
     expect(FakeWebSocket.instances.length).toBe(1);
+    expect(FakeWebSocket.instances[0].url).toBe(
+      'ws://host.docker.internal:9222/devtools/page/round121',
+    );
     expect(FakeWebSocket.instances[0].readyState).toBe(3); // closed after use
   });
 
