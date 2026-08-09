@@ -105,10 +105,10 @@ const API = process.env.E2E_API_BASE || APP.replace(/:\d+/, ":5555") + "/api";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
 // Round 88: E2E_JOURNEYS=<comma-separated> picks which flows run (default
-// "all"). Names: routes, nav, agent, webtools, mobile, sessions, files, html,
-// buckets, cron, skills, settings. Skipped flows are reported as null and
-// their validation blocks are skipped too, so a quick regression run stays
-// green.
+// "all"). Names: routes, nav, agent, webtools, agentskills, mobile, sessions,
+// files, html, buckets, cron, skills, settings. Skipped flows are reported as
+// null and their validation blocks are skipped too, so a quick regression run
+// stays green.
 // Round 92: shorthand presets expand to explicit flow lists, so quick runs
 // stay one word: cron-only (routes+cron), ui-only (routes+nav+mobile+html+
 // settings+skills), core (routes+agent+cron). A preset can mix with plain
@@ -1176,6 +1176,154 @@ async function webtoolsFlow() {
     log(
       `  trace: fetch_url seen=${flow.result.fetchSeen} cdp=${flow.result.fetchCdp} exampleTitle=${flow.result.exampleTitle}; ` +
       `web_search seen=${flow.result.searchSeen} cdp=${flow.result.searchCdp}`,
+    );
+    return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Agent-skills channel journey (Round 123): drive the full skill CRUD loop —
+ *  list_skills -> create_skill -> read_skill -> update_skill -> delete_skill —
+ *  through a real /agent channel and prove every tool row appears in the live
+ *  trace and the created skill is really gone from the backend afterwards. */
+async function agentskillsFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  const channelName = `browser-e2e-skills-${Date.now().toString(36)}`;
+  log(`flow agentskills -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, channelName };
+  const started = Date.now();
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "agentskills ready");
+    if (!ready) throw new Error("agentskills flow: page never loaded");
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea')}`,
+      30000,
+      600,
+      "agent composer",
+    );
+    if (!composer) throw new Error("agentskills flow: page never rendered its composer");
+
+    // Same Channels -> New channel UI path as the other channel journeys.
+    await evalJs(c, jsClick("Channels", true));
+    await delay(400);
+    await evalJs(c, jsClick("New channel", false));
+    const modalOpen = await waitFor(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+      5000,
+      300,
+      "new-channel dialog",
+    );
+    if (!modalOpen) throw new Error("agentskills flow: new-channel dialog did not open");
+    await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
+    await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
+    await delay(100);
+    await evalJs(c, jsClick("Create", true));
+    flow.steps.push("created-channel");
+    log(`  created channel ${channelName}`);
+
+    const composerReady = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
+      30000,
+      600,
+      "channel composer",
+    );
+    if (!composerReady) throw new Error("agentskills flow: channel composer never appeared");
+    const msg =
+      "Use your five skill tools in this exact order and report each result: " +
+      "(1) list_skills to show existing skills; " +
+      "(2) create_skill with name 'e2e-agent-skill', description 'Round 123 agent skill e2e', " +
+      "content '# Agent skill e2e\\n\\nCreated by the agent loop.', installed false; " +
+      "(3) read_skill with that skill's id; " +
+      "(4) update_skill with that id to set description 'Round 123 agent skill e2e (updated)'; " +
+      "(5) delete_skill with that id. Quote the updated description before deleting.";
+    await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("agentskills flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    log("  posted message; waiting for agent run");
+    await delay(1800);
+    await screenshot(c, "agentskills-running.png");
+
+    const terminal = await waitFor(
+      c,
+      '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
+      240000,
+      800,
+      "agentskills terminal state",
+    );
+    flow.timings.elapsedMs = Date.now() - started;
+    if (!terminal) throw new Error("agentskills flow: no terminal state within 240s");
+    const state = await evalJs(c, `(() => {
+      const t = document.body.innerText.toUpperCase();
+      return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
+    })()`);
+    await delay(500);
+    await screenshot(c, "agentskills-done.png");
+    flow.result = state;
+    log(`  agentskills terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
+
+    // Expand every live tool row, then read the tool name + body back out.
+    await evalJs(c, `(() => {
+      let clicked = 0;
+      for (const b of [...document.querySelectorAll('[class*="liveTool"]')]) {
+        if (!(b instanceof HTMLButtonElement)) continue;
+        b.click();
+        clicked += 1;
+      }
+      return clicked;
+    })()`);
+    await delay(400);
+    const trace = await evalJs(c, `(() => {
+      const rows = [...document.querySelectorAll('[class*="liveToolRow"]')];
+      return rows.map((r) => {
+        const name = r.querySelector("code")?.textContent ?? "";
+        const body = r.querySelector('[class*="liveBody"]')?.innerText ?? "";
+        return { name, body };
+      });
+    })()`);
+    const entry = (n) => (trace ?? []).find((t) => String(t.name || "").includes(n));
+    const listEntry = entry("list_skills");
+    const createEntry = entry("create_skill");
+    const readEntry = entry("read_skill");
+    const updateEntry = entry("update_skill");
+    const deleteEntry = entry("delete_skill");
+    flow.result.trace = trace;
+    flow.result.listSeen = !!listEntry;
+    flow.result.createSeen = !!createEntry;
+    flow.result.readSeen = !!readEntry;
+    flow.result.readOk = !!(readEntry && /"name":\s*"e2e-agent-skill"/.test(readEntry.body));
+    flow.result.updateSeen = !!updateEntry;
+    flow.result.deleteSeen = !!deleteEntry;
+    const idMatch = createEntry && createEntry.body.match(/"id":\s*"([^"]+)"/);
+    flow.result.skillId = idMatch ? idMatch[1] : null;
+    // The skill must be gone from the backend by the time the run is terminal.
+    let leftover = "no-id-from-trace";
+    if (flow.result.skillId) {
+      const got = await fetch(`${API}/skills/${flow.result.skillId}`);
+      leftover = got.status === 404 ? false : `HTTP ${got.status}`;
+    }
+    flow.result.skillLeftover = leftover;
+    flow.steps.push("expanded-trace");
+    const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
+    flow.feedSnippet = feed.slice(0, 1200);
+    log(
+      `  trace: list=${flow.result.listSeen} create=${flow.result.createSeen} read=${flow.result.readSeen}/${flow.result.readOk} ` +
+      `update=${flow.result.updateSeen} delete=${flow.result.deleteSeen}; skillLeftover=${flow.result.skillLeftover}`,
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
@@ -5892,6 +6040,11 @@ report.webtoolsFlow = await webtoolsFlow();
     report.webtoolsFlow.cleanup = await agentChannelCleanup(report.webtoolsFlow);
     report.webtoolsFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-web-");
     }
+    if (want("agentskills")) {
+report.agentskillsFlow = await agentskillsFlow();
+    report.agentskillsFlow.cleanup = await agentChannelCleanup(report.agentskillsFlow);
+    report.agentskillsFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-skills-");
+    }
     if (want("mobile")) {
 report.mobileChannelFlow = await mobileChannelFlow();
     report.mobileChannelFlow.cleanup = await mobileChannelCleanup(report.mobileChannelFlow);
@@ -5994,6 +6147,33 @@ if (want("webtools")) {
   }
   const webErrs = errorCount(wfl ? wfl.errors : {});
   if (webErrs > 0) failures.push(`webtools flow: ${webErrs} console/network error(s)`);
+
+}
+
+if (want("agentskills")) {
+  const afl = report.agentskillsFlow;
+  const ar = afl && afl.flow && afl.flow.result;
+  if (
+    !afl ||
+    !terminalOk(ar) ||
+    !ar?.listSeen ||
+    !ar?.createSeen ||
+    !ar?.readSeen ||
+    !ar?.readOk ||
+    !ar?.updateSeen ||
+    !ar?.deleteSeen ||
+    ar?.skillLeftover !== false
+  ) {
+    failures.push(`agentskills flow: full skill CRUD loop not verified (${JSON.stringify(afl && afl.flow)})`);
+  }
+  if (afl && afl.projectPrune && afl.projectPrune.ok === false) {
+    failures.push(`agentskills flow: leftover channel project folder(s) [${afl.projectPrune.leftovers.join(", ")}]`);
+  }
+  if (afl && (!afl.cleanup || !afl.cleanup.includes("deleted"))) {
+    failures.push(`agentskills flow: cleanup not verified (${JSON.stringify(afl && afl.cleanup)})`);
+  }
+  const skillErrs = errorCount(afl ? afl.errors : {});
+  if (skillErrs > 0) failures.push(`agentskills flow: ${skillErrs} console/network error(s)`);
 
 }
 

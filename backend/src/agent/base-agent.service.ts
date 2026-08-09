@@ -195,21 +195,37 @@ export class BaseAgentService implements OnModuleInit {
       this.registerTool({
         name: 'read_skill',
         description:
-          'Load the full instructions of an installed skill by its exact name. Use it whenever a named skill is relevant to the request.',
+          'Read a skill: pass "id" to load any authored skill record ' +
+          '(including its content), or "name" to load the full instructions ' +
+          'of an installed skill. Use id right after create_skill/update_skill; ' +
+          'use name when the system prompt lists installed skills.',
         parameters: {
           type: 'object',
           properties: {
+            id: {
+              type: 'string',
+              description: 'Skill id (uuid) of an authored skill; returns the full record.',
+            },
             name: {
               type: 'string',
-              description: 'Exact name of the installed skill',
+              description: 'Exact name of an installed skill; returns its instructions.',
             },
           },
-          required: ['name'],
         },
         run: async (args: Record<string, unknown>) => {
+          const id = typeof args.id === 'string' ? args.id.trim() : '';
           const name = typeof args.name === 'string' ? args.name.trim() : '';
-          if (!name) {
-            return JSON.stringify({ error: 'Skill name is required' });
+          if (!id && !name) {
+            return JSON.stringify({ error: 'Skill id or name is required' });
+          }
+          if (id) {
+            try {
+              return JSON.stringify(await this.skills!.get(id));
+            } catch (err) {
+              return JSON.stringify({
+                error: (err as Error).message ?? 'Skill not found',
+              });
+            }
           }
           const content = await this.skillsContent(name);
           if (content === null) {

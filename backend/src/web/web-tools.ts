@@ -31,8 +31,9 @@ export function buildWebTools(web: WebService): BaseTool[] {
       name: 'web_search',
       description:
         'Search the web for a query and return the rendered result page text ' +
-        '(DuckDuckGo HTML, CDP-first, http fallback, ~8k chars). Use for ' +
-        'lookups before or instead of guessing. args: { query: string }.',
+        '(DuckDuckGo HTML first; when it bot-blocks, Bing RSS; CDP-first, ' +
+        'http fallback, ~8k chars). Use for lookups before or instead of ' +
+        'guessing. args: { query: string }.',
       parameters: {
         type: 'object',
         properties: {

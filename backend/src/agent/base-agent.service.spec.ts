@@ -853,6 +853,18 @@ describe('BaseAgentService skills integration', () => {
       contentFor: jest.fn(async (name: string) =>
         name === 'code-review' ? '# Code review\nCheck edge cases.' : null,
       ),
+      get: jest.fn(async (id: string) => {
+        if (id === 'missing') throw new Error('Skill missing');
+        return {
+          id,
+          name: 'code-review',
+          description: 'A review checklist',
+          content: '# Code review\nCheck edge cases.',
+          installed: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+      }),
     };
   }
 
@@ -947,7 +959,7 @@ describe('BaseAgentService skills integration', () => {
     }
   });
 
-  it('read_skill returns the body of an installed skill and errors otherwise', async () => {
+  it('read_skill loads an authored skill by id and installed skill by name', async () => {
     const root = await fs.mkdtemp(
       path.join(os.tmpdir(), 'fmcv-agent-readskill-'),
     );
@@ -963,11 +975,19 @@ describe('BaseAgentService skills integration', () => {
       await expect(readSkill.run({ name: 'code-review' })).resolves.toBe(
         '# Code review\nCheck edge cases.',
       );
+      const byId = JSON.parse(
+        (await readSkill.run({ id: 'skill-uuid-1' })) as string,
+      ) as Record<string, unknown>;
+      expect(byId.name).toBe('code-review');
+      expect(byId.content).toContain('Check edge cases.');
       await expect(readSkill.run({ name: 'absent' })).resolves.toContain(
         'No installed skill named',
       );
+      await expect(readSkill.run({ id: 'missing' })).resolves.toContain(
+        'Skill missing',
+      );
       await expect(readSkill.run({})).resolves.toContain(
-        'Skill name is required',
+        'Skill id or name is required',
       );
     } finally {
       await fs.rm(root, { recursive: true, force: true });

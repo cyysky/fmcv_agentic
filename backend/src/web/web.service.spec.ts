@@ -188,6 +188,108 @@ describe('WebService', () => {
     expect(FakeWebSocket.instances[0].readyState).toBe(3); // closed after use
   });
 
+  it('webSearch falls back to Bing RSS when DuckDuckGo bot-blocks', async () => {
+    FakeWebSocket.pageStates = [
+      {
+        title: 'DuckDuckGo',
+        href: 'https://html.duckduckgo.com/html/?q=OpenAI',
+        ready: 'complete',
+        text:
+          '\nDuckDuckGo\n\n\nUnfortunately, bots use DuckDuckGo too.\n' +
+          'Please complete the following challenge to confirm this search ' +
+          'was made by a human.\nSelect all squares containing a duck:\nSubmit\n',
+      },
+      {
+        title: 'OpenAI - Search',
+        href: 'https://www.bing.com/search?q=OpenAI&format=rss',
+        ready: 'complete',
+        text:
+          '<rss><channel><title>Bing: OpenAI</title>' +
+          '<item><title>OpenAI | Research &amp; Deployment</title>' +
+          '<link>https://openai.com/</link></item></channel></rss>',
+      },
+    ];
+    const newTabUrls: string[] = [];
+    global.fetch = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/json/version') || url.includes('/json/close/')) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/json/new?')) {
+        newTabUrls.push(decodeURIComponent(url));
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'tab-search',
+            url: 'about:blank',
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/search',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const svc = new WebService(
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+      }),
+    );
+    const result = await svc.webSearch('OpenAI');
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('bing');
+    expect(result.via).toBe('cdp');
+    expect(result.text).toContain('Bing: OpenAI');
+    expect(result.text).toContain('OpenAI | Research &amp; Deployment');
+    expect(FakeWebSocket.instances.length).toBe(2); // DDG attempt + Bing retry
+    expect(newTabUrls[0]).toContain('html.duckduckgo.com');
+    expect(newTabUrls[1]).toContain('www.bing.com/search?q=OpenAI&format=rss');
+  });
+
+  it('webSearch keeps the DuckDuckGo result when it is not bot-blocked', async () => {
+    FakeWebSocket.pageStates = [
+      {
+        title: 'DuckDuckGo',
+        href: 'https://html.duckduckgo.com/html/?q=NestJS',
+        ready: 'complete',
+        text: 'NestJS - A progressive Node.js framework\n\nOfficial docs result',
+      },
+    ];
+    const newTabUrls: string[] = [];
+    global.fetch = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/json/version') || url.includes('/json/close/')) {
+        return { ok: true, json: async () => ({}) } as Response;
+      }
+      if (url.includes('/json/new?')) {
+        newTabUrls.push(decodeURIComponent(url));
+        return {
+          ok: true,
+          json: async () => ({
+            id: 'tab-search',
+            url: 'about:blank',
+            webSocketDebuggerUrl: 'ws://127.0.0.1:9223/devtools/page/search',
+          }),
+        } as unknown as Response;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const svc = new WebService(
+      configService({
+        WEB_CDP_HOST: 'host.docker.internal',
+        WEB_CDP_PORT: '9222',
+      }),
+    );
+    const result = await svc.webSearch('NestJS');
+    expect(result.ok).toBe(true);
+    expect(result.provider).toBe('duckduckgo');
+    expect(result.text).toContain('NestJS - A progressive Node.js framework');
+    expect(FakeWebSocket.instances.length).toBe(1); // no Bing retry
+    expect(newTabUrls).toHaveLength(1);
+    expect(newTabUrls[0]).toContain('html.duckduckgo.com');
+  });
+
   it('reports the failure when CDP and native fetch both fail', async () => {
     const cdp = createServer();
     await new Promise<void>((r) => cdp.listen(0, '127.0.0.1', () => r()));

@@ -20,11 +20,26 @@ export interface FetchResult {
   title?: string;
   /** Page text (CDP innerText / stripped-HTML fallback), capped. */
   text: string;
+  /** Search provider that produced a web_search result (DuckDuckGo first,
+   *  Bing RSS fallback when DDG bot-blocks or fails). */
+  provider?: 'duckduckgo' | 'bing';
   error?: string;
 }
 
 const DEFAULT_CDP_HOST = '127.0.0.1';
 const DEFAULT_CDP_PORT = 9222;
+
+/** Marker phrases DDG renders instead of results when it bot-blocks a caller. */
+const BOT_BLOCK_SIGNALS = [
+  'select all squares containing a duck',
+  'unfortunately, bots use duckduckgo too',
+  'please complete the following challenge',
+];
+
+function looksBotBlocked(text: string): boolean {
+  const t = (text ?? '').toLowerCase();
+  return BOT_BLOCK_SIGNALS.some((signal) => t.includes(signal));
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -223,7 +238,10 @@ export class WebService {
     }
   }
 
-  /** Web search: DuckDuckGo HTML results rendered through the same pipeline. */
+  /** Web search: DuckDuckGo HTML results rendered through the same pipeline.
+   *  DDG frequently bot-blocks datacenter IPs ("select all squares containing
+   *  a duck"), so when its page looks blocked/errors we retry the same query
+   *  on Bing's RSS endpoint and return that instead. */
   async webSearch(query: string): Promise<FetchResult> {
     const q = typeof query === 'string' ? query.trim() : '';
     if (!q) {
@@ -236,8 +254,20 @@ export class WebService {
         error: 'Search query must be a non-empty string',
       };
     }
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-    return this.fetchUrl(url);
+    const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const ddg = await this.fetchUrl(ddgUrl);
+    if (ddg.ok && !looksBotBlocked(ddg.text)) {
+      return { ...ddg, provider: 'duckduckgo' };
+    }
+    this.logger.warn(
+      `DuckDuckGo search blocked or failed for "${q}" (${ddg.error ?? 'bot challenge'}); falling back to Bing RSS`,
+    );
+    const bingUrl = `https://www.bing.com/search?q=${encodeURIComponent(q)}&format=rss`;
+    const bing = await this.fetchUrl(bingUrl);
+    if (bing.ok) {
+      return { ...bing, provider: 'bing' };
+    }
+    return ddg;
   }
 
   /* ------------------------------ internals ------------------------------ */
