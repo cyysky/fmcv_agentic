@@ -346,6 +346,8 @@ cd e2e && CHROME_DEBUG_PORT=9223 node browser-e2e.mjs
 #   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=webtools E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
 # Agent-skills journey (full skill CRUD through a live /agent channel) only:
 #   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=agentskills E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
+# Agent-cron journey (full cron tool loop through a live /agent channel) only:
+#   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=agentcron E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
 # API-only mode: the cron flow asserts the "Scheduler disabled — API-only"
 # chip (run the backend with CRON_SCHEDULER_ENABLED=false first):
 #   E2E_API_ONLY=1 CHROME_DEBUG_PORT=9223 node browser-e2e.mjs

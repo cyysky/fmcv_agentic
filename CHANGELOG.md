@@ -1,3 +1,32 @@
+## Round 2026-08-09 — autonomous iteration round 124 (tag `round-124`)
+
+Round 123's focus: verify the cron-agent tools through a live /agent
+channel, re-check skill docs against the now-real tool wiring, and keep
+the gates current.
+
+### Added
+- **Agent-cron browser E2E journey** (`d77bda9`) — drives
+  `list_cron_jobs` -> `create_cron_job` -> `update_cron_job` ->
+  `run_cron_job_now` -> `delete_cron_job` through a real /agent channel;
+  asserts every tool row appears, the run-now row shows a real
+  `lastRunStatus` (the nested agent turn actually executed), and the job
+  is gone from the cron API afterwards. Works in enabled and API-only
+  modes (run-now is scheduler-independent).
+
+### Verified
+- Round 123's skill-tool wiring: `read_skill` by id and the CRUD loop were
+  re-confirmed live through the agentskills journey in both E2E modes; docs
+  match the now-real compiled tool registry (no further doc drift found).
+
+### Test status
+- Backend unit: **16 suites / 325 tests passed**; `tsc` + prettier clean.
+- Full gate `verify --build --api-e2e`: **green** (lint, `nest build`,
+  `next build`, bundle + headroom guards, API E2E 12 suites / 123 tests,
+  backend flipped to API-only and restored).
+- Browser E2E **2/2 modes green** with the new agentcron journey in the
+  default run (enabled + API-only; zero console/network/HTTP errors);
+  reports refreshed.
+
 ## Round 2026-08-09 — autonomous iteration round 123 (tag `round-123`)
 
 Round 122's focus: verify skill tools end-to-end through a live /agent

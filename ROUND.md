@@ -1,25 +1,21 @@
-# Round 123 — skill tools verified end-to-end; web search survives DDG bot-blocks (2026-08-09)
+# Round 124 — cron-agent tools verified end-to-end through /agent (2026-08-09)
 
-Previous focus (Round 122's "Next round focus"): verify the skill tools
-through a live /agent channel, harden the search provider, and keep the
-gates current. The skill walk surfaced and fixed a real `read_skill` bug;
-both journeys are now committed browser E2E coverage.
+Previous focus (Round 123's "Next round focus"): verify the cron-agent
+tools through a live /agent channel, re-check skill docs against the
+now-real tool wiring, and keep the gates current.
 
 ## What changed this round
 
-- **Fixed `read_skill` by id** (`7152a8e`) — the tool only accepted an
-  installed-skill name, so the agent CRUD loop failed on
-  "No installed skill named <id>". It now returns any authored skill by
-  `id` (content included) or installed-skill instructions by `name`;
-  verified live through the /agent channel.
-- **`web_search` DDG → Bing RSS fallback** (`7152a8e`) — detects the DDG
-  bot-challenge markers and retries the query on Bing's RSS endpoint,
-  reporting `provider: "bing"`; proven live from inside the container
-  (CDP-first, real headlines after the block).
-- **Agent-skills browser E2E journey** (`7152a8e`) — drives
-  list/create/read/update/delete_skill through a real /agent channel,
-  asserts every tool row (with `readOk`), and verifies no leftover skill.
-- **Docs** — e2e/README + README journey lists, CHANGELOG Round 123.
+- **Agent-cron browser E2E journey** (`d77bda9`) — drives
+  `list_cron_jobs` -> `create_cron_job` -> `update_cron_job` ->
+  `run_cron_job_now` -> `delete_cron_job` through a real /agent channel.
+  The nested job really fired (`lastRunStatus: done`,
+  `lastRunMessage: "cron e2e ok"`, ds4-flash), and the job is confirmed
+  gone from the cron API afterwards. Works in both E2E modes.
+- **Skill wiring re-check** — the Round 123 read_skill-by-id fix and the
+  agentskills journey re-ran green in both modes; no doc drift found
+  versus the real compiled tool registry.
+- **Docs** — e2e/README + README journey lists, CHANGELOG Round 124.
 
 ## Test status
 
@@ -28,28 +24,27 @@ both journeys are now committed browser E2E coverage.
   (lint + builds, bundle guards, API E2E 12 suites / 123 tests, backend
   flipped to API-only and restored to enabled).
 - Browser E2E: **2/2 modes green** (enabled + API-only) with all journeys
-  including the new agentskills + webtools; zero console/network/HTTP
-  errors in both reports.
+  including the new agentcron; zero console/network/HTTP errors in both
+  reports.
 
 ## Known issues / open tickets
 
-- **Low — DDG bot-block is real from this IP.** No longer user-visible:
-  the tool auto-falls back to Bing RSS. Watch for other bot walls (Brave
-  served a captcha during the webtools walk; DDG/Bing/Brave rate-limit
-  datacenter IPs).
+- **Low — DDG bot-block** is handled automatically (Bing RSS fallback);
+  other engines may still bot-wall datacenter IPs (Brave captcha seen
+  once during the webtools walk).
 - **Low — Jest keep-alive warning** after unit/API E2E runs; suites
   still exit 0.
 
 ## Next round focus
 
-1. **Verify cron-agent tools through /agent** — the cron tool family
-   (list/create/update/delete/run-now) still lacks a live channel-driven
-   E2E journey like webtools/agentskills; add one (create a cron job via
-   the agent, run-now, verify a `cronRun` row appears, delete it).
-2. **Refresh stale docs/coverage after the DI fix** — Round 121's skill CRUD
-   unit + API coverage was written against a registry that never loaded in
-   the compiled backend; re-check the skill/API E2E docs match the now-real
-   tool wiring.
+1. **Differential web-search E2E** — assert the DDG-blocked path actually
+   falls back (provider `bing`) inside the webtools journey, not just in
+   the unit tests; ideally lock a deterministic offline fixture for both
+   providers so the journey is independent of live DDG behavior.
+2. **Cron-agent docs/UI polish** — the /cron UI lists jobs a human created;
+   confirm an agent-created job appears there too and its run history is
+   visible after `run_cron_job_now` (currently only API-verified in the
+   journey), and add a UI assertion if it is not already covered.
 3. **Keep the gates current** — re-run `verify --build --api-e2e` + both
    browser E2E modes after the next runtime change (baselines: unit 16
    suites / 325, API E2E 12 / 123, /agent 484 KB / 33.6 KB headroom).
