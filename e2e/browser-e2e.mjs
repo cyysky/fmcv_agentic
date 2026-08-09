@@ -23,6 +23,9 @@
 //      loads without console errors / failed network requests
 //   2. Each route renders its expected document.title (browser tab title)
 //   3. /agent: create a channel, post a message, agent runs to an answer/stop
+//   3b. Web tools: through the /agent channel UI, drive fetch_url
+//      (https://example.com) + web_search and prove the live trace shows the
+//      CDP-first path (`via: "cdp"`) for both tools
 //   4. Screenshots land in e2e/screenshots/, report printed to stdout + JSON
 //   5. Channel deletion prunes the per-channel project folder (verified via the
 //      workspace API — no docker/container dependency)
@@ -102,9 +105,10 @@ const API = process.env.E2E_API_BASE || APP.replace(/:\d+/, ":5555") + "/api";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
 // Round 88: E2E_JOURNEYS=<comma-separated> picks which flows run (default
-// "all"). Names: routes, nav, agent, mobile, sessions, files, html, buckets,
-// cron, skills, settings. Skipped flows are reported as null and their
-// validation blocks are skipped too, so a quick regression run stays green.
+// "all"). Names: routes, nav, agent, webtools, mobile, sessions, files, html,
+// buckets, cron, skills, settings. Skipped flows are reported as null and
+// their validation blocks are skipped too, so a quick regression run stays
+// green.
 // Round 92: shorthand presets expand to explicit flow lists, so quick runs
 // stay one word: cron-only (routes+cron), ui-only (routes+nav+mobile+html+
 // settings+skills), core (routes+agent+cron). A preset can mix with plain
@@ -1040,6 +1044,143 @@ async function agentChannelCleanup(f) {
     return `error: ${err.message}`;
   }
   return parts.join("+");
+}
+
+/** Web-tools channel journey (Round 122): drive `fetch_url` + `web_search`
+ *  through the /agent UI and prove the live trace took the CDP-first path
+ *  (`via: "cdp"`) rather than the native-fetch fallback. The run must reach a
+ *  terminal render, then every tool row in the channel feed is expanded and
+ *  read back from the DOM. */
+async function webtoolsFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  const channelName = `browser-e2e-web-${Date.now().toString(36)}`;
+  log(`flow webtools -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, channelName };
+  const started = Date.now();
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "webtools ready");
+    if (!ready) throw new Error("webtools flow: page never loaded");
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea')}`,
+      30000,
+      600,
+      "agent composer",
+    );
+    if (!composer) throw new Error("webtools flow: page never rendered its composer");
+
+    // Open Channels -> New channel -> create, the same UI path as the plain
+    // channel journey.
+    await evalJs(c, jsClick("Channels", true));
+    await delay(400);
+    await evalJs(c, jsClick("New channel", false));
+    const modalOpen = await waitFor(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+      5000,
+      300,
+      "new-channel dialog",
+    );
+    if (!modalOpen) throw new Error("webtools flow: new-channel dialog did not open");
+    await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
+    await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
+    await delay(100);
+    await evalJs(c, jsClick("Create", true));
+    flow.steps.push("created-channel");
+    log(`  created channel ${channelName}`);
+
+    const composerReady = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
+      30000,
+      600,
+      "channel composer",
+    );
+    if (!composerReady) throw new Error("webtools flow: channel composer never appeared");
+    const msg =
+      "Use your two web tools in this exact order and report both results: " +
+      "(1) fetch_url on https://example.com — state the page title; " +
+      "(2) web_search with query 'OpenAI' — quote one result headline. " +
+      "Then give a one-line summary of each tool's output.";
+    await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("webtools flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    log("  posted message; waiting for agent run");
+    await delay(1800);
+    await screenshot(c, "webtools-running.png");
+
+    const terminal = await waitFor(
+      c,
+      '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
+      240000,
+      800,
+      "webtools terminal state",
+    );
+    flow.timings.elapsedMs = Date.now() - started;
+    if (!terminal) throw new Error("webtools flow: no terminal state within 240s");
+    const state = await evalJs(c, `(() => {
+      const t = document.body.innerText.toUpperCase();
+      return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
+    })()`);
+    await delay(500);
+    await screenshot(c, "webtools-done.png");
+    flow.result = state;
+    log(`  webtools terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
+
+    // Expand every live tool row, then read the tool name + expanded body
+    // (args/result) back out of the DOM.
+    await evalJs(c, `(() => {
+      let clicked = 0;
+      for (const b of [...document.querySelectorAll('[class*="liveTool"]')]) {
+        if (!(b instanceof HTMLButtonElement)) continue;
+        b.click();
+        clicked += 1;
+      }
+      return clicked;
+    })()`);
+    await delay(400);
+    const trace = await evalJs(c, `(() => {
+      const rows = [...document.querySelectorAll('[class*="liveToolRow"]')];
+      return rows.map((r) => {
+        const name = r.querySelector("code")?.textContent ?? "";
+        const body = r.querySelector('[class*="liveBody"]')?.innerText ?? "";
+        return { name, body };
+      });
+    })()`);
+    const fetchEntry = (trace ?? []).find((t) => String(t.name || "").includes("fetch_url"));
+    const searchEntry = (trace ?? []).find((t) => String(t.name || "").includes("web_search"));
+    flow.result.trace = trace;
+    flow.result.fetchTrace = fetchEntry ? fetchEntry.body : null;
+    flow.result.searchTrace = searchEntry ? searchEntry.body : null;
+    flow.result.fetchSeen = !!fetchEntry;
+    flow.result.searchSeen = !!searchEntry;
+    const viaCdp = /via.{0,20}["']?cdp["']?/i;
+    flow.result.fetchCdp = !!(fetchEntry && viaCdp.test(fetchEntry.body));
+    flow.result.searchCdp = !!(searchEntry && viaCdp.test(searchEntry.body));
+    flow.result.exampleTitle = !!(fetchEntry && /example domain/i.test(fetchEntry.body));
+    flow.steps.push("expanded-trace");
+    const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
+    flow.feedSnippet = feed.slice(0, 1200);
+    log(
+      `  trace: fetch_url seen=${flow.result.fetchSeen} cdp=${flow.result.fetchCdp} exampleTitle=${flow.result.exampleTitle}; ` +
+      `web_search seen=${flow.result.searchSeen} cdp=${flow.result.searchCdp}`,
+    );
+    return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
+  } finally {
+    c.close();
+  }
 }
 
 /** Mobile channel-dashboard flow: at a 360x640 phone viewport the channel
@@ -5746,6 +5887,11 @@ report.flow = await agentChannelFlow();
     report.flow.cleanup = await agentChannelCleanup(report.flow);
     report.flow.projectPrune = await projectFolderPruneCheck("browser-e2e-");
     }
+    if (want("webtools")) {
+report.webtoolsFlow = await webtoolsFlow();
+    report.webtoolsFlow.cleanup = await agentChannelCleanup(report.webtoolsFlow);
+    report.webtoolsFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-web-");
+    }
     if (want("mobile")) {
 report.mobileChannelFlow = await mobileChannelFlow();
     report.mobileChannelFlow.cleanup = await mobileChannelCleanup(report.mobileChannelFlow);
@@ -5824,6 +5970,30 @@ if (want("agent")) {
   }
   const flowErrs = errorCount(f.errors);
   if (flowErrs > 0) failures.push(`agent flow: ${flowErrs} console/network error(s)`);
+
+}
+
+if (want("webtools")) {
+  const wfl = report.webtoolsFlow;
+  if (
+    !wfl ||
+    !terminalOk(wfl.flow.result) ||
+    !wfl.flow.result?.fetchSeen ||
+    !wfl.flow.result?.searchSeen ||
+    !wfl.flow.result?.fetchCdp ||
+    !wfl.flow.result?.searchCdp ||
+    !wfl.flow.result?.exampleTitle
+  ) {
+    failures.push(`webtools flow: CDP-first fetch_url/web_search not verified (${JSON.stringify(wfl && wfl.flow)})`);
+  }
+  if (wfl && wfl.projectPrune && wfl.projectPrune.ok === false) {
+    failures.push(`webtools flow: leftover channel project folder(s) [${wfl.projectPrune.leftovers.join(", ")}]`);
+  }
+  if (wfl && (!wfl.cleanup || !wfl.cleanup.includes("deleted"))) {
+    failures.push(`webtools flow: cleanup not verified (${JSON.stringify(wfl && wfl.cleanup)})`);
+  }
+  const webErrs = errorCount(wfl ? wfl.errors : {});
+  if (webErrs > 0) failures.push(`webtools flow: ${webErrs} console/network error(s)`);
 
 }
 

@@ -20,9 +20,9 @@ import { buildWorkspaceTools, buildSelfTools } from './workspace-tools';
 import { buildChannelTools } from './channel-tools';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import type { SkillsService } from '../skills/skills.service';
+import { SkillsService } from '../skills/skills.service';
 import { buildSkillTools } from '../skills/skills-tools';
-import type { WebService } from '../web/web.service';
+import { WebService } from '../web/web.service';
 import { buildWebTools } from '../web/web-tools';
 
 /**
