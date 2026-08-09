@@ -9,8 +9,17 @@ Chrome instance over the Chrome DevTools Protocol. Zero npm dependencies
 Chrome must already be running with a remote debugging port:
 
 ```sh
-google-chrome --remote-debugging-port=9222 --remote-allow-origins=*   --user-data-dir=/tmp/fmcv-chromedata
+google-chrome --remote-debugging-port=9223 --remote-allow-origins=*   --user-data-dir=/tmp/fmcv-chromedata
+node scripts/cdp-relay.mjs   # 0.0.0.0:9222 -> host Chrome 127.0.0.1:9223
 ```
+
+The relay is what makes CDP reachable from inside the `fmcv-backend`
+container (default `WEB_CDP_HOST=host.docker.internal`, `WEB_CDP_PORT=9222`),
+so the web tools actually take the CDP-first path (`via: "cdp"`) rather than
+falling back to native fetch. Host Chrome on 9222 alone is loopback-only and
+unreachable from the container. Run Chrome on whatever port you like and point
+the relay at it with `CDP_RELAY_TARGET`; point this script at the reachable
+port with `CHROME_DEBUG_PORT`.
 
 The app must be up (`docker compose up -d --build`); the script talks to the
 frontend in the browser and requires the backend API reachable from Chrome's
@@ -20,9 +29,9 @@ network view.
 
 ```sh
 cd e2e
-node browser-e2e.mjs
+CHROME_DEBUG_PORT=9223 node browser-e2e.mjs
 # or from anywhere:
-node e2e/browser-e2e.mjs
+CHROME_DEBUG_PORT=9223 node e2e/browser-e2e.mjs
 ```
 
 Environment overrides:
@@ -33,7 +42,7 @@ Environment overrides:
 | `CHROME_DEBUG_PORT` | `9222`                        | CDP port                            |
 | `E2E_APP_BASE`      | `http://localhost:3333`       | frontend base URL                   |
 | `E2E_API_ONLY`      | unset                          | run the cron flow against an API-only backend (`CRON_SCHEDULER_ENABLED=false docker compose up -d --force-recreate backend`): asserts the "Scheduler disabled — API-only" chip, the "no lease · no background firing" meta, and the overview gauge's "disabled" lease chip |
-| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
+| `E2E_JOURNEYS`      | `all`                          | comma-separated flow selection for faster regression runs: `routes`, `nav`, `agent`, `webtools`, `mobile`, `sessions`, `files`, `html`, `buckets`, `cron`, `skills`, `settings`; skipped flows are omitted from execution and validation. Shorthand presets (mixable with flow names): `cron-only` = `routes,cron`; `ui-only` = `routes,nav,mobile,html,settings,skills`; `core` = `routes,agent,cron` |
 | `E2E_SHOT_DIR`      | `e2e/screenshots/<mode>`      | screenshot output dir (`enabled` or `api-only` subdir; an explicit value is used verbatim) |
 | `E2E_REPORT`        | `e2e/report.json` (+`report-<mode>.json`) | JSON report path; the mode archive `report-<mode>.json` is always written too (an explicit `E2E_REPORT` value is used verbatim as the latest mirror) |
 | `E2E_WATCHDOG_MS`   | `600000`                      | overall run watchdog                |
@@ -62,7 +71,18 @@ Environment overrides:
    also removes the `round2.md` fixture the brief makes `coder` write into
    its own agent folder (channel deletion only cascades the channel's
    project folder) and fails the run if either artifact is left behind.
-4. **Sessions + saved-connection journey**: on `/agent`, the script opens the
+4. **Web-tools journey**: on `/agent`, a fresh `browser-e2e-web-*` channel is
+   created through the same UI path, posted a brief that explicitly asks for
+   `fetch_url` on `https://example.com` and `web_search` for `OpenAI`, and the
+   run is watched (up to 240 s) until terminal. Every tool row in the live
+   trace is expanded and read from the DOM: both `fetch_url` and `web_search`
+   must show `via: "cdp"` (proving the CDP-first path from inside the
+   container, not the native-fetch fallback), and the fetch row must include
+   the "Example Domain" title. The channel is deleted afterwards and the
+   `browser-e2e-web-*` project folder must be gone. Search engines may still
+   bot-block (DuckDuckGo CAPTCHA) — the assertion is the `via` provenance
+   plus the rendered title, not the result ranking.
+5. **Sessions + saved-connection journey**: on `/agent`, the script opens the
    Sessions tab, creates a session, posts a live converse, asserts the
    auto-title and history survive a page reload, renames the session through
    the UI, and reopens it to prove history + title persisted. It then starts

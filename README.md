@@ -82,7 +82,11 @@ and coordinate multi-agent teams in Slack-style channels.
   `WEB_CDP_PORT`, default `host.docker.internal:9222` in compose, or
   `127.0.0.1:9222` locally) and reads the page's rendered `innerText`;
   when no browser is reachable it falls back to the native Node `fetch`
-  (markup stripped). No host crontab or external browse service is
+  (markup stripped). Host Chrome usually binds 9222 to loopback only, so
+  the compose stack runs the bundled relay first: `node scripts/cdp-relay.mjs`
+  binds 0.0.0.0:9222 and forwards HTTP + WebSocket traffic to the host
+  Chrome on 127.0.0.1:9223 (configurable via `CDP_RELAY_BIND` /
+  `CDP_RELAY_TARGET`). No host crontab or external browse service is
   required.
 - **File manager (`/files`)** — human-facing browser over the same
   workspace: pick an agent (read/write) or public project (read-only) scope,
@@ -331,15 +335,18 @@ cd backend && npm run test:e2e
 # before the suite and `docker compose start backend` afterwards.)
 
 # Browser E2E via Chrome DevTools Protocol (Chrome must run with
-# --remote-debugging-port=9222; see e2e/README.md) — after any API/UI
-# contract change, rebuild both containers together first so the live stack
-# serves the new code:
+# --remote-debugging-port=9223 and the relay must be up so the backend
+# container can reach CDP: node scripts/cdp-relay.mjs; see e2e/README.md) —
+# after any API/UI contract change, rebuild both containers together first
+# so the live stack serves the new code:
 #   docker compose up -d --build backend frontend
-cd e2e && node browser-e2e.mjs
+cd e2e && CHROME_DEBUG_PORT=9223 node browser-e2e.mjs
+# Webtools journey (fetch_url/search through a live /agent channel) only:
+#   CHROME_DEBUG_PORT=9223 E2E_JOURNEYS=webtools E2E_WATCHDOG_MS=420000 node browser-e2e.mjs
 # API-only mode: the cron flow asserts the "Scheduler disabled — API-only"
 # chip (run the backend with CRON_SCHEDULER_ENABLED=false first):
-#   E2E_API_ONLY=1 node browser-e2e.mjs
-#   E2E_JOURNEYS=core node browser-e2e.mjs          # preset: routes+agent+cron (default: all)
+#   E2E_API_ONLY=1 CHROME_DEBUG_PORT=9223 node browser-e2e.mjs
+#   E2E_JOURNEYS=core node browser-e2e.mjs   # preset: routes+agent+cron (default: all)
 
 # REST docs drift guard: every controller route must appear in the README
 # tables and vice versa (zero dependencies; run from the repo root)

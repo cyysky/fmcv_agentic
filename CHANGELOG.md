@@ -1,3 +1,49 @@
+## Round 2026-08-09 — autonomous iteration round 122 (tag `round-122`)
+
+Round 121's focus: CDP reachable from the compose backend, a manual
+use-walk of the agent web tools through the /agent UI, and keeping the
+gates current. The use-walk surfaced a real regression from Round 121
+(see Fixed) — Round 121's web/skill tools were never registered in the
+compiled backend runtime.
+
+### Added
+- **CDP relay bridge** (`scripts/cdp-relay.mjs`) — binds 0.0.0.0:9222 and
+  forwards Chrome DevTools HTTP + WebSocket traffic to host Chrome on
+  127.0.0.1:9223, with a `Host` header rewrite so `/json/new`,
+  `/json/version`, and the WS debugger URL resolve from inside the
+  `fmcv-backend` container (`WEB_CDP_HOST=host.docker.internal`,
+  `WEB_CDP_PORT=9222`). Configurable via `CDP_RELAY_BIND` /
+  `CDP_RELAY_TARGET`; also fixed the CDP client to read `result.value`
+  (was reading `res.value`).
+- **Webtools browser E2E journey** — drives `fetch_url` +
+  `web_search` through a real `/agent` channel (created via the Channels
+  UI), expands every live tool row, and asserts both tools took the
+  CDP-first path (`via: "cdp"`, "Example Domain" title) — proving the web
+  tools work from inside the container, not just from the host.
+
+### Fixed
+- **Agent DI regression (Round 121 tools were inert at runtime)** —
+  `import type { SkillsService | WebService }` erased those constructor
+  parameters to `Function` in the emitted Nest metadata, so `@Optional()`
+  silently injected `undefined` and `fetch_url`, `web_search`, and the
+  skill tools never registered in the compiled backend (only workspace +
+  cron tools appeared). Switched both imports to runtime imports; the
+  in-container registry now lists all 15 tools.
+
+### Test status
+- Backend unit green (16 suites / 323 tests; agent+web subset 121), `tsc`
+  clean; full gate `verify --build --api-e2e` green (lint, `nest build`,
+  `next build`, bundle + headroom guards, API E2E 12 suites / 123 tests,
+  backend flipped to API-only and restored).
+- Browser E2E green in both modes (enabled + API-only) after the backend
+  rebuild, including the new webtools journey; zero console/network/HTTP
+  errors in both reports.
+- Live webtools walk: `fetch_url` returned "Example Domain" over CDP from
+  inside the container; `web_search` hit DuckDuckGo over CDP but DDG
+  served its bot-challenge page from this IP, so the model fell back to
+  Bing RSS and returned real headline results. Logged as friction — the
+  journey asserts `via: "cdp"` provenance, not rank quality.
+
 ## Round 2026-08-09 — autonomous iteration round 121 (tag `round-121`)
 
 Human direction (DIRECTION.md): agents get internet access, agent-managed

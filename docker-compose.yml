@@ -38,6 +38,9 @@ services:
       - CRON_SCHEDULER_ENABLED=${CRON_SCHEDULER_ENABLED:-}
       # Agent web access (DIRECTION items 1 + 4): try the host's CDP Chrome
       # on 9222 first, then fall back to native fetch inside the backend.
+      # Host Chrome binds 9222 loopback-only, so run the bundled relay
+      # (`node scripts/cdp-relay.mjs`, 0.0.0.0:9222 -> 127.0.0.1:9223) to
+      # make CDP reachable from inside the container.
       - WEB_CDP_HOST=${WEB_CDP_HOST:-host.docker.internal}
       - WEB_CDP_PORT=${WEB_CDP_PORT:-9222}
       - WEB_FETCH_TIMEOUT_MS=${WEB_FETCH_TIMEOUT_MS:-30000}
