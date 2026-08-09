@@ -256,6 +256,7 @@ export function AgentChannelsPanel() {
     selChannelId,
     openChannel,
     deleteChannel,
+    showNew,
     setShowNew,
     dmOpen,
     setDmOpen,
@@ -765,7 +766,7 @@ export function AgentChannelsPanel() {
           </div>
         </>
   
-        <div className={styles.modalOverlay} onClick={() => setShowNew(false)}>
+        {showNew && (<div className={styles.modalOverlay} onClick={() => setShowNew(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalTitle}>New channel</div>
             <label className={styles.field}>
@@ -814,6 +815,7 @@ export function AgentChannelsPanel() {
             </div>
           </div>
         </div>
+        )}
     </>
   );
 }

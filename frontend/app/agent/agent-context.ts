@@ -61,6 +61,7 @@ export interface ChannelsPanelValue {
   selChannelId: string | null;
   openChannel: (id: string) => Promise<void>;
   deleteChannel: (id: string) => Promise<void>;
+  showNew: boolean;
   setShowNew: (v: boolean) => void;
   dmOpen: boolean;
   setDmOpen: Dispatch<SetStateAction<boolean>>;

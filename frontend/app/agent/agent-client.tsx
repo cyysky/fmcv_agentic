@@ -90,8 +90,10 @@ export default function AgentPage() {
   const [selChannelId, setSelChannelId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ChannelDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  // The new-channel modal lives in the lazy channels panel; AgentPage only opens it.
-  const [, setShowNew] = useState(false);
+  // The new-channel modal lives in the lazy channels panel; AgentPage opens
+  // it by setting showNew (Round 121: keep the value so the panel can gate
+  // the overlay instead of always rendering a blocking modal).
+  const [showNew, setShowNew] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newProject, setNewProject] = useState("");
@@ -989,6 +991,7 @@ export default function AgentPage() {
   };
 
   const channelsPanelValue = {
+    showNew,
     channelsError,
     setChannelsError,
     channels,

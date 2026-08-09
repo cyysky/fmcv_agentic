@@ -762,10 +762,25 @@ async function agentChannelFlow() {
     // 1. Open the Channels tab and the New-channel modal.
     await evalJs(c, jsClick("Channels", true));
     await delay(400);
-    const modalOpen = await evalJs(c, `!!${selExpr('input[placeholder="# channel name"]')}`);
+    // Round 121 regression guard: the modal used to render unconditionally
+    // (blocking the channels view); it must now be closed on tab open.
+    const modalOpenOnOpen = await evalJs(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+    );
+    if (modalOpenOnOpen) {
+      throw new Error("agent flow: new-channel dialog visible on Channels open (round-121 regression)");
+    }
+    await evalJs(c, jsClick("New channel", false));
+    const modalOpen = await waitFor(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+      5000,
+      300,
+      "new-channel dialog",
+    );
     if (!modalOpen) {
-      await evalJs(c, jsClick("New channel", false));
-      await delay(400);
+      throw new Error("agent flow: clicking New channel did not open the dialog");
     }
 
     // The Channels tab must have fetched the deferred panel chunk; verify the
