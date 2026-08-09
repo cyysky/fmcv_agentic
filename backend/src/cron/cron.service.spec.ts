@@ -4,9 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CronJob, Prisma } from '@prisma/client';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  CRON_TICK_INTERVAL_NAME,
   CronService,
   MAX_RUN_HISTORY,
   MAX_RUN_MESSAGE,
@@ -97,21 +99,29 @@ function agentDouble() {
   return { runTurn: jest.fn(), registerTools: jest.fn() };
 }
 
+function schedulerRegistryDouble() {
+  return { deleteInterval: jest.fn() };
+}
+
 function makeSvc(
   prisma = prismaDouble(),
   agent = agentDouble(),
+  schedulerRegistry = schedulerRegistryDouble(),
 ): {
   service: CronService;
   prisma: ReturnType<typeof prismaDouble>;
   agent: ReturnType<typeof agentDouble>;
+  schedulerRegistry: { deleteInterval: jest.Mock };
 } {
   return {
     service: new CronService(
       prisma as unknown as PrismaService,
       agent as unknown as BaseAgentService,
+      schedulerRegistry as unknown as SchedulerRegistry,
     ),
     prisma,
     agent,
+    schedulerRegistry,
   };
 }
 
@@ -1299,6 +1309,28 @@ describe('CronService', () => {
         (service as unknown as { lastTickAt: Date }).lastTickAt,
       ).toBeInstanceOf(Date);
       expect(prisma.cronSchedulerLease.findUnique).toHaveBeenCalled();
+    });
+
+    it('onModuleDestroy stops the native scheduler interval (lease failover)', () => {
+      const { service, schedulerRegistry } = makeSvc();
+      service.onModuleDestroy();
+      expect(schedulerRegistry.deleteInterval).toHaveBeenCalledWith(
+        CRON_TICK_INTERVAL_NAME,
+      );
+    });
+
+    it('onModuleDestroy tolerates an interval that was never registered', () => {
+      const logger = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const { service, schedulerRegistry } = makeSvc();
+        schedulerRegistry.deleteInterval.mockImplementation(() => {
+          throw new Error('Interval Not Found');
+        });
+        expect(() => service.onModuleDestroy()).not.toThrow();
+        expect(service).toBeDefined();
+      } finally {
+        logger.mockRestore();
+      }
     });
 
     it('registers the cron management tools with the agent registry', () => {

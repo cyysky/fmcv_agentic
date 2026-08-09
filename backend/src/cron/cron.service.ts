@@ -7,7 +7,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { Interval } from '@nestjs/schedule';
+import { Interval, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob, CronRun, Prisma } from '@prisma/client';
 import { CronExpressionParser } from 'cron-parser';
 import { BaseAgentService } from '../agent/base-agent.service';
@@ -18,6 +18,8 @@ import { randomUUID } from 'node:crypto';
 
 /** Scheduler tick granularity; cron firing lands within this window. */
 export const CRON_TICK_MS = 1000;
+/** Name of the native @nestjs/schedule interval (teardown + tests). */
+export const CRON_TICK_INTERVAL_NAME = 'fmcv-cron-lease-tick';
 /**
  * Distributed scheduler lease (Round 65): the ticker runs only on the
  * replica that holds a fresh lease. A dead holder fails over after
@@ -232,6 +234,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agent: BaseAgentService,
+    private readonly schedulerRegistry: SchedulerRegistry,
   ) {
     // Agents manage cron jobs from inside their runs (DIRECTION item 3):
     // register list/create/update/delete/run-now tools against this service
@@ -304,9 +307,17 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
-    // The native @nestjs/schedule interval owns the ticker lifecycle; there
-    // is no manual interval to stop here (kept as a no-op so the module
-    // teardown contract stays explicit for tests).
+    // Stop the native @nestjs/schedule interval so a dying replica stops
+    // renewing its lease and the standby can take over (the multireplica
+    // E2E simulates death via this hook). Deletion throws when the interval
+    // was never registered (e.g. direct unit constructions) — safe to skip.
+    try {
+      this.schedulerRegistry.deleteInterval(CRON_TICK_INTERVAL_NAME);
+    } catch (err) {
+      this.logger.warn(
+        `Could not stop cron interval on shutdown: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**
@@ -317,7 +328,7 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
    * hand-rolled setInterval to @nestjs/schedule changes only the tick
    * source, never the distributed-lease or atomic-fire guarantees.
    */
-  @Interval('fmcv-cron-lease-tick', CRON_TICK_MS)
+  @Interval(CRON_TICK_INTERVAL_NAME, CRON_TICK_MS)
   async handleSchedulerTick(): Promise<void> {
     await this.tick();
   }
