@@ -95,7 +95,7 @@ function row(over: Partial<CronJob> = {}): CronJob {
 }
 
 function agentDouble() {
-  return { runTurn: jest.fn() };
+  return { runTurn: jest.fn(), registerTools: jest.fn() };
 }
 
 function makeSvc(
@@ -1283,24 +1283,39 @@ describe('CronService', () => {
       expect(prisma.cronRun.create).not.toHaveBeenCalled();
     });
 
-    it('fires the scheduler tick from the ticker interval', async () => {
-      jest.useFakeTimers();
-      try {
-        const { service, prisma } = makeSvc();
-        prisma.$executeRaw.mockResolvedValue(0); // standby: no claim sweep
-        prisma.cronJob.findMany.mockResolvedValue([]);
-        await service.onModuleInit();
-        expect(
-          (service as unknown as { lastTickAt: Date }).lastTickAt,
-        ).toBeNull();
-        await jest.advanceTimersByTimeAsync(CRON_TICK_MS);
-        expect(
-          (service as unknown as { lastTickAt: Date }).lastTickAt,
-        ).toBeInstanceOf(Date);
-        expect(prisma.cronSchedulerLease.findUnique).toHaveBeenCalled();
-      } finally {
-        jest.useRealTimers();
-      }
+    it('fires the @nestjs/schedule tick handler (lease-gated)', async () => {
+      const { service, prisma } = makeSvc();
+      prisma.$executeRaw.mockResolvedValue(0); // standby: no lease claim
+      prisma.cronJob.findMany.mockResolvedValue([]);
+      await service.onModuleInit();
+      expect(
+        (service as unknown as { lastTickAt: Date }).lastTickAt,
+      ).toBeNull();
+      await (
+        service as unknown as {
+          handleSchedulerTick(): Promise<void>;
+        }
+      ).handleSchedulerTick();
+      expect(
+        (service as unknown as { lastTickAt: Date }).lastTickAt,
+      ).toBeInstanceOf(Date);
+      expect(prisma.cronSchedulerLease.findUnique).toHaveBeenCalled();
+    });
+
+    it('registers the cron management tools with the agent registry', () => {
+      const { agent } = makeSvc();
+      const registered = (agent.registerTools as jest.Mock).mock.calls[0][0] as {
+        name: string;
+      }[];
+      expect(registered.map((t) => t.name)).toEqual(
+        expect.arrayContaining([
+          'list_cron_jobs',
+          'create_cron_job',
+          'update_cron_job',
+          'delete_cron_job',
+          'run_cron_job_now',
+        ]),
+      );
     });
   });
 });

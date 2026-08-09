@@ -7,11 +7,13 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { Interval } from '@nestjs/schedule';
 import { CronJob, CronRun, Prisma } from '@prisma/client';
 import { CronExpressionParser } from 'cron-parser';
 import { BaseAgentService } from '../agent/base-agent.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCronJobDto, UpdateCronJobDto } from './cron.dto';
+import { buildCronTools } from './cron-tools';
 import { randomUUID } from 'node:crypto';
 
 /** Scheduler tick granularity; cron firing lands within this window. */
@@ -188,8 +190,8 @@ export function truncate(
  * A job runs a scheduled agent turn (`agent-turn` task): on each firing the
  * job's prompt is sent through BaseAgentService.runTurn (with the optional
  * pinned model/connection/maxSteps) and the terminal result is persisted on
- * the row as `lastRun*`. The scheduler is an in-process ticker that checks
- * due jobs every second; `nextRunAt` and `lastRun*` survive backend
+ * the row as `lastRun*`. The scheduler fires every second through the
+ * native NestJS @nestjs/schedule `@Interval` (lease-gated per replica); `nextRunAt` and `lastRun*` survive backend
  * restarts, and jobs left "running" by a crash are marked "error" on boot.
  * Since Round 80 every job carries its creating deployment's lease group and
  * the boot sweep/due scan only touch that group, so deployments sharing one
@@ -198,7 +200,6 @@ export function truncate(
 @Injectable()
 export class CronService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CronService.name);
-  private ticker: NodeJS.Timeout | null = null;
   /** Unique owner id for the distributed scheduler lease. */
   private readonly leaseOwner = randomUUID();
   /**
@@ -231,7 +232,14 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly agent: BaseAgentService,
-  ) {}
+  ) {
+    // Agents manage cron jobs from inside their runs (DIRECTION item 3):
+    // register list/create/update/delete/run-now tools against this service
+    // once the agent registry exists. The registry is populated before this
+    // service is constructed (CronModule imports AgentModule), so tool calls
+    // in any later turn see the complete tool set.
+    this.agent.registerTools(buildCronTools(this));
+  }
 
   async onModuleInit(): Promise<void> {
     if (!this.schedulerEnabled) {
@@ -289,21 +297,29 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
         });
       }
     }
-    this.ticker = setInterval(() => {
-      void this.tick();
-    }, CRON_TICK_MS);
-    this.ticker.unref();
     this.leaseHeld = await this.acquireLease();
     this.logger.log(
-      `Cron scheduler started: ${rows.length} job(s), ${[...this.jobs.values()].filter((j) => j.enabled).length} enabled, tick ${CRON_TICK_MS}ms, scheduler lease ${this.leaseHeld ? 'held' : 'standby'}`,
+      `Cron scheduler started: ${rows.length} job(s), ${[...this.jobs.values()].filter((j) => j.enabled).length} enabled, @nestjs/schedule tick ${CRON_TICK_MS}ms, scheduler lease ${this.leaseHeld ? 'held' : 'standby'}`,
     );
   }
 
   onModuleDestroy(): void {
-    if (this.ticker) {
-      clearInterval(this.ticker);
-      this.ticker = null;
-    }
+    // The native @nestjs/schedule interval owns the ticker lifecycle; there
+    // is no manual interval to stop here (kept as a no-op so the module
+    // teardown contract stays explicit for tests).
+  }
+
+  /**
+   * Native NestJS scheduler callback (DIRECTION item 3): fires every
+   * CRON_TICK_MS through `@Interval` registered by ScheduleModule. The body
+   * is lease-gated — `tick()` early-returns for API-only nodes and for
+   * replicas that do not hold a fresh lease — so switching from a
+   * hand-rolled setInterval to @nestjs/schedule changes only the tick
+   * source, never the distributed-lease or atomic-fire guarantees.
+   */
+  @Interval('fmcv-cron-lease-tick', CRON_TICK_MS)
+  async handleSchedulerTick(): Promise<void> {
+    await this.tick();
   }
 
   /* ------------------------------ CRUD ------------------------------ */
@@ -522,8 +538,8 @@ export class CronService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async tick(): Promise<void> {
-    // Belt-and-braces: the ticker never starts in API-only mode, but a
-    // stray direct call must not fire jobs either (Round 79).
+    // Belt-and-braces: the @nestjs/schedule interval fires even in API-only
+    // mode, but a stray call must not scan/fire jobs either (Round 79).
     if (!this.schedulerEnabled) return;
     this.lastTickAt = new Date();
     // Only the replica holding a fresh lease fires due jobs. Standby
