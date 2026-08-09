@@ -81,9 +81,10 @@ Environment overrides:
    the "Example Domain" title. The channel is deleted afterwards and the
    `browser-e2e-web-*` project folder must be gone. DuckDuckGo may still
    bot-block (its CAPTCHA challenge); `web_search` then automatically falls
-   back to Bing RSS (`provider: "bing"`) — the assertions are the `via`
-   provenance, a real rendered page/title, and the fetch body containing
-   "Example Domain".
+   back to Bing RSS (`provider: "bing"`). The journey asserts the actual
+   provider used (`duckduckgo` or `bing` — either is valid, and `bing` proves
+   the fallback ran live) plus the `via` provenance, a real rendered
+   page/title, and the fetch body containing "Example Domain".
 5. **Agent-skills journey**: on `/agent`, a fresh `browser-e2e-skills-*`
    channel is created through the Channels UI and the agent is told to run
    the full skill CRUD loop in order — `list_skills`, `create_skill`
@@ -98,8 +99,13 @@ Environment overrides:
    `update_cron_job`, `run_cron_job_now`, `delete_cron_job`. Every tool row
    must appear, the run-now row must show a `lastRunStatus` (the job really
    executed), and afterwards the job must be gone from the cron API. The
-   channel is deleted and the `browser-e2e-cron-*` project folder pruned.
-   Works in both enabled and API-only modes (run-now is scheduler-independent).
+   run then creates a second, separate agent-made job (annual schedule so it
+   never fires on its own) and runs it now; the journey drives `/cron` in
+   real Chrome and proves the agent-created job appears as a row with a
+   terminal status and its run history visible (the nested run's
+   "cron e2e ok" message), then deletes it through the API. The channel is
+   deleted and the `browser-e2e-cron-*` project folder pruned. Works in both
+   enabled and API-only modes (run-now is scheduler-independent).
 7. **Sessions + saved-connection journey**: on `/agent`, the script opens the
    Sessions tab, creates a session, posts a live converse, asserts the
    auto-title and history survive a page reload, renames the session through

@@ -1,3 +1,45 @@
+## Round 2026-08-09 — autonomous iteration round 125 (tag `round-125`)
+
+Round 124's focus: lock the DDG->Bing web-search fallback into the browser
+E2E journey, prove agent-created cron jobs surface in the /cron UI with run
+history, and keep the gates current.
+
+### Changed
+- **Webtools journey asserts the search provider** (`ff1bfea`) — the live
+  trace body is now scanned for `provider: "duckduckgo"` or `provider:
+  "bing"` and the run fails if neither appears. The first Round 125 run
+  exercised the fallback for real: DDG bot-blocked the datacenter IP and the
+  journey recorded `provider=bing` through the live CDP path.
+- **Agent-cron journey proves /cron UI visibility** (`ff1bfea`) — the run now
+  leaves a second agent-created job behind (annual schedule so it never fires
+  on its own) and runs it now through `run_cron_job_now`; the journey then
+  drives `/cron` in real Chrome and asserts the agent-created row shows a
+  terminal status (`Done`) with its run history listing the nested run's
+  "cron e2e ok" message, before deleting it via the API. Works in both
+  enabled and API-only modes.
+- **E2E stale sweep robustness** (`ff1bfea`) — aborted runs leave a parent
+  channel plus its `-coder` sub-channel behind; the sweep now deletes
+  sub-channels first (tolerating 404s) so the cascade can't make a stale
+  snapshot row fail the run.
+
+### Test status
+- Backend unit: **16 suites / 325 tests passed**; lint + type checks clean.
+- Full gate `verify --build --api-e2e`: **green** (REST docs + test-count
+  guards, `nest build`, `next build`, bundle + headroom guards — /agent
+  484 KB / 33.6 KB headroom, API E2E 12 suites / 123 tests, backend flipped
+  to API-only and restored to enabled).
+- Browser E2E **2/2 modes green** (enabled + API-only complete runs; zero
+  console/network/HTTP errors; stale sweep clean); reports refreshed.
+
+### Known issues / open tickets
+- **Low** — live DDG behavior decides which provider the webtools journey
+  sees; `bing` proves the fallback as observed, but the journey is not an
+  offline deterministic fixture. Unit tests hold the deterministic path
+  (FakeWebSocket bot-block + success cases); an offline E2E fixture remains a
+  possible future hardening step.
+- **Low** — Jest keep-alive warning after unit/API E2E runs; suites still
+  exit 0.
+
 ## Round 2026-08-09 — autonomous iteration round 124 (tag `round-124`)
 
 Round 123's focus: verify the cron-agent tools through a live /agent
