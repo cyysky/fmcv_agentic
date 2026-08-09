@@ -54,6 +54,10 @@ describe('Cron scheduler disabled mode (e2e, CRON_SCHEDULER_ENABLED=false)', () 
     await prisma.$executeRaw`DELETE FROM cron_scheduler_events WHERE "schedulerGroup" = ${leaseGroup}`.catch(
       () => undefined,
     );
+    // app.close() already disconnected Prisma, so the raw cleanups above
+    // reopened the pool; disconnect again or Jest keeps live Postgres sockets
+    // after the run and warns the process "did not exit one second" later.
+    await prisma.$disconnect().catch(() => undefined);
     if (originalGroup === undefined) {
       delete process.env.CRON_LEASE_GROUP;
     } else {

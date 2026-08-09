@@ -101,6 +101,11 @@ describe('Cron scheduler (e2e, two replicas, exactly-once)', () => {
     await prisma.$executeRaw`DELETE FROM cron_scheduler_events WHERE "schedulerGroup" = ${leaseGroup}`.catch(
       () => undefined,
     );
+    // The two raw cleanups above run after app.close() already disconnected
+    // the shared Prisma pool, so they reopen it; explicitly close it again or
+    // Jest keeps seeing live Postgres sockets for a few seconds and warns
+    // that the test run "did not exit one second after the test run".
+    await prisma.$disconnect().catch(() => undefined);
     if (process.env.CRON_LEASE_GROUP === leaseGroup) {
       delete process.env.CRON_LEASE_GROUP;
     }
