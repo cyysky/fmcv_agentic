@@ -105,10 +105,10 @@ const API = process.env.E2E_API_BASE || APP.replace(/:\d+/, ":5555") + "/api";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const MODE = process.env.E2E_API_ONLY === "1" ? "api-only" : "enabled";
 // Round 88: E2E_JOURNEYS=<comma-separated> picks which flows run (default
-// "all"). Names: routes, nav, agent, webtools, agentskills, mobile, sessions,
-// files, html, buckets, cron, skills, settings. Skipped flows are reported as
-// null and their validation blocks are skipped too, so a quick regression run
-// stays green.
+// "all"). Names: routes, nav, agent, webtools, agentskills, agentcron, mobile,
+// sessions, files, html, buckets, cron, skills, settings. Skipped flows are
+// reported as null and their validation blocks are skipped too, so a quick
+// regression run stays green.
 // Round 92: shorthand presets expand to explicit flow lists, so quick runs
 // stay one word: cron-only (routes+cron), ui-only (routes+nav+mobile+html+
 // settings+skills), core (routes+agent+cron). A preset can mix with plain
@@ -1324,6 +1324,157 @@ async function agentskillsFlow() {
     log(
       `  trace: list=${flow.result.listSeen} create=${flow.result.createSeen} read=${flow.result.readSeen}/${flow.result.readOk} ` +
       `update=${flow.result.updateSeen} delete=${flow.result.deleteSeen}; skillLeftover=${flow.result.skillLeftover}`,
+    );
+    return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
+  } finally {
+    c.close();
+  }
+}
+
+/** Agent-cron channel journey (Round 124): drive the cron tool family —
+ *  list_cron_jobs -> create_cron_job -> update_cron_job -> run_cron_job_now ->
+ *  delete_cron_job — through a real /agent channel and prove the created job
+ *  is really gone from the backend afterwards. */
+async function agentcronFlow() {
+  const sink = { netFailures: [], httpErrors: [], expectedHttp: [], consoleErrors: [], exceptions: [], logErrors: [] };
+  const url = `${APP}/agent`;
+  const jobName = `e2e-agent-cron-${Date.now().toString(36)}`;
+  const channelName = `browser-e2e-cron-${Date.now().toString(36)}`;
+  log(`flow agentcron -> ${url}`);
+  const { tab, c } = await setupPage(url);
+  const flow = { steps: [], timings: {}, result: null, channelName, jobName };
+  const started = Date.now();
+  try {
+    wireErrorCapture(c, sink);
+    await c.send("Page.navigate", { url });
+    const ready = await waitFor(c, "document.readyState === 'complete'", 30000, 500, "agentcron ready");
+    if (!ready) throw new Error("agentcron flow: page never loaded");
+    const composer = await waitFor(
+      c,
+      `!!${selExpr('textarea')}`,
+      30000,
+      600,
+      "agent composer",
+    );
+    if (!composer) throw new Error("agentcron flow: page never rendered its composer");
+
+    // Same Channels -> New channel UI path as the other channel journeys.
+    await evalJs(c, jsClick("Channels", true));
+    await delay(400);
+    await evalJs(c, jsClick("New channel", false));
+    const modalOpen = await waitFor(
+      c,
+      `!!${selExpr('input[placeholder="# channel name"]')}`,
+      5000,
+      300,
+      "new-channel dialog",
+    );
+    if (!modalOpen) throw new Error("agentcron flow: new-channel dialog did not open");
+    await evalJs(c, jsSetInput('input[placeholder="# channel name"]', channelName));
+    await evalJs(c, jsSetInput('input[placeholder="creatorAgent"]', "coder"));
+    await delay(100);
+    await evalJs(c, jsClick("Create", true));
+    flow.steps.push("created-channel");
+    log(`  created channel ${channelName}`);
+
+    const composerReady = await waitFor(
+      c,
+      `!!${selExpr('textarea[placeholder*="Post a message"]')}`,
+      30000,
+      600,
+      "channel composer",
+    );
+    if (!composerReady) throw new Error("agentcron flow: channel composer never appeared");
+    const msg =
+      `Use your five cron tools in this exact order and report each result: ` +
+      `(1) list_cron_jobs to show existing jobs; ` +
+      `(2) create_cron_job with name '${jobName}', schedule '* * * * *', ` +
+      `prompt 'Reply with exactly: cron e2e ok', maxSteps 3, enabled false; ` +
+      `(3) update_cron_job with that id to set enabled true; ` +
+      `(4) run_cron_job_now with that id; ` +
+      `(5) delete_cron_job with that id. Quote the run result from step 4.`;
+    await evalJs(c, jsSetInput('textarea[placeholder*="Post a message"]', msg));
+    await delay(100);
+    const submitted = await evalJs(c, `(() => {
+      const f = [...document.forms].find((x) => x.querySelector("textarea"));
+      const b = f && [...f.querySelectorAll("button")].find((x) => x.type === "submit" && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
+    })()`);
+    if (!submitted) throw new Error("agentcron flow: composer submit button not found/enabled");
+    flow.steps.push("posted-message");
+    log("  posted message; waiting for agent run");
+    await delay(1800);
+    await screenshot(c, "agentcron-running.png");
+
+    const terminal = await waitFor(
+      c,
+      '(() => { const t = document.body.innerText.toUpperCase(); return t.includes("[ANSWER]") || t.includes("[STOPPED]") || t.includes("[ERROR]"); })()',
+      240000,
+      800,
+      "agentcron terminal state",
+    );
+    flow.timings.elapsedMs = Date.now() - started;
+    if (!terminal) throw new Error("agentcron flow: no terminal state within 240s");
+    const state = await evalJs(c, `(() => {
+      const t = document.body.innerText.toUpperCase();
+      return { answer: t.includes("[ANSWER]"), stopped: t.includes("[STOPPED]"), error: t.includes("[ERROR]") };
+    })()`);
+    await delay(500);
+    await screenshot(c, "agentcron-done.png");
+    flow.result = state;
+    log(`  agentcron terminal: ${JSON.stringify(state)} in ${flow.timings.elapsedMs}ms`);
+
+    // Expand every live tool row, then read the tool name + body back out.
+    await evalJs(c, `(() => {
+      let clicked = 0;
+      for (const b of [...document.querySelectorAll('[class*="liveTool"]')]) {
+        if (!(b instanceof HTMLButtonElement)) continue;
+        b.click();
+        clicked += 1;
+      }
+      return clicked;
+    })()`);
+    await delay(400);
+    const trace = await evalJs(c, `(() => {
+      const rows = [...document.querySelectorAll('[class*="liveToolRow"]')];
+      return rows.map((r) => {
+        const name = r.querySelector("code")?.textContent ?? "";
+        const body = r.querySelector('[class*="liveBody"]')?.innerText ?? "";
+        return { name, body };
+      });
+    })()`);
+    const entry = (n) => (trace ?? []).find((t) => String(t.name || "").includes(n));
+    const listEntry = entry("list_cron_jobs");
+    const createEntry = entry("create_cron_job");
+    const updateEntry = entry("update_cron_job");
+    const runEntry = entry("run_cron_job_now");
+    const deleteEntry = entry("delete_cron_job");
+    flow.result.trace = trace;
+    flow.result.listSeen = !!listEntry;
+    flow.result.createSeen = !!createEntry;
+    flow.result.updateSeen = !!updateEntry;
+    flow.result.runSeen = !!runEntry;
+    flow.result.deleteSeen = !!deleteEntry;
+    flow.result.createOk = !!(createEntry && createEntry.body.includes(jobName));
+    flow.result.runOk = !!(runEntry && runEntry.body.includes(jobName));
+    // The job must be gone from the backend by the time the run is terminal.
+    const jobsRes = await fetch(`${API}/cron`);
+    let leftover = `HTTP ${jobsRes.status}`;
+    if (jobsRes.ok) {
+      const jobs = await jobsRes.json();
+      const found = (Array.isArray(jobs) ? jobs : []).filter((j) => j && j.name === jobName);
+      leftover = found.length === 0 ? false : JSON.stringify(found);
+    }
+    flow.result.jobLeftover = leftover;
+    flow.steps.push("expanded-trace");
+    const feed = await evalJs(c, 'document.querySelector("[class*=\\"channelFeed\\"]")?.innerText ?? "NO FEED"');
+    flow.feedSnippet = feed.slice(0, 1200);
+    log(
+      `  trace: list=${flow.result.listSeen} create=${flow.result.createSeen}/${flow.result.createOk} ` +
+      `update=${flow.result.updateSeen} run=${flow.result.runSeen}/${flow.result.runOk} ` +
+      `delete=${flow.result.deleteSeen}; jobLeftover=${flow.result.jobLeftover}`,
     );
     return { url, tabInfo: { id: tab.id, created: tab.created }, channelName, flow, errors: sink };
   } finally {
@@ -6045,6 +6196,11 @@ report.agentskillsFlow = await agentskillsFlow();
     report.agentskillsFlow.cleanup = await agentChannelCleanup(report.agentskillsFlow);
     report.agentskillsFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-skills-");
     }
+    if (want("agentcron")) {
+report.agentcronFlow = await agentcronFlow();
+    report.agentcronFlow.cleanup = await agentChannelCleanup(report.agentcronFlow);
+    report.agentcronFlow.projectPrune = await projectFolderPruneCheck("browser-e2e-cron-");
+    }
     if (want("mobile")) {
 report.mobileChannelFlow = await mobileChannelFlow();
     report.mobileChannelFlow.cleanup = await mobileChannelCleanup(report.mobileChannelFlow);
@@ -6174,6 +6330,34 @@ if (want("agentskills")) {
   }
   const skillErrs = errorCount(afl ? afl.errors : {});
   if (skillErrs > 0) failures.push(`agentskills flow: ${skillErrs} console/network error(s)`);
+
+}
+
+if (want("agentcron")) {
+  const cfl = report.agentcronFlow;
+  const cr = cfl && cfl.flow && cfl.flow.result;
+  if (
+    !cfl ||
+    !terminalOk(cr) ||
+    !cr?.listSeen ||
+    !cr?.createSeen ||
+    !cr?.createOk ||
+    !cr?.updateSeen ||
+    !cr?.runSeen ||
+    !cr?.runOk ||
+    !cr?.deleteSeen ||
+    cr?.jobLeftover !== false
+  ) {
+    failures.push(`agentcron flow: full cron tool loop not verified (${JSON.stringify(cfl && cfl.flow)})`);
+  }
+  if (cfl && cfl.projectPrune && cfl.projectPrune.ok === false) {
+    failures.push(`agentcron flow: leftover channel project folder(s) [${cfl.projectPrune.leftovers.join(", ")}]`);
+  }
+  if (cfl && (!cfl.cleanup || !cfl.cleanup.includes("deleted"))) {
+    failures.push(`agentcron flow: cleanup not verified (${JSON.stringify(cfl && cfl.cleanup)})`);
+  }
+  const cronErrs = errorCount(cfl ? cfl.errors : {});
+  if (cronErrs > 0) failures.push(`agentcron flow: ${cronErrs} console/network error(s)`);
 
 }
 
