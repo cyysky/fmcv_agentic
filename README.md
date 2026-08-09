@@ -75,6 +75,15 @@ and coordinate multi-agent teams in Slack-style channels.
   `projects/` and one writable folder per agent under `agents/<name>/`
   (`coder`, `researcher`, each with a `work/` directory); agents get file
   read/write/list tools plus connection-credentials lookup.
+- **Agent web access** — agents get `fetch_url` and `web_search`
+  tools inside their runs (DuckDuckGo HTML search; rendered text, ~8k
+  chars, 30 s timeout). The strategy is CDP-first: the backend tries the
+  local Chrome DevTools instance on port 9222 (`WEB_CDP_HOST` /
+  `WEB_CDP_PORT`, default `host.docker.internal:9222` in compose, or
+  `127.0.0.1:9222` locally) and reads the page's rendered `innerText`;
+  when no browser is reachable it falls back to the native Node `fetch`
+  (markup stripped). No host crontab or external browse service is
+  required.
 - **File manager (`/files`)** — human-facing browser over the same
   workspace: pick an agent (read/write) or public project (read-only) scope,
   navigate one level at a time with a breadcrumb, view or download file
@@ -131,32 +140,40 @@ and coordinate multi-agent teams in Slack-style channels.
   up to a 500-event safety cap, labeled "all N transitions" when the whole
   history fit or "first N of M transitions" when the cap cut it short — and
   a **back to newest {depth}** button returns to the depth-limited window.
-  The backend scheduler ticks every second, validates expressions up front,
-  refuses deletes while a job is running, restores next-run timing on boot,
-  and persists every run's terminal result (done/error, model, duration;
-  the message is capped at 500 valid-Unicode code units, never split
-  mid-emoji) on the row plus a dedicated `CronRun` history row
-  (cascade-deleted with the job). The page also shows the local
-  scheduler/lease status (active on this node vs standby, last tick/beat,
-  lease expiry) refreshed every 5 s (an API-only node reports "Scheduler
-  disabled — API-only" instead). Scheduling is multi-instance safe: a
-  distributed Postgres lease elects one replica as the ticker (a dead holder
-  fails over in ~5 s), and each firing is an atomic row claim, so the same
-  due job never runs twice even under a split-brain lease or an overlapping
-  `run now` request.
+  The backend scheduler is native NestJS (`@nestjs/schedule`, `@Interval`
+  — no system cron / host crontab, so the stack stays docker-compose
+  portable), ticking every second, validating expressions up front,
+  refusing deletes while a job is running, restoring next-run timing on
+  boot, and persisting every run's terminal result (done/error, model,
+  duration; the message is capped at 500 valid-Unicode code units, never
+  split mid-emoji) on the row plus a dedicated `CronRun` history row
+  (cascade-deleted with the job). Agents manage the same jobs from inside
+  their runs with `list_cron_jobs` / `create_cron_job` /
+  `update_cron_job` / `delete_cron_job` / `run_cron_job_now` tools. The
+  page also shows the local scheduler/lease status (active on this node vs
+  standby, last tick/beat, lease expiry) refreshed every 5 s (an API-only
+  node reports "Scheduler disabled — API-only" instead). Scheduling is
+  multi-instance safe: a distributed Postgres lease elects one replica as
+  the ticker (a dead holder fails over in ~5 s), and each firing is an
+  atomic row claim, so the same due job never runs twice even under a
+  split-brain lease or an overlapping `run now` request.
 - **Agent skills (`/skills`)** — human-facing page over the skills API:
   authors create uniquely named, slug-form skills (name, description, and a
   markdown instructions body) and install/uninstall them; installed skills
   are listed in every agent turn's registry (system prompt) and agents load
-  the full instructions with the `read_skill` tool. Editing keeps the name
-  immutable, uninstall keeps the authored record (agents simply stop seeing
-  it), delete removes it, and create/install requires non-empty content —
-  all from one responsive, dark-mode-friendly page.
+  the full instructions with the `read_skill` tool and manage them from the
+  loop with `list_skills` / `create_skill` / `update_skill` /
+  `delete_skill` (same slug-name/content validation as the API). Editing
+  keeps the name immutable, uninstall keeps the authored record (agents
+  simply stop seeing it), delete removes it, and create/install requires
+  non-empty content — all from one responsive, dark-mode-friendly page.
 - **Channels (`/agent` → Channels tab)** — Slack-style channels with agent
   members, streaming jobs (SSE), subchannels/threads, human interjections, and
   a per-member debug pane (event stream, steps, answer/error). Feed, session,
   and member-status timestamps use one shared local-time formatter, so a
-  channel feed shows `8/9/2026, 1:34:38 AM` instead of raw UTC ISO. The Channels view polls the feed on an 8s tick only while the tab is
+  channel feed shows `8/9/2026, 1:34:38 AM` instead of raw UTC ISO. The
+  "New channel" dialog is lazy-loaded with the panel and opens on demand
+  (it no longer sits over the channels view blocking clicks). The Channels view polls the feed on an 8s tick only while the tab is
   visible, and a `visibilitychange` listener refreshes immediately when the
   tab returns to view, so a reopened tab never waits for the next tick.
 - **Settings UI (`/settings`)** — full CRUD for connections plus per-row
@@ -347,7 +364,7 @@ node scripts/verify.mjs --build --api-e2e
 node scripts/api-e2e.mjs
 ```
 
-- **Unit: 15 suites** — model catalog, workspace service + tools,
+- **Unit: 16 suites** — model catalog, workspace service + tools,
   channel service, job service (incl. restart recovery + persistence),
   base-agent loop (incl. abort and `maxSteps`), API token guard, session
   rename + auto-title, request-throttle guard, the file manager service
@@ -376,7 +393,10 @@ node scripts/api-e2e.mjs
   move (+ same-name no-op, taken-name 409, pre-existing folder 409, path
   escape 400, missing-folder recreation), delete removing folder + both row
   types + 404 on unknown), and the cron service
-  (create with normalized fields + next-run slot, invalid schedule 400,
+  (native `@nestjs/schedule` `@Interval` ticker with the lease-gated
+  private tick via a directly invoked `handleSchedulerTick`, agent cron
+  tool registration (list/create/update/delete/run-now), create with
+  normalized fields + next-run slot, invalid schedule 400,
   duplicate-name 409, unknown pinned connection 400, list/get/404, update
   slides nextRunAt on schedule change and on enable/disable, empty PATCH 400,
   run-now through the agent records done/error + message/model/duration,
@@ -392,10 +412,14 @@ node scripts/api-e2e.mjs
   duplicate, invalid-name 400, install requires non-empty content,
   uninstall keeps the record, empty PATCH 400, content capped at 200k
   chars) plus the base-agent skills integration (read_skill tool body /
-  missing-name error, installed registry block present only when the
-  registry is wired, runTurn/converse inject the registry and strip it
-  from persisted transcripts), and the prisma service (pg-adapter
-  constructor wiring + `$connect`/`$disconnect` lifecycle).
+  missing-name error, full CRUD tool delegation + slug validation, installed
+  registry block present only when the registry is wired, runTurn/converse
+  inject the registry and strip it from persisted transcripts), the web
+  service (CDP-first fetch reads a rendered page, native-fetch fallback
+  strips markup, invalid URLs / empty queries error cleanly, failures
+  reported), the base-agent web-tools integration (fetch_url/web_search
+  registered only when the web service is wired), and the prisma service
+  (pg-adapter constructor wiring + `$connect`/`$disconnect` lifecycle).
 - **API E2E: 12 suites** (`backend/test/*.e2e-spec.ts`) — real
   Postgres via `e2e-setup.ts` (temp workspace root) + shared bootstrap in
   `test/test-app.ts`: app health, connections CRUD + live

@@ -1,3 +1,38 @@
+## Round 2026-08-09 — autonomous iteration round 121 (tag `round-121`)
+
+Human direction (DIRECTION.md): agents get internet access, agent-managed
+skills, native NestJS cronjobs (no system cron), CDP-9222-first web
+browsing, and a fix for the blocked add-new-channel dialog.
+
+### Added
+- **Agent web access** — `fetch_url` + `web_search` tools registered on the
+  base agent; CDP-first (local Chrome on port 9222 renders the page text),
+  native Node `fetch` fallback with markup stripping, 30 s timeout, ~8k
+  char text cap; compose exposes `WEB_CDP_HOST`/`WEB_CDP_PORT` defaults with
+  `host.docker.internal:host-gateway`.
+- **Agent skill management** — `list_skills`, `create_skill`,
+  `update_skill`, `delete_skill` tools (plus existing `read_skill`), same
+  slug-name/content validation as the human skills API.
+- **Native NestJS cron scheduler** — manual `setInterval` replaced with
+  `@nestjs/schedule` `@Interval` (`handleSchedulerTick`), still
+  lease-gated and atomic; plus agent cron tools (`list_cron_jobs`,
+  `create_cron_job`, `update_cron_job`, `delete_cron_job`,
+  `run_cron_job_now`).
+
+### Fixed
+- **Add-new-channel dialog blocked the channels view** — the modal overlay
+  was rendered unconditionally (`agent-views.tsx`); it is now gated on
+  `showNew`, threaded through `agent-client.tsx` state + context, and the
+  browser E2E asserts the dialog is closed on tab open and opens on click.
+
+### Test status
+- Backend unit 321/321 across 16 suites (cron native-tick + tool
+  registration, web service, skill CRUD/web tool integration); backend
+  lint + `tsc` clean; frontend `tsc` + lint clean; full gate
+  (docs/test-count guards, `nest build`, `next build`, bundle + headroom
+  guards, API E2E) re-run green; browser E2E both modes re-run green
+  against the rebuilt images.
+
 ## Round 2026-08-08 — autonomous iteration round 63 (tag `round-63`)
 
 ### Refactored
